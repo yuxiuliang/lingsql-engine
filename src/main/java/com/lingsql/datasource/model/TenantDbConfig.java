@@ -1,0 +1,172 @@
+package com.lingsql.datasource.model;
+
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import lombok.Data;
+
+import java.time.LocalDateTime;
+
+/**
+ * 租户数据库配置实体。
+ *
+ * @author 余炘洋
+ * @date 2026-01-22
+ */
+@Entity
+@Table(name = "t_lingsql_engine_tenant_db_config")
+@Data
+public class TenantDbConfig {
+    /**
+     * 主键 ID。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    /**
+     * 租户唯一标识。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "tenant_id", unique = true, nullable = false)
+    private String tenantId;
+
+    /**
+     * JDBC 连接地址。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "jdbc_url", nullable = false)
+    private String jdbcUrl;
+
+    /**
+     * 数据库用户名。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "username")
+    private String username;
+
+    /**
+     * 数据库密码。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "password")
+    private String password;
+
+    /**
+     * JDBC 驱动类。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "driver_class")
+    private String driverClass = "com.mysql.cj.jdbc.Driver";
+
+    /**
+     * 隔离模式：PHYSICAL / LOGICAL。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "isolation_mode")
+    private String isolationMode;
+
+    /**
+     * 逻辑隔离字段名，默认 tenant_id。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "logic_column")
+    private String logicColumn;
+
+    /**
+     * 核心表白名单（逗号分隔）。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "white_list_tables")
+    private String whiteListTables;
+
+    /**
+     * 字段白名单（逗号分隔）。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "white_list_columns")
+    private String whiteListColumns;
+
+    /**
+     * 敏感字段黑名单（逗号分隔）。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "sensitive_columns")
+    private String sensitiveColumns;
+
+    /**
+     * 元数据同步状态。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "schema_sync_status")
+    private Integer schemaSyncStatus;
+
+    /**
+     * 最近同步时间。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "last_sync_time")
+    private LocalDateTime lastSyncTime;
+
+    /**
+     * 配置状态。
+     *
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    @Column(name = "status")
+    private Integer status;
+
+    /**
+     * 判断是否为逻辑隔离。
+     *
+     * @return 是否逻辑隔离
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    public boolean isLogicalIsolation() {
+        return "LOGICAL".equalsIgnoreCase(isolationMode);
+    }
+
+    /**
+     * 获取逻辑隔离字段名，默认 tenant_id。
+     *
+     * @return 字段名
+     * @author 余炘洋
+     * @date 2026-01-22
+     */
+    public String resolveLogicColumn() {
+        return (logicColumn == null || logicColumn.isBlank()) ? "tenant_id" : logicColumn;
+    }
+}
