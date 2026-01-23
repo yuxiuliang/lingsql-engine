@@ -1,4 +1,3 @@
-
 spring:
   application:
     name: lingsql-engine
@@ -49,6 +48,25 @@ server:
   port: 8000
 
 lingsql:
+  security:
+    default-limit: 100
+    prompt-injection-keywords:
+      - "忽略规则"
+      - "绕过"
+      - "system prompt"
+      - "prompt injection"
+      - "无视限制"
+  cache:
+    schema-ttl: 24h
+    comment-ttl: 168h
+    semantic-ttl: 6h
+  hikari:
+    maximum-pool-size: 20
+    minimum-idle: 5
+    idle-timeout: 10m
+    connection-timeout: 30s
+  model:
+    cooldown: 10m
   cors:
     enabled: true
     allowed-origins:
@@ -64,6 +82,6 @@ lingsql:
       - "Authorization"
       - "Content-Type"
       - "X-Tenant-Id"
-    exposed-headers: []
+    exposed-headers: [ ]
     allow-credentials: true
     max-age: 3600
