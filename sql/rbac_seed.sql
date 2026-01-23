@@ -13,7 +13,6 @@ SET @password_hash = '{BCryptHashHere}';
 INSERT INTO t_lingsql_engine_permission (perm_code, perm_name, perm_type, status)
 VALUES
 ('MENU:CHAT', '菜单-智能问答', 'MENU', 1),
-('MENU:CHAT:HISTORY', '菜单-问答历史', 'MENU', 1),
 ('MENU:ADMIN', '菜单-管理后台', 'MENU', 1),
 ('MENU:ADMIN:TENANT', '菜单-租户管理', 'MENU', 1),
 ('MENU:ADMIN:MODEL', '菜单-模型管理', 'MENU', 1),
