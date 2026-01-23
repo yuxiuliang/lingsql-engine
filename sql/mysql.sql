@@ -92,3 +92,153 @@ ALTER TABLE t_lingsql_engine_ai_model_config
     ADD COLUMN cooldown_seconds int          DEFAULT 600 COMMENT '熔断冷却秒数',
     ADD COLUMN fuse_time        datetime     DEFAULT NULL COMMENT '熔断时间',
     ADD COLUMN fuse_reason      varchar(255) DEFAULT NULL COMMENT '熔断原因';
+
+-- 用户表
+CREATE TABLE `t_lingsql_engine_user`
+(
+    `id`              bigint      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`       varchar(64) NOT NULL COMMENT '租户ID',
+    `username`        varchar(64) NOT NULL COMMENT '账号',
+    `password`        varchar(128) NOT NULL COMMENT '密码(BCrypt)',
+    `nickname`        varchar(64)          DEFAULT NULL COMMENT '昵称',
+    `status`          tinyint     DEFAULT 1 COMMENT '状态: 1-启用, 0-禁用',
+    `is_experience`   tinyint     DEFAULT 0 COMMENT '是否体验账号: 1-是, 0-否',
+    `last_login_time` datetime    DEFAULT NULL COMMENT '最近登录时间',
+    `create_time`     datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`     datetime    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_tenant` (`tenant_id`, `username`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='用户表';
+
+-- 角色表
+CREATE TABLE `t_lingsql_engine_role`
+(
+    `id`          bigint      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`   varchar(64) DEFAULT NULL COMMENT '租户ID，NULL 表示全局',
+    `role_code`   varchar(64) NOT NULL COMMENT '角色编码',
+    `role_name`   varchar(64) NOT NULL COMMENT '角色名称',
+    `status`      tinyint     DEFAULT 1 COMMENT '状态: 1-启用, 0-禁用',
+    `create_time` datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` datetime    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_role_tenant` (`tenant_id`, `role_code`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='角色表';
+
+-- 用户角色关系表
+CREATE TABLE `t_lingsql_engine_user_role`
+(
+    `id`          bigint   NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `user_id`     bigint   NOT NULL COMMENT '用户ID',
+    `role_id`     bigint   NOT NULL COMMENT '角色ID',
+    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_role` (`user_id`, `role_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='用户角色关系表';
+
+-- 权限表
+CREATE TABLE `t_lingsql_engine_permission`
+(
+    `id`          bigint      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `perm_code`   varchar(128) NOT NULL COMMENT '权限编码',
+    `perm_name`   varchar(128) NOT NULL COMMENT '权限名称',
+    `perm_type`   varchar(32)  NOT NULL COMMENT '权限类型: MENU/API/BUTTON/DATA',
+    `status`      tinyint     DEFAULT 1 COMMENT '状态: 1-启用, 0-禁用',
+    `create_time` datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` datetime    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_perm_code` (`perm_code`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='权限表';
+
+-- 角色权限关系表
+CREATE TABLE `t_lingsql_engine_role_permission`
+(
+    `id`          bigint   NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `role_id`     bigint   NOT NULL COMMENT '角色ID',
+    `perm_id`     bigint   NOT NULL COMMENT '权限ID',
+    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_role_perm` (`role_id`, `perm_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='角色权限关系表';
+
+-- 菜单表
+CREATE TABLE `t_lingsql_engine_menu`
+(
+    `id`          bigint      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`   varchar(64) DEFAULT NULL COMMENT '租户ID，NULL 表示全局',
+    `menu_code`   varchar(64) NOT NULL COMMENT '菜单编码',
+    `menu_name`   varchar(128) NOT NULL COMMENT '菜单名称',
+    `parent_id`   bigint      DEFAULT NULL COMMENT '父级菜单ID',
+    `path`        varchar(256) DEFAULT NULL COMMENT '路由路径',
+    `component`   varchar(256) DEFAULT NULL COMMENT '前端组件',
+    `icon`        varchar(128) DEFAULT NULL COMMENT '菜单图标',
+    `sort`        int         DEFAULT 0 COMMENT '排序',
+    `visible`     tinyint     DEFAULT 1 COMMENT '是否可见: 1-可见, 0-隐藏',
+    `status`      tinyint     DEFAULT 1 COMMENT '状态: 1-启用, 0-禁用',
+    `perm_code`   varchar(128) DEFAULT NULL COMMENT '关联权限编码',
+    `create_time` datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` datetime    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_menu_tenant` (`tenant_id`, `menu_code`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='菜单表';
+
+-- 角色数据权限表
+CREATE TABLE `t_lingsql_engine_role_data_scope`
+(
+    `id`           bigint      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `role_id`      bigint      NOT NULL COMMENT '角色ID',
+    `scope_type`   varchar(32) NOT NULL COMMENT '范围类型: ALL/TENANT/SELF/CUSTOM',
+    `scope_column` varchar(64) DEFAULT NULL COMMENT 'SELF 默认字段名',
+    `scope_rule`   text        DEFAULT NULL COMMENT 'CUSTOM 时的 SQL 条件',
+    `status`       tinyint     DEFAULT 1 COMMENT '状态: 1-启用, 0-禁用',
+    `create_time`  datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`  datetime    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_role_scope` (`role_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='角色数据权限表';
+
+-- 用户数据权限覆盖表
+CREATE TABLE `t_lingsql_engine_user_data_scope`
+(
+    `id`           bigint      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `user_id`      bigint      NOT NULL COMMENT '用户ID',
+    `scope_type`   varchar(32) NOT NULL COMMENT '范围类型: ALL/TENANT/SELF/CUSTOM',
+    `scope_column` varchar(64) DEFAULT NULL COMMENT 'SELF 默认字段名',
+    `scope_rule`   text        DEFAULT NULL COMMENT 'CUSTOM 时的 SQL 条件',
+    `status`       tinyint     DEFAULT 1 COMMENT '状态: 1-启用, 0-禁用',
+    `create_time`  datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`  datetime    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_scope` (`user_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='用户数据权限覆盖表';
+
+-- 体验账号策略表
+CREATE TABLE `t_lingsql_engine_user_experience_policy`
+(
+    `id`                 bigint   NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `user_id`            bigint   NOT NULL COMMENT '用户ID',
+    `menu_whitelist`     text     DEFAULT NULL COMMENT '菜单白名单(JSON)',
+    `data_scope_override` text    DEFAULT NULL COMMENT '数据权限覆盖(JSON)',
+    `status`             tinyint  DEFAULT 1 COMMENT '状态: 1-启用, 0-禁用',
+    `create_time`        datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`        datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_experience_user` (`user_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='体验账号策略表';
