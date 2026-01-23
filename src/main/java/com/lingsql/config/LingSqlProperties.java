@@ -137,6 +137,71 @@ public class LingSqlProperties {
     }
 
     /**
+     * 跨域配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    @Data
+    public static class Cors {
+        /**
+         * 是否启用跨域白名单。
+         *
+         * @author 余炘洋
+         * @date 2026-01-23
+         */
+        private boolean enabled = true;
+
+        /**
+         * 允许的来源列表。
+         *
+         * @author 余炘洋
+         * @date 2026-01-23
+         */
+        private List<String> allowedOrigins = new ArrayList<>();
+
+        /**
+         * 允许的方法列表。
+         *
+         * @author 余炘洋
+         * @date 2026-01-23
+         */
+        private List<String> allowedMethods = List.of("GET", "POST", "PUT", "DELETE", "OPTIONS");
+
+        /**
+         * 允许的请求头列表。
+         *
+         * @author 余炘洋
+         * @date 2026-01-23
+         */
+        private List<String> allowedHeaders = List.of("Authorization", "Content-Type", "X-Tenant-Id");
+
+        /**
+         * 暴露给前端的响应头列表。
+         *
+         * @author 余炘洋
+         * @date 2026-01-23
+         */
+        private List<String> exposedHeaders = new ArrayList<>();
+
+        /**
+         * 是否允许携带凭证。
+         *
+         * @author 余炘洋
+         * @date 2026-01-23
+         */
+        private boolean allowCredentials = true;
+
+        /**
+         * 预检请求缓存时间（秒）。
+         *
+         * @author 余炘洋
+         * @date 2026-01-23
+         */
+        private Long maxAge = 3600L;
+    }
+
+    /**
      * 安全配置。
      *
      * @author 余炘洋
@@ -174,4 +239,12 @@ public class LingSqlProperties {
      * @author 余炘洋
      * @date 2026-01-22
      */
+
+    /**
+     * 跨域配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    private Cors cors = new Cors();
 }

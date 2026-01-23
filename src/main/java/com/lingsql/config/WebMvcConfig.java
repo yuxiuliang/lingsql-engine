@@ -4,6 +4,9 @@ import com.lingsql.context.TenantInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+
+import java.util.List;
 
 /**
  * Web MVC 配置，注册租户拦截器。
@@ -15,6 +18,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebMvcConfig implements WebMvcConfigurer {
 
     private final TenantInterceptor tenantInterceptor;
+    private final LingSqlProperties properties;
 
     /**
      * 构造函数注入。
@@ -23,8 +27,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
      * @author 余炘洋
      * @date 2026-01-22
      */
-    public WebMvcConfig(TenantInterceptor tenantInterceptor) {
+    public WebMvcConfig(TenantInterceptor tenantInterceptor, LingSqlProperties properties) {
         this.tenantInterceptor = tenantInterceptor;
+        this.properties = properties;
     }
 
     /**
@@ -37,5 +42,37 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(tenantInterceptor).addPathPatterns("/api/**");
+    }
+
+    /**
+     * 配置跨域白名单。
+     *
+     * @param registry 跨域注册器
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        LingSqlProperties.Cors cors = properties.getCors();
+        if (cors == null || !cors.isEnabled()) {
+            return;
+        }
+        List<String> allowedOrigins = cors.getAllowedOrigins();
+        if (allowedOrigins == null || allowedOrigins.isEmpty()) {
+            return;
+        }
+        var mapping = registry.addMapping("/api/**")
+                .allowedMethods(cors.getAllowedMethods().toArray(new String[0]))
+                .allowedHeaders(cors.getAllowedHeaders().toArray(new String[0]))
+                .allowCredentials(cors.isAllowCredentials())
+                .maxAge(cors.getMaxAge());
+        if (cors.getExposedHeaders() != null && !cors.getExposedHeaders().isEmpty()) {
+            mapping.exposedHeaders(cors.getExposedHeaders().toArray(new String[0]));
+        }
+        if (allowedOrigins.contains("*")) {
+            mapping.allowedOriginPatterns("*");
+        } else {
+            mapping.allowedOrigins(allowedOrigins.toArray(new String[0]));
+        }
     }
 }

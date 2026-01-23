@@ -47,3 +47,23 @@ logging:
     org.hibernate.orm.connections.pooling: warn
 server:
   port: 8000
+
+lingsql:
+  cors:
+    enabled: true
+    allowed-origins:
+      - "http://localhost:4173"
+      - "http://127.0.0.1:4173"
+    allowed-methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    allowed-headers:
+      - "Authorization"
+      - "Content-Type"
+      - "X-Tenant-Id"
+    exposed-headers: []
+    allow-credentials: true
+    max-age: 3600
