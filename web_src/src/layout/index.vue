@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref} from 'vue';
+import {computed, ref} from 'vue';
 import {useRouter} from 'vue-router';
 import {useAuthStore} from '@/store/auth';
 
@@ -29,6 +29,20 @@ interface MenuGroup {
 const router = useRouter();
 const authStore = useAuthStore();
 const isCollapsed = ref(false);
+
+/**
+ * 解析侧边栏头像显示文本。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const avatarText = computed(() => {
+  const username = authStore.username?.trim();
+  if (username) {
+    return Array.from(username).slice(0, 2).join('');
+  }
+  return '用户';
+});
 
 const menuGroups: MenuGroup[] = [
   {
@@ -131,10 +145,10 @@ const toggleCollapse = () => {
         </template>
       </el-menu>
       <div class="sidebar-footer" :class="{collapsed: isCollapsed}">
-        <div class="avatar-circle">AD</div>
+        <div class="avatar-circle">{{ avatarText }}</div>
         <div v-if="!isCollapsed" class="user-info">
-          <div class="user-name">Admin</div>
-          <div class="user-role">权限：01</div>
+          <div class="user-name">{{ authStore.username || '未命名用户' }}</div>
+          <div class="user-role">租户：{{ authStore.tenantId || '未设置' }}</div>
         </div>
       </div>
     </el-aside>
