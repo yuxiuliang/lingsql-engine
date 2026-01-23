@@ -10,3 +10,4 @@ target/
 **/package-lock.json
 **/.env.development
 **/.env.production
+/src/main/resources/static/admin/
