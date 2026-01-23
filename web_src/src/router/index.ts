@@ -1,5 +1,4 @@
 import {createRouter, createWebHistory, RouteRecordRaw} from 'vue-router';
-
 // 1. 定义路由记录
 const routes: Array<RouteRecordRaw> = [
     {
@@ -16,6 +15,7 @@ const routes: Array<RouteRecordRaw> = [
         path: '/layout',
         name: 'Layout',
         component: () => import('@/layout/index.vue'), // 布局组件
+        redirect: '/chat',
         children: [
             {
                 path: '/chat',
@@ -27,7 +27,25 @@ const routes: Array<RouteRecordRaw> = [
                 path: '/model',
                 name: 'Model',
                 component: () => import('@/views/model/index.vue'),
-                meta: {title: '模型配置', icon: 'Cpu'}
+                meta: {title: '模型资源池', icon: 'Cpu'}
+            },
+            {
+                path: '/tenant',
+                name: 'Tenant',
+                component: () => import('@/views/tenant/index.vue'),
+                meta: {title: '租户配置', icon: 'OfficeBuilding'}
+            },
+            {
+                path: '/lexicon',
+                name: 'Lexicon',
+                component: () => import('@/views/lexicon/index.vue'),
+                meta: {title: '语义字典', icon: 'Collection'}
+            },
+            {
+                path: '/join-rule',
+                name: 'JoinRule',
+                component: () => import('@/views/join-rule/index.vue'),
+                meta: {title: 'Join 规则', icon: 'Share'}
             }
         ]
     },
@@ -44,6 +62,12 @@ const router = createRouter({
 });
 
 // 2. 路由守卫：处理租户 ID 和标题
+/**
+ * 全局路由守卫，负责登录拦截与标题设置。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
 router.beforeEach((to, from, next) => {
     // 设置页面标题
     if (to.meta.title) {
@@ -54,10 +78,8 @@ router.beforeEach((to, from, next) => {
     const token = localStorage.getItem('token');
     if (!token && to.path !== '/login') {
         next('/login');
-    } else {
-        next();
+        return;
     }
-
     next();
 });
 
