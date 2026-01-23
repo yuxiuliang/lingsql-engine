@@ -60,6 +60,7 @@ lingsql:
     schema-ttl: 24h
     comment-ttl: 168h
     semantic-ttl: 6h
+    chat-history-ttl: 30m
   hikari:
     maximum-pool-size: 20
     minimum-idle: 5
