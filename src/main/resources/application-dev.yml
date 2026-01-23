@@ -61,6 +61,8 @@ lingsql:
     comment-ttl: 168h
     semantic-ttl: 6h
     chat-history-ttl: 30m
+  chat:
+    max-question-length: 20000
   hikari:
     maximum-pool-size: 20
     minimum-idle: 5
