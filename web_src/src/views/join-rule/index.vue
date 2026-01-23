@@ -2,11 +2,15 @@
 import {ref, reactive} from 'vue';
 import {ElMessage, ElMessageBox} from 'element-plus';
 import {createJoinRule, deleteJoinRule, fetchJoinRules, JoinRuleItem, updateJoinRule} from '@/api/config';
+import {fetchTenantSchema, SchemaTableInfo} from '@/api/admin';
+import {useAuthStore} from '@/store/auth';
 
 const joinRules = ref<JoinRuleItem[]>([]);
 const loading = ref(false);
 const dialogVisible = ref(false);
 const editingId = ref<number | null>(null);
+const schemaTables = ref<SchemaTableInfo[]>([]);
+const authStore = useAuthStore();
 
 const form = reactive<JoinRuleItem>({
   tenantId: '',
@@ -59,6 +63,7 @@ const loadJoinRules = async () => {
 const handleCreate = () => {
   editingId.value = null;
   Object.assign(form, buildEmptyJoinRule());
+  loadSchema();
   dialogVisible.value = true;
 };
 
@@ -72,6 +77,7 @@ const handleCreate = () => {
 const handleEdit = (row: JoinRuleItem) => {
   editingId.value = row.id || null;
   Object.assign(form, row);
+  loadSchema();
   dialogVisible.value = true;
 };
 
@@ -121,6 +127,24 @@ const handleDelete = async (row: JoinRuleItem) => {
     if (!isMessageBoxCancel(error)) {
       ElMessage.error(error instanceof Error ? error.message : '删除失败');
     }
+  }
+};
+
+/**
+ * 加载 Schema 列表。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const loadSchema = async () => {
+  const tenantId = form.tenantId?.trim() || authStore.tenantId;
+  if (!tenantId) {
+    return;
+  }
+  try {
+    schemaTables.value = await fetchTenantSchema(tenantId);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载表结构失败');
   }
 };
 
@@ -194,10 +218,24 @@ loadJoinRules();
           <el-input v-model="form.tenantId" placeholder="留空表示全局"/>
         </el-form-item>
         <el-form-item label="左表">
-          <el-input v-model="form.leftTable" placeholder="左表名"/>
+          <el-select v-model="form.leftTable" filterable style="width: 100%" placeholder="请选择左表">
+            <el-option
+              v-for="table in schemaTables"
+              :key="table.tableName"
+              :label="table.tableComment ? `${table.tableName}（${table.tableComment}）` : table.tableName"
+              :value="table.tableName"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="右表">
-          <el-input v-model="form.rightTable" placeholder="右表名"/>
+          <el-select v-model="form.rightTable" filterable style="width: 100%" placeholder="请选择右表">
+            <el-option
+              v-for="table in schemaTables"
+              :key="table.tableName"
+              :label="table.tableComment ? `${table.tableName}（${table.tableComment}）` : table.tableName"
+              :value="table.tableName"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="Join 条件">
           <el-input v-model="form.onExpr" placeholder="例如：a.id = b.a_id"/>

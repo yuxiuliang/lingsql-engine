@@ -136,6 +136,21 @@ export const deleteTenantConfig = async (id: number): Promise<string> => {
 };
 
 /**
+ * 测试租户连接。
+ *
+ * @param payload 租户配置
+ * @return 测试结果
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+export const testTenantConnection = async (payload: TenantDbConfig): Promise<string> => {
+  return request<string>('/api/v1/admin/config/tenant/test-connection', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
  * 查询模型配置列表。
  *
  * @return 模型配置列表
@@ -302,4 +317,3 @@ export const deleteJoinRule = async (id: number): Promise<string> => {
     method: 'DELETE'
   });
 };
-

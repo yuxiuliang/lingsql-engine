@@ -26,6 +26,23 @@ export interface ModelHealthView {
 }
 
 /**
+ * Schema 表结构定义。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+export interface SchemaTableInfo {
+  tableName: string;
+  tableComment?: string;
+  columns: Array<{
+    columnName: string;
+    columnComment?: string;
+    dataType?: string;
+    primaryKey?: boolean;
+  }>;
+}
+
+/**
  * 手动同步租户元数据。
  *
  * @param tenantId 租户标识
@@ -92,3 +109,14 @@ export const disableModel = async (modelId: number): Promise<string> => {
   });
 };
 
+/**
+ * 获取租户 Schema 缓存。
+ *
+ * @param tenantId 租户标识
+ * @return Schema 列表
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+export const fetchTenantSchema = async (tenantId: string): Promise<SchemaTableInfo[]> => {
+  return request<SchemaTableInfo[]>(`/api/v1/admin/schema/${encodeURIComponent(tenantId)}`);
+};

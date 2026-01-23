@@ -1,19 +1,29 @@
 <script setup lang="ts">
-import {ref, reactive} from 'vue';
+import {computed, nextTick, ref, reactive} from 'vue';
 import {ElMessage, ElMessageBox} from 'element-plus';
 import {
   TenantDbConfig,
   createTenantConfig,
   deleteTenantConfig,
   fetchTenantConfigs,
+  testTenantConnection,
   updateTenantConfig
 } from '@/api/config';
-import {refreshTenantSemantic, syncTenantSchema} from '@/api/admin';
+import {fetchTenantSchema, refreshTenantSemantic, SchemaTableInfo, syncTenantSchema} from '@/api/admin';
 
 const tenantConfigs = ref<TenantDbConfig[]>([]);
 const loading = ref(false);
 const dialogVisible = ref(false);
 const editingId = ref<number | null>(null);
+const schemaTables = ref<SchemaTableInfo[]>([]);
+const schemaTenantId = ref('');
+const tableSelectVisible = ref(false);
+const columnSelectVisible = ref(false);
+const columnSelectMode = ref<'whitelist' | 'sensitive'>('whitelist');
+const selectedTables = ref<string[]>([]);
+const selectedColumns = ref<string[]>([]);
+const tableTreeRef = ref<any>(null);
+const columnTreeRef = ref<any>(null);
 
 const form = reactive<TenantDbConfig>({
   tenantId: '',
@@ -119,6 +129,25 @@ const handleSave = async () => {
 };
 
 /**
+ * 测试租户连接。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const handleTestConnection = async () => {
+  if (!form.jdbcUrl) {
+    ElMessage.warning('请填写 JDBC 地址');
+    return;
+  }
+  try {
+    const message = await testTenantConnection(form);
+    ElMessage.success(message);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '连接测试失败');
+  }
+};
+
+/**
  * 删除租户配置。
  *
  * @param row 租户配置
@@ -179,6 +208,139 @@ const handleRefreshSemantic = async (row: TenantDbConfig) => {
     ElMessage.error(error instanceof Error ? error.message : '刷新失败');
   }
 };
+
+/**
+ * 加载租户 Schema。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const loadSchema = async () => {
+  const tenantId = form.tenantId?.trim();
+  if (!tenantId) {
+    ElMessage.warning('请先填写租户ID');
+    return false;
+  }
+  if (schemaTenantId.value === tenantId && schemaTables.value.length) {
+    return true;
+  }
+  try {
+    schemaTables.value = await fetchTenantSchema(tenantId);
+    schemaTenantId.value = tenantId;
+    return true;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载 Schema 失败');
+    return false;
+  }
+};
+
+/**
+ * 打开表白名单选择。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const openTableSelect = async () => {
+  const ready = await loadSchema();
+  if (!ready) {
+    return;
+  }
+  selectedTables.value = form.whiteListTables ? form.whiteListTables.split(',').map((item) => item.trim()).filter(Boolean) : [];
+  tableSelectVisible.value = true;
+  await nextTick();
+  tableTreeRef.value?.setCheckedKeys(selectedTables.value.map((item) => `table:${item}`));
+};
+
+/**
+ * 打开字段选择。
+ *
+ * @param mode 选择模式
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const openColumnSelect = async (mode: 'whitelist' | 'sensitive') => {
+  const ready = await loadSchema();
+  if (!ready) {
+    return;
+  }
+  columnSelectMode.value = mode;
+  const source = mode === 'whitelist' ? form.whiteListColumns : form.sensitiveColumns;
+  selectedColumns.value = source ? source.split(',').map((item) => item.trim()).filter(Boolean) : [];
+  columnSelectVisible.value = true;
+  await nextTick();
+  columnTreeRef.value?.setCheckedKeys(selectedColumns.value.map((item) => `col:${item}`));
+};
+
+/**
+ * 保存表白名单选择。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const handleTableSelectConfirm = () => {
+  const keys: string[] = tableTreeRef.value?.getCheckedKeys(false) || [];
+  const tables = keys
+    .filter((key) => String(key).startsWith('table:'))
+    .map((key) => String(key).replace('table:', ''));
+  form.whiteListTables = tables.join(',');
+  tableSelectVisible.value = false;
+};
+
+/**
+ * 保存字段选择。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const handleColumnSelectConfirm = () => {
+  const keys: string[] = columnTreeRef.value?.getCheckedKeys(false) || [];
+  const columns = keys
+    .filter((key) => String(key).startsWith('col:'))
+    .map((key) => String(key).replace('col:', ''));
+  const value = columns.join(',');
+  if (columnSelectMode.value === 'whitelist') {
+    form.whiteListColumns = value;
+  } else {
+    form.sensitiveColumns = value;
+  }
+  columnSelectVisible.value = false;
+};
+
+/**
+ * 构建字段选项。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+/**
+ * 构建表树数据。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const tableTreeData = computed(() => {
+  return schemaTables.value.map((table) => ({
+    id: `table:${table.tableName}`,
+    label: table.tableComment ? `${table.tableName}（${table.tableComment}）` : table.tableName
+  }));
+});
+
+/**
+ * 构建字段树数据。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const columnTreeData = computed(() => {
+  return schemaTables.value.map((table) => ({
+    id: `table:${table.tableName}`,
+    label: table.tableComment ? `${table.tableName}（${table.tableComment}）` : table.tableName,
+    children: (table.columns || []).map((col) => ({
+      id: `col:${table.tableName}.${col.columnName}`,
+      label: col.columnComment ? `${col.columnName}（${col.columnComment}）` : col.columnName
+    }))
+  }));
+});
 
 /**
  * 解析租户状态文本。
@@ -277,13 +439,25 @@ loadTenants();
           <el-input v-model="form.logicColumn" placeholder="tenant_id"/>
         </el-form-item>
         <el-form-item label="表白名单">
-          <el-input v-model="form.whiteListTables" placeholder="表名逗号分隔"/>
+          <el-input v-model="form.whiteListTables" placeholder="表名逗号分隔">
+            <template #append>
+              <el-button @click="openTableSelect">选择</el-button>
+            </template>
+          </el-input>
         </el-form-item>
         <el-form-item label="字段白名单">
-          <el-input v-model="form.whiteListColumns" placeholder="字段逗号分隔"/>
+          <el-input v-model="form.whiteListColumns" placeholder="字段逗号分隔">
+            <template #append>
+              <el-button @click="openColumnSelect('whitelist')">选择</el-button>
+            </template>
+          </el-input>
         </el-form-item>
         <el-form-item label="敏感字段">
-          <el-input v-model="form.sensitiveColumns" placeholder="敏感字段逗号分隔"/>
+          <el-input v-model="form.sensitiveColumns" placeholder="敏感字段逗号分隔">
+            <template #append>
+              <el-button @click="openColumnSelect('sensitive')">选择</el-button>
+            </template>
+          </el-input>
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="form.status" style="width: 100%">
@@ -294,7 +468,36 @@ loadTenants();
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button @click="handleTestConnection">测试连接</el-button>
         <el-button type="primary" @click="handleSave">保存</el-button>
+      </template>
+    </el-dialog>
+    <el-dialog v-model="tableSelectVisible" title="选择表白名单" width="520px">
+      <el-tree
+        ref="tableTreeRef"
+        :data="tableTreeData"
+        show-checkbox
+        node-key="id"
+        default-expand-all
+        highlight-current
+      />
+      <template #footer>
+        <el-button @click="tableSelectVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleTableSelectConfirm">确定</el-button>
+      </template>
+    </el-dialog>
+    <el-dialog v-model="columnSelectVisible" title="选择字段" width="560px">
+      <el-tree
+        ref="columnTreeRef"
+        :data="columnTreeData"
+        show-checkbox
+        node-key="id"
+        default-expand-all
+        highlight-current
+      />
+      <template #footer>
+        <el-button @click="columnSelectVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleColumnSelectConfirm">确定</el-button>
       </template>
     </el-dialog>
   </div>
