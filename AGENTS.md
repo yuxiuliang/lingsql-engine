@@ -1,109 +1,40 @@
-请基于 Java 21 和 Spring Boot 3.x 实现一个企业级 Text-to-SQL Agent，满足以下核心需求：
+# 🤖 Agent 架构：The LingSQL Brain
 
-作者：余炘洋
-日期：2026-01-22
-对外产品名称：语数
-对内代码立项名称：lingsql-engine
+语数引擎不只是一个 SQL 生成器，它是一个由多个专业角色组成的“虚拟智库”。
 
-### 核心逻辑：
-1. **元数据提取（SchemaScanner）**：
-    - 使用 JDBC 的 DatabaseMetaData 抓取数据库表结构（TABLE_NAME/COLUMN_NAME/REMARKS）；
-    - 支持配置核心表白名单，仅扫描白名单内的表，忽略其他表；
-    - 无注释的字段/表，调用私有部署的LLM（Qwen-7B，HTTP API）生成语义描述，存入Redis缓存；
-    - 元数据提取结果缓存到Redis，避免重复扫描。
+## 1. 推理引擎：ReAct 推理循环
+系统采用 **ReAct (Reasoning and Acting)** 架构。面对用户提问，Agent 会执行以下闭环：
 
-2. **多租户隔离（TenantDataSource）**：
-    - 基于 AbstractRoutingDataSource + ThreadLocal 实现多租户路由；
-    - 支持两种隔离模式：
-      ① 物理隔离：按tenantId切换不同MySQL实例的数据源；
-      ② 逻辑隔离：单库内自动给SQL拼接`AND tenant_id = '{tenantId}'`过滤条件；
-    - 租户ID通过ThreadLocal（TenantContext）传递，从请求拦截器中解析。
+1. **Thought (思考)**: AI 分析意图（例如：用户需要对比数据，我需要先找表结构）。
+2. **Action (行动)**: 调用 `metadata_skill` 获取元数据。
+3. **Observation (观察)**: 获取 Java 端返回的真实 Schema 信息。
+4. **Final Answer (执行)**: 基于事实生成 SQL，并交由 `SqlRewriter` 审计执行。
 
-3. **Prompt构建与LLM交互（SqlAgentService）**：
-    - 动态拼装Prompt：包含核心表元数据、用户问题、SQL生成规则（仅SELECT、加LIMIT、逻辑隔离加tenant_id）；
-    - 通过“数据库模型资源池”选择可用模型（多模型权重/优先级负载均衡），调用私有部署大模型的 OpenAI 兼容 HTTP API；
-    - LLM 配置不得写入配置文件，必须来自数据库；
-    - 要求LLM仅输出纯SQL文本，禁止任何Markdown格式（如```sql）或解释性文字，便于后端直接解析；
-    - 生成的SQL经JSqlParser做语法树分析，校验规则：禁止写操作、必须加LIMIT 100、逻辑隔离必须含tenant_id。
+## 2. 专家角色分工 (Multi-Agent Collaboration)
+系统支持多角色协同处理一条请求：
+* **SQL 架构师 (The Architect)**: 负责理解元数据与 Join 规则，输出标准化 SQL。
+* **业务分析师 (The Analyst)**: 负责将 SQL 结果集转化为业务洞察，进行同环比分析。
+* **合规审计员 (The Auditor)**: 负责校验生成的 SQL 是否违反安全规则。
 
-4. **安全执行（SqlExecutor）**：
-    - 使用JdbcTemplate执行校验后的SQL，返回List<Map<String, Object>>结果；
-    - 数据库连接池使用HikariCP，配置超时/最大连接数；
-    - 多租户数据源支持懒加载：首次访问该租户时创建Hikari连接池并缓存，避免启动时一次性加载大量租户连接导致内存溢出；
-    - 执行结果可传给LLM润色为自然语言（可选）。
+## 3. 纯 Java 智能技能库 (Skills Library)
+为确保系统的高可用与安全性，所有 Skills 均基于 Java 21 实现，无外部进程依赖。
 
-### 自动问答补充要求（建议必做）：
-1. **问答闭环**：
-    - 执行结果必须经过LLM润色为自然语言，作为最终答复；
-    - 若结果为空或异常，生成“原因+可选澄清问题”，而非直接失败。
-2. **语义映射与术语表（SemanticLexicon）**：
-    - 建立“业务术语/同义词/指标名 → 表/字段/计算规则”的字典；
-    - 语义字典必须存储在数据库（支持按租户维护），不通过配置文件维护；
-    - Prompt中注入字典，避免LLM误用字段或指标口径不一致。
-3. **表关系/Join规则**：
-    - 提供核心表之间的关联关系（主键/外键/业务关联字段）；
-    - Join 规则必须存储在数据库（支持按租户维护），不通过配置文件维护；
-    - SQL生成必须遵守预定义关系，禁止“盲连”。
-4. **SQL强制改写（Rewrite优先于校验）**：
-    - 逻辑隔离时强制注入 `tenant_id = '{tenantId}'` 条件；
-    - 强制注入 `LIMIT 100`，禁止仅靠校验；
-    - 统一标准化SQL（列别名/表别名/时间条件）。
-5. **权限与白名单细化**：
-    - 在SQL校验阶段严格限制“表白名单+字段白名单”；
-    - 禁止访问敏感字段（如手机号、身份证、薪资等）。
-6. **Prompt注入防护**：
-    - 明确系统规则：仅输出SQL，不执行越权操作；
-    - 对用户问题做安全过滤（如“忽略规则”类注入语句）。
-7. **异常与重试策略**：
-    - SQL解析失败/执行异常时，重试一次并要求澄清；
-    - 记录错误原因，便于运维排查。
-8. **缓存刷新与变更感知**：
-    - Redis元数据缓存设置TTL；
-    - 支持手动刷新或基于Schema变更的刷新机制。
-9. **配置加载机制**：
-    - TenantDbConfig存放在“主库/配置库”，启动时加载；
-    - 多租户数据源动态注册与生命周期管理。
+| 技能 ID | 实现逻辑 | 解决问题 |
+| :--- | :--- | :--- |
+| `Youtube` | 基于 JDBC DatabaseMetaData | 提供真实的表字段信息，消除 AI 幻觉 |
+| `calculate_metric`| 基于 Aviator 表达式引擎 | 在 JVM 内存中完成复杂的二次计算 (如复利、利润率) |
+| `secure_execute` | 联动 SqlRewriter 模块 | 强制租户隔离，拦截一切非 SELECT 语句 |
+| `chart_mapper` | Java 对象转 ECharts JSON | 自动识别数据特征并匹配最优图表类型 |
 
-### 配置化要求：
-- 新增 TenantDbConfig 表，存储「租户ID→JDBC连接信息→隔离模式→核心表白名单」，运维仅需插数据无需改代码；
-- 新增 AI 模型资源池表，存储「模型供应商/名称/地址/密钥/权重/优先级」，用于负载均衡；
-- 新增语义字典表与 Join 规则表，支持按租户动态维护；
-- LLM 地址/密钥等信息不得写入 application.yml，必须来自数据库。
-
-### 模型资源池与路由策略（必须实现）：
-- 资源池表建议命名：t_lingsql_engine_ai_model_config；
-- 路由规则：先按 priority 升序筛选，再按 weight 做加权随机；
-- 健康策略：调用失败自动降权/熔断，恢复需人工或健康探测；
-- 失败重试：同一次请求最多切换一次模型，避免风暴；
-- 日志记录：必须记录选择的模型、耗时、失败原因。
-
-### 语义字典与 Join 规则（必须实现）：
-- 表建议命名：t_lingsql_engine_semantic_lexicon、t_lingsql_engine_join_rule；
-- 优先级：租户级配置优先于全局配置；
-- Prompt 注入内容包含：术语映射、Join 规则、表白名单/字段白名单；
-- Join 约束：未配置关系的表禁止关联。
-
-### 缓存刷新与变更感知（必须实现）：
-- SchemaScanner 结果、语义字典、Join 规则都需要 TTL；
-- 支持手动刷新接口（按租户刷新）；
-- 当配置表更新时标记 schema_sync_status=2，触发下次扫描刷新。
-
-### 运维与日志（必须实现）：
-- 启动时输出主库连接池参数与租户默认连接池参数；
-- 关键异常必须落库或日志可追溯（SQL 校验失败、模型调用失败）。
-
----
-
-# 语数 (LingSQL) 商业化 UI 终极标准
-
-## 1. 视觉风格定调 (Visual Identity)
-
-* **配色方案**:
-* 主色：科技蓝 `#409EFF` 搭配渐变。
-* 背景：对话区使用浅灰蓝 `#f8fafc`，管理后台卡片使用纯白 `#ffffff`。
+## 4. 自愈机制 (Self-Healing)
+系统具备自发性的错误修正能力：
+* **解析失败自愈**：当 SQL 报错（如 `Unknown column`）时，系统捕捉 Error，自动将错误反馈给 AI，要求 AI 重新查阅元数据并二次生成，过程对用户透明。
+* **熔断切换**：当主模型（如 GPT-4）响应延迟过高时，Agent 自动切换至备用模型（如本地 Qwen），确保服务不中断。
 
 
-* **组件标准**:
-* **阴影**: 移除边框，统一使用 `box-shadow: 0 4px 12px rgba(0,0,0,0.05)`。
-* **圆角**: 容器 `16px`，按钮及输入框 `8px`。
 
+## 5. 提示词工程 (Prompt Engineering)
+系统动态拼装以下上下文信息：
+- **租户 Context**: 当前租户的白名单表、隔离字段。
+- **语义字典**: 业务指标与 SQL 表达式的映射关系。
+- **约束指令**: 强制分页规则、禁止 Markdown 输出要求。
