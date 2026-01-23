@@ -260,9 +260,10 @@ loadJoinRules();
 
 <style scoped>
 .join-rule-page {
-  background: #fff;
+  background: #ffffff;
   padding: 16px;
-  border-radius: 8px;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .toolbar {

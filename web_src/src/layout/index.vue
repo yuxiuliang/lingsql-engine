@@ -95,8 +95,8 @@ const toggleCollapse = () => {
         router
         class="menu"
         :default-active="$route.path"
-        background-color="#1f2937"
-        text-color="#e5e7eb"
+        background-color="#334155"
+        text-color="#e2e8f0"
         active-text-color="#ffffff"
         :collapse="isCollapsed"
         :collapse-transition="false"
@@ -159,11 +159,11 @@ const toggleCollapse = () => {
 <style scoped>
 .layout {
   height: 100vh;
-  background: #f5f7fb;
+  background: #f8fafc;
 }
 
 .layout-aside {
-  background: linear-gradient(180deg, #0f172a 0%, #1f2937 100%);
+  background: linear-gradient(180deg, #334155 0%, #475569 100%);
   color: #fff;
   display: flex;
   flex-direction: column;
@@ -187,7 +187,7 @@ const toggleCollapse = () => {
   width: 38px;
   height: 38px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #409EFF 0%, #66B1FF 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -195,7 +195,7 @@ const toggleCollapse = () => {
   font-weight: 700;
   letter-spacing: 1px;
   color: #fff;
-  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.35);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .logo-text {
@@ -240,14 +240,14 @@ const toggleCollapse = () => {
 .collapse-line {
   width: 16px;
   height: 2px;
-  background: #e5e7eb;
+  background: #e2e8f0;
   border-radius: 2px;
 }
 
 .menu {
   border-right: none;
   background: transparent;
-  color: #e5e7eb;
+  color: #e2e8f0;
   padding: 16px 0 8px;
   flex: 1;
   overflow-y: auto;
@@ -256,7 +256,7 @@ const toggleCollapse = () => {
 .menu-group-title {
   padding: 4px 20px 8px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.7);
   letter-spacing: 1px;
 }
 
@@ -285,8 +285,8 @@ const toggleCollapse = () => {
 }
 
 .menu :deep(.el-menu-item.is-active) {
-  background: linear-gradient(90deg, rgba(59, 130, 246, 0.25), rgba(59, 130, 246, 0.05));
-  box-shadow: 0 6px 12px rgba(59, 130, 246, 0.2);
+  background: rgba(64, 158, 255, 0.18);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .menu :deep(.el-menu-item:hover) {
@@ -331,7 +331,7 @@ const toggleCollapse = () => {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -346,7 +346,7 @@ const toggleCollapse = () => {
 
 .user-role {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.7);
   margin-top: 4px;
 }
 
@@ -357,7 +357,7 @@ const toggleCollapse = () => {
   background: #fff;
   border-bottom: 1px solid #e5e7eb;
   padding: 0 20px;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .header-title {
@@ -385,7 +385,7 @@ const toggleCollapse = () => {
 .tenant-tag {
   border: none;
   color: #475569;
-  background: rgba(226, 232, 240, 0.7);
+  background: #f1f5f9;
 }
 
 .layout-main {

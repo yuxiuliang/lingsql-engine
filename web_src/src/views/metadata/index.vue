@@ -396,18 +396,19 @@ onMounted(() => {
   grid-template-columns: 260px 1fr;
   gap: 16px;
   padding: 14px;
-  background: #eef2f7;
-  border-radius: 18px;
+  background: #f8fafc;
+  border-radius: 16px;
 }
 
 .metadata-sidebar {
-  background: #0f172a;
+  background: #ffffff;
   border-radius: 16px;
   padding: 14px;
-  color: #e2e8f0;
+  color: #1f2937;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .sidebar-title {
@@ -417,29 +418,29 @@ onMounted(() => {
 
 .sidebar-subtitle {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .sync-button {
   border: none;
-  background: rgba(64, 158, 255, 0.2);
-  color: #e2e8f0;
+  background: rgba(64, 158, 255, 0.12);
+  color: #1f2937;
 }
 
 .schema-tree {
   background: transparent;
-  color: #e2e8f0;
+  color: #334155;
 }
 
 .schema-tree :deep(.el-tree-node__content) {
-  color: #e2e8f0;
+  color: #334155;
 }
 
 .metadata-content {
   background: #ffffff;
   border-radius: 16px;
   padding: 14px;
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -454,7 +455,7 @@ onMounted(() => {
 .content-title {
   font-size: 16px;
   font-weight: 600;
-  color: #0f172a;
+  color: #1f2937;
 }
 
 .metadata-table :deep(.el-table__header th) {

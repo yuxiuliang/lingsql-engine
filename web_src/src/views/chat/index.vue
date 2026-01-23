@@ -485,16 +485,16 @@ onMounted(() => {
   grid-template-columns: 260px 1fr;
   gap: 16px;
   padding: 14px;
-  background: radial-gradient(circle at top, #111827, #0f172a 60%);
-  border-radius: 18px;
+  background: #f8fafc;
+  border-radius: 16px;
   overflow: hidden;
 }
 
 .history-panel {
-  background: rgba(15, 23, 42, 0.75);
+  background: #ffffff;
   border-radius: 16px;
   padding: 14px;
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -510,20 +510,20 @@ onMounted(() => {
 .history-title {
   font-size: 14px;
   font-weight: 600;
-  color: #e2e8f0;
+  color: #1f2937;
 }
 
 .history-subtitle {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .new-chat-button {
   width: 100%;
   border: none;
-  background: linear-gradient(90deg, rgba(64, 158, 255, 0.85), rgba(103, 194, 58, 0.85));
+  background: #409EFF;
   color: #fff;
-  box-shadow: 0 10px 20px rgba(64, 158, 255, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .history-search {
@@ -532,19 +532,19 @@ onMounted(() => {
 }
 
 .history-search :deep(.el-input__wrapper) {
-  background: rgba(30, 41, 59, 0.7);
-  border: none;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   box-shadow: none;
 }
 
 .history-search :deep(.el-input__inner) {
-  color: #e2e8f0;
+  color: #1f2937;
 }
 
 .search-button {
   border: none;
-  background: rgba(148, 163, 184, 0.18);
-  color: #e2e8f0;
+  background: #e2e8f0;
+  color: #334155;
 }
 
 .history-list {
@@ -566,23 +566,24 @@ onMounted(() => {
 .history-pagination :deep(.btn-prev),
 .history-pagination :deep(.btn-next),
 .history-pagination :deep(.el-pager li) {
-  background: rgba(30, 41, 59, 0.7);
+  background: #f1f5f9;
   border: none;
-  color: #e2e8f0;
+  color: #475569;
 }
 
 .history-pagination :deep(.el-pager li.is-active) {
-  background: rgba(59, 130, 246, 0.5);
+  background: #409EFF;
+  color: #fff;
 }
 
 .history-item {
-  background: rgba(30, 41, 59, 0.7);
+  background: #f8fafc;
   border-radius: 12px;
   padding: 10px 12px;
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #e2e8f0;
+  color: #334155;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   position: relative;
@@ -590,11 +591,11 @@ onMounted(() => {
 
 .history-item:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .history-item.active {
-  background: rgba(59, 130, 246, 0.25);
+  background: rgba(64, 158, 255, 0.12);
 }
 
 .history-text {
@@ -618,8 +619,8 @@ onMounted(() => {
   height: 26px;
   border-radius: 8px;
   border: none;
-  background: rgba(148, 163, 184, 0.15);
-  color: #e2e8f0;
+  background: #e2e8f0;
+  color: #475569;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -638,13 +639,14 @@ onMounted(() => {
 
 .chat-panel {
   position: relative;
-  background: rgba(248, 250, 252, 0.04);
-  border-radius: 18px;
+  background: #ffffff;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   padding: 12px;
   min-height: 0;
   overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .chat-messages {
@@ -702,14 +704,14 @@ onMounted(() => {
 
 .bubble-role {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   margin-bottom: 6px;
 }
 
 .bubble-content {
   font-size: 14px;
   line-height: 1.7;
-  color: #0f172a;
+  color: #1f2937;
   white-space: pre-wrap;
 }
 
@@ -764,7 +766,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #cbd5f5;
+  color: #64748b;
   font-size: 13px;
   padding: 6px 8px;
 }
@@ -773,8 +775,8 @@ onMounted(() => {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 2px solid #cbd5f5;
-  border-top-color: #6366f1;
+  border: 2px solid #cbd5e1;
+  border-top-color: #409EFF;
   animation: spin 1s linear infinite;
 }
 
@@ -785,8 +787,8 @@ onMounted(() => {
 }
 
 .chat-input-card {
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.15);
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   border-radius: 16px;
   border: none;
 }
@@ -803,19 +805,19 @@ onMounted(() => {
 .history-mask {
   position: absolute;
   inset: 0;
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(15, 23, 42, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 18px;
+  border-radius: 16px;
 }
 
 .history-mask-card {
   padding: 12px 20px;
   border-radius: 12px;
-  background: rgba(15, 23, 42, 0.8);
-  color: #e2e8f0;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.4);
+  background: #ffffff;
+  color: #1f2937;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .sql-drawer {
@@ -833,7 +835,7 @@ onMounted(() => {
 }
 
 .sql-block {
-  background: #0f172a;
+  background: #111827;
   color: #e2e8f0;
   padding: 14px;
   border-radius: 12px;
