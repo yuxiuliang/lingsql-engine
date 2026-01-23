@@ -1,0 +1,94 @@
+import {request} from '@/utils/request';
+
+/**
+ * 模型健康视图定义。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+export interface ModelHealthView {
+  id: number;
+  providerName: string;
+  modelName: string;
+  baseUrl: string;
+  isActive: number;
+  autoRecover: number;
+  weight: number;
+  priority: number;
+  cooldownSeconds: number;
+  fuseTime?: string;
+  fuseReason?: string;
+  failureCount: number;
+  fused: boolean;
+  lastFailReason?: string;
+  lastFailTime?: string;
+  lastCostMs?: number;
+}
+
+/**
+ * 手动同步租户元数据。
+ *
+ * @param tenantId 租户标识
+ * @return 执行结果
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+export const syncTenantSchema = async (tenantId: string): Promise<string> => {
+  return request<string>(`/api/v1/admin/sync-schema/${encodeURIComponent(tenantId)}`, {
+    method: 'POST'
+  });
+};
+
+/**
+ * 刷新租户语义字典缓存。
+ *
+ * @param tenantId 租户标识
+ * @return 执行结果
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+export const refreshTenantSemantic = async (tenantId: string): Promise<string> => {
+  return request<string>(`/api/v1/admin/refresh-semantic/${encodeURIComponent(tenantId)}`, {
+    method: 'POST'
+  });
+};
+
+/**
+ * 查询模型健康状态。
+ *
+ * @return 模型健康列表
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+export const fetchModelHealth = async (): Promise<ModelHealthView[]> => {
+  return request<ModelHealthView[]>('/api/v1/admin/model/health');
+};
+
+/**
+ * 启用模型。
+ *
+ * @param modelId 模型ID
+ * @return 执行结果
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+export const enableModel = async (modelId: number): Promise<string> => {
+  return request<string>(`/api/v1/admin/model/enable/${modelId}`, {
+    method: 'POST'
+  });
+};
+
+/**
+ * 禁用模型。
+ *
+ * @param modelId 模型ID
+ * @return 执行结果
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+export const disableModel = async (modelId: number): Promise<string> => {
+  return request<string>(`/api/v1/admin/model/disable/${modelId}`, {
+    method: 'POST'
+  });
+};
+

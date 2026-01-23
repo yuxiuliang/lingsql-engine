@@ -76,7 +76,8 @@ router.beforeEach((to, from, next) => {
 
     // 如果没有登录，跳转到相应页面
     const token = localStorage.getItem('token');
-    if (!token && to.path !== '/login') {
+    const tenantId = localStorage.getItem('tenantId');
+    if ((!token || !tenantId) && to.path !== '/login') {
         next('/login');
         return;
     }

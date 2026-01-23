@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import {ref} from 'vue';
 import {useRouter} from 'vue-router';
-import {ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
 
 /**
@@ -17,7 +15,6 @@ interface MenuItem {
 
 const router = useRouter();
 const authStore = useAuthStore();
-const tenantId = ref(authStore.tenantId);
 
 const menus: MenuItem[] = [
   {path: '/chat', title: 'AI 语数对话'},
@@ -26,21 +23,6 @@ const menus: MenuItem[] = [
   {path: '/lexicon', title: '语义字典'},
   {path: '/join-rule', title: 'Join 规则'}
 ];
-
-/**
- * 保存租户标识并写入缓存。
- *
- * @author 余炘洋
- * @date 2026-01-23
- */
-const handleTenantSave = () => {
-  if (!tenantId.value) {
-    ElMessage.warning('请输入租户ID');
-    return;
-  }
-  authStore.updateTenant(tenantId.value.trim());
-  ElMessage.success('租户ID已更新');
-};
 
 /**
  * 执行退出登录操作。
@@ -81,8 +63,7 @@ const handleLogout = () => {
         </div>
         <div class="header-right">
           <span class="user-name">{{ authStore.username || '未命名用户' }}</span>
-          <el-input v-model="tenantId" placeholder="租户ID" size="small" class="tenant-input"/>
-          <el-button size="small" type="primary" @click="handleTenantSave">保存</el-button>
+          <el-tag class="tenant-tag" type="info" effect="light">当前租户：{{ authStore.tenantId || '未设置' }}</el-tag>
           <el-button size="small" @click="handleLogout">退出登录</el-button>
         </div>
       </el-header>
@@ -151,8 +132,10 @@ const handleLogout = () => {
   color: #374151;
 }
 
-.tenant-input {
-  width: 180px;
+.tenant-tag {
+  border: none;
+  color: #475569;
+  background: rgba(226, 232, 240, 0.7);
 }
 
 .layout-main {

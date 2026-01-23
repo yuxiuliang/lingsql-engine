@@ -2,8 +2,8 @@ import {createApp} from 'vue';
 import ElementPlus from 'element-plus';
 import 'element-plus/dist/index.css';
 import router from './router'
-import {createPinia} from 'pinia'
 import App from './App.vue';
+import {pinia} from './store';
 
 /**
  * Vue应用入口，挂载Element Plus并渲染根组件。
@@ -12,6 +12,6 @@ import App from './App.vue';
  */
 createApp(App)
     .use(ElementPlus, {size: 'default'})
-    .use(createPinia())
+    .use(pinia)
     .use(router)
     .mount('#app');
