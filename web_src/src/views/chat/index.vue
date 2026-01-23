@@ -499,7 +499,7 @@ onMounted(() => {
           <el-input
             v-model="question"
             type="textarea"
-            :autosize="{minRows: 2, maxRows: 6}"
+            :autosize="{minRows: 6, maxRows: 10}"
             :maxlength="maxQuestionLength"
             show-word-limit
             :placeholder="questionPlaceholder"
