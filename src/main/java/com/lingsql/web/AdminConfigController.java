@@ -9,6 +9,7 @@ import com.lingsql.schema.entity.JoinRule;
 import com.lingsql.schema.entity.SemanticLexiconItem;
 import com.lingsql.schema.repository.JoinRuleRepository;
 import com.lingsql.schema.repository.SemanticLexiconRepository;
+import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.sql.Connection;
+import java.sql.DriverManager;
 
 /**
  * 配置管理接口，提供租户、模型、语义字典与 Join 规则的管理能力。
@@ -63,6 +66,31 @@ public class AdminConfigController {
         request.setId(null);
         request.setTenantId(normalizeTenantId(request.getTenantId()));
         return ApiResponse.success(tenantDbConfigRepository.save(request));
+    }
+
+    /**
+     * 测试租户数据库连接。
+     *
+     * @param request 租户配置
+     * @return 测试结果
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    @PostMapping("/tenant/test-connection")
+    public ApiResponse<String> testTenantConnection(@RequestBody TenantDbConfig request) {
+        String driverClass = request.getDriverClass();
+        String url = request.getJdbcUrl();
+        if (driverClass == null || driverClass.isBlank()) {
+            driverClass = "com.mysql.cj.jdbc.Driver";
+        }
+        try {
+            Class.forName(driverClass);
+            try (Connection ignored = DriverManager.getConnection(url, request.getUsername(), request.getPassword())) {
+                return ApiResponse.success("连接成功");
+            }
+        } catch (Exception ex) {
+            return ApiResponse.error("连接失败: " + ex.getMessage());
+        }
     }
 
     /**
@@ -193,6 +221,7 @@ public class AdminConfigController {
      */
     @PostMapping("/semantic")
     public ApiResponse<SemanticLexiconItem> createSemantic(@RequestBody SemanticLexiconItem request) {
+        validateSemanticMapping(request.getMapping());
         request.setId(null);
         request.setTenantId(normalizeTenantId(request.getTenantId()));
         request.setCreateTime(LocalDateTime.now());
@@ -211,6 +240,7 @@ public class AdminConfigController {
      */
     @PutMapping("/semantic/{id}")
     public ApiResponse<SemanticLexiconItem> updateSemantic(@PathVariable Long id, @RequestBody SemanticLexiconItem request) {
+        validateSemanticMapping(request.getMapping());
         SemanticLexiconItem item = semanticLexiconRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("语义字典不存在"));
         item.setTenantId(normalizeTenantId(request.getTenantId()));
@@ -316,5 +346,22 @@ public class AdminConfigController {
         }
         return tenantId.trim();
     }
-}
 
+    /**
+     * 校验语义映射表达式语法。
+     *
+     * @param mapping 映射表达式
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    private void validateSemanticMapping(String mapping) {
+        if (mapping == null || mapping.isBlank()) {
+            throw new RuntimeException("映射表达式不能为空");
+        }
+        try {
+            CCJSqlParserUtil.parse("SELECT " + mapping + " FROM dual");
+        } catch (Exception ex) {
+            throw new RuntimeException("映射表达式语法错误: " + ex.getMessage());
+        }
+    }
+}

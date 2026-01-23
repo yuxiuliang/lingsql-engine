@@ -126,4 +126,21 @@ public class AdminController {
                 .toList();
         return ApiResponse.success(views);
     }
+
+    /**
+     * 获取缓存中的 Schema 信息。
+     *
+     * @param tenantId 租户标识
+     * @return 表结构列表
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    @GetMapping("/schema/{tenantId}")
+    public ApiResponse<List<TableInfo>> getSchema(@PathVariable String tenantId) {
+        List<TableInfo> tables = cacheService.getCachedSchema(tenantId);
+        if (tables == null) {
+            tables = List.of();
+        }
+        return ApiResponse.success(tables);
+    }
 }

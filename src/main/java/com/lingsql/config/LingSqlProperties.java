@@ -76,6 +76,14 @@ public class LingSqlProperties {
          * @date 2026-01-22
          */
         private Duration semanticTtl = Duration.ofHours(6);
+
+        /**
+         * 聊天历史缓存 TTL。
+         *
+         * @author 余炘洋
+         * @date 2026-01-23
+         */
+        private Duration chatHistoryTtl = Duration.ofMinutes(30);
     }
 
     /**

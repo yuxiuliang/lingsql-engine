@@ -39,4 +39,12 @@ public class ChatResult {
      * @date 2026-01-22
      */
     private String sql;
+
+    /**
+     * 历史记录ID。
+     *
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    private Long historyId;
 }
