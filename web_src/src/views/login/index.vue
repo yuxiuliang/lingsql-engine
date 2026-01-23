@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {onMounted, reactive, ref} from 'vue';
 import {useRouter} from 'vue-router';
-import {ElMessage, ElLoading} from 'element-plus';
+import {ElLoading, ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
 import {fetchMenus, login as loginApi} from '@/api/auth';
 
@@ -309,11 +309,11 @@ onMounted(() => {
           </div>
           <div class="card-right">
             <el-form label-position="top">
-              <el-form-item label="用户名">
-                <el-input v-model="form.username" placeholder="请输入用户名" class="form-input"/>
-              </el-form-item>
               <el-form-item label="租户ID">
                 <el-input v-model="form.tenantId" placeholder="请输入租户ID" class="form-input"/>
+              </el-form-item>
+              <el-form-item label="用户名">
+                <el-input v-model="form.username" placeholder="请输入用户名" class="form-input"/>
               </el-form-item>
               <el-form-item label="密码">
                 <el-input v-model="form.password" placeholder="请输入密码" show-password class="form-input"/>
