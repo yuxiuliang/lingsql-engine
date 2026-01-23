@@ -86,6 +86,24 @@ const resolveIconType = (icon?: string): string => {
   if (['chat', 'tenant', 'metadata', 'lexicon', 'join', 'model'].includes(normalized)) {
     return normalized;
   }
+  if (['history'].includes(normalized)) {
+    return 'chat';
+  }
+  if (['database', 'user', 'officebuilding'].includes(normalized)) {
+    return 'tenant';
+  }
+  if (['table', 'notebook'].includes(normalized)) {
+    return 'metadata';
+  }
+  if (['dictionary', 'collection'].includes(normalized)) {
+    return 'lexicon';
+  }
+  if (['link', 'share'].includes(normalized)) {
+    return 'join';
+  }
+  if (['setting', 'cpu'].includes(normalized)) {
+    return 'model';
+  }
   return 'default';
 };
 
@@ -176,6 +194,31 @@ onMounted(loadMenus);
               :index="child.path || ''"
               :title="child.menuName"
             >
+              <el-icon class="menu-icon">
+                <svg v-if="resolveIconType(child.icon) === 'chat'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 5h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"
+                  />
+                </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'tenant'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 10l8-6 8 6v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'metadata'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 4h16v4H4V4zm0 6h16v10H4V10zm4 3h8v2H8v-2z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'lexicon'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 4h12a2 2 0 0 1 2 2v12l-4-2-4 2-4-2-4 2V6a2 2 0 0 1 2-2z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'join'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 7a4 4 0 0 1 4-4h2v2h-2a2 2 0 0 0-2 2v2H7V7zm8 0a2 2 0 0 0-2-2h-2V3h2a4 4 0 0 1 4 4v2h-2V7zM7 15h2v2a2 2 0 0 0 2 2h2v2h-2a4 4 0 0 1-4-4v-2zm10 0v2a4 4 0 0 1-4 4h-2v-2h2a2 2 0 0 0 2-2v-2h2z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'model'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
+                </svg>
+                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
+                </svg>
+              </el-icon>
               <span class="menu-label">{{ child.menuName }}</span>
             </el-menu-item>
           </el-sub-menu>
