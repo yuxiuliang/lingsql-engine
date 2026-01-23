@@ -5,8 +5,8 @@
 -- 租户与账号配置（请按实际修改）
 SET @tenant_id = '1';
 SET @admin_username = 'admin';
-SET @experience_username = 'experience';
--- 密码需使用 BCrypt 加密后写入
+SET @experience_username = '测试';
+-- 密码需使用 BCrypt 加密后写入  ***REDACTED-SECRET***
 SET @password_hash = '{BCryptHashHere}';
 
 -- 权限初始化
