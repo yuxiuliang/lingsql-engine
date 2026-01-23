@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {nextTick, onMounted, ref, watch} from 'vue';
+import {computed, nextTick, onMounted, ref, watch} from 'vue';
 import {ElMessage, ElMessageBox} from 'element-plus';
 import {
   askQuestion,
@@ -11,6 +11,7 @@ import {
   fetchChatHistoryDetail,
   renameChatHistory
 } from '@/api/chat';
+import {fetchChatRuntimeConfig} from '@/api/config';
 import {useChatStore} from '@/store/chat';
 
 /**
@@ -40,6 +41,48 @@ const activeHistoryId = ref<number | null>(null);
 const historyKeyword = ref(chatStore.keyword || '');
 const historyPage = ref(chatStore.page || 1);
 const historySize = ref(chatStore.size || 10);
+
+/**
+ * 问题最大长度。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const resolveMaxQuestionLength = () => {
+  const rawValue = Number(import.meta.env.VITE_CHAT_MAX_QUESTION_LENGTH);
+  if (Number.isFinite(rawValue) && rawValue > 0) {
+    return Math.floor(rawValue);
+  }
+  return 2000;
+};
+const maxQuestionLength = ref(resolveMaxQuestionLength());
+
+/**
+ * 问题输入提示文案。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const questionPlaceholder = computed(() => {
+  return `请输入你的问题，回车发送，Shift+Enter 换行（最多${maxQuestionLength.value}字）`;
+});
+
+/**
+ * 加载聊天运行时配置。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const loadChatRuntimeConfig = async () => {
+  try {
+    const config = await fetchChatRuntimeConfig();
+    if (config?.maxQuestionLength && config.maxQuestionLength > 0) {
+      maxQuestionLength.value = config.maxQuestionLength;
+    }
+  } catch (error) {
+    ElMessage.warning('加载输入限制失败，已使用默认配置');
+  }
+};
 
 /**
  * 生成唯一消息ID。
@@ -203,6 +246,10 @@ const handleSend = async () => {
     ElMessage.warning('请输入问题');
     return;
   }
+  if (content.length > maxQuestionLength.value) {
+    ElMessage.warning(`问题长度不能超过${maxQuestionLength.value}字`);
+    return;
+  }
   messages.value.push({id: nextMessageId(), role: 'user', content});
   question.value = '';
   loading.value = true;
@@ -344,6 +391,7 @@ watch(
 
 onMounted(() => {
   loadHistory();
+  loadChatRuntimeConfig();
 });
 </script>
 
@@ -452,7 +500,9 @@ onMounted(() => {
             v-model="question"
             type="textarea"
             :autosize="{minRows: 2, maxRows: 6}"
-            placeholder="请输入你的问题，回车发送，Shift+Enter 换行"
+            :maxlength="maxQuestionLength"
+            show-word-limit
+            :placeholder="questionPlaceholder"
             @keydown.enter.exact.prevent="handleSend"
           />
           <div class="chat-input-actions">

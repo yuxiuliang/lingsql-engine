@@ -145,6 +145,23 @@ public class LingSqlProperties {
     }
 
     /**
+     * 聊天配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    @Data
+    public static class Chat {
+        /**
+         * 用户问题最大长度。
+         *
+         * @author 余炘洋
+         * @date 2026-01-23
+         */
+        private int maxQuestionLength = 2000;
+    }
+
+    /**
      * 跨域配置。
      *
      * @author 余炘洋
@@ -240,6 +257,14 @@ public class LingSqlProperties {
      * @date 2026-01-22
      */
     private Model model = new Model();
+
+    /**
+     * 聊天配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    private Chat chat = new Chat();
 
     /**
      * 语义配置已迁移至数据库，不再使用配置文件维护。

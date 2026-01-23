@@ -80,6 +80,16 @@ export interface JoinRuleItem {
 }
 
 /**
+ * 聊天运行时配置定义。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+export interface ChatRuntimeConfig {
+  maxQuestionLength: number;
+}
+
+/**
  * 查询租户配置列表。
  *
  * @return 租户配置列表
@@ -316,4 +326,15 @@ export const deleteJoinRule = async (id: number): Promise<string> => {
   return request<string>(`/api/v1/admin/config/join-rule/${id}`, {
     method: 'DELETE'
   });
+};
+
+/**
+ * 查询聊天运行时配置。
+ *
+ * @return 配置信息
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+export const fetchChatRuntimeConfig = async (): Promise<ChatRuntimeConfig> => {
+  return request<ChatRuntimeConfig>('/api/v1/config/chat');
 };

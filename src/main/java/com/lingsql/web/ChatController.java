@@ -14,6 +14,7 @@ import com.lingsql.web.dto.ChatHistoryUpdateRequest;
 import com.lingsql.web.dto.ChatRequest;
 import com.lingsql.web.dto.ChatResult;
 import lombok.RequiredArgsConstructor;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -50,7 +51,7 @@ public class ChatController {
      * @date 2026-01-22
      */
     @PostMapping("/ask")
-    public ApiResponse<ChatResult> ask(@RequestBody ChatRequest request) {
+    public ApiResponse<ChatResult> ask(@Valid @RequestBody ChatRequest request) {
         String tenantId = TenantContext.getTenantId();
         SqlExecutionResult executionResult;
         try {
