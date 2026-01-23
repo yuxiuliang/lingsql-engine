@@ -46,6 +46,12 @@ const routes: Array<RouteRecordRaw> = [
                 name: 'JoinRule',
                 component: () => import('@/views/join-rule/index.vue'),
                 meta: {title: 'Join 规则', icon: 'Share'}
+            },
+            {
+                path: '/metadata',
+                name: 'Metadata',
+                component: () => import('@/views/metadata/index.vue'),
+                meta: {title: '元数据字典', icon: 'Notebook'}
             }
         ]
     },

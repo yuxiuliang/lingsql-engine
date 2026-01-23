@@ -21,7 +21,8 @@ const menus: MenuItem[] = [
   {path: '/tenant', title: '租户配置'},
   {path: '/model', title: '模型资源池'},
   {path: '/lexicon', title: '语义字典'},
-  {path: '/join-rule', title: 'Join 规则'}
+  {path: '/join-rule', title: 'Join 规则'},
+  {path: '/metadata', title: '元数据字典'}
 ];
 
 /**
