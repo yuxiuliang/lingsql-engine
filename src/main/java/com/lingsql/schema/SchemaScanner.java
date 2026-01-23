@@ -57,6 +57,7 @@ public class SchemaScanner {
                     }
 
                     TableInfo tableInfo = new TableInfo();
+                    tableInfo.setSchemaName(catalog);
                     tableInfo.setTableName(tableName);
 
                     String tableComment = tables.getString("REMARKS");

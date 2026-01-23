@@ -12,6 +12,14 @@ import java.util.List;
  */
 @Data
 public class TableInfo {
+    /**
+     * 数据库名称（catalog）。
+     *
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    private String schemaName;
+
     private String tableName;
     private String tableComment;
     private List<ColumnInfo> columns;

@@ -1,6 +1,7 @@
 package com.lingsql.security;
 
 import com.lingsql.config.LingSqlProperties;
+import com.lingsql.metadata.service.MetadataExtService;
 import com.lingsql.datasource.model.TenantDbConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +30,7 @@ import org.springframework.stereotype.Component;
 public class SqlRewriter {
 
     private final LingSqlProperties properties;
+    private final MetadataExtService metadataExtService;
 
     /**
      * 强制改写 SQL，包含 LIMIT 与逻辑隔离条件。
@@ -51,7 +53,8 @@ public class SqlRewriter {
             injectLimit(plainSelect);
 
             if (config.isLogicalIsolation()) {
-                injectTenantCondition(plainSelect, config.resolveLogicColumn(), tenantId);
+                String isolationColumn = resolveIsolationColumn(plainSelect, config, tenantId);
+                injectTenantCondition(plainSelect, isolationColumn, tenantId);
             }
 
             return select.toString();
@@ -103,7 +106,7 @@ public class SqlRewriter {
             return;
         }
         EqualsTo equalsTo = new EqualsTo();
-        equalsTo.setLeftExpression(new Column(columnName));
+        equalsTo.setLeftExpression(buildColumn(plainSelect, columnName));
         equalsTo.setRightExpression(new StringValue(tenantId));
         Expression where = plainSelect.getWhere();
         if (where == null) {
@@ -132,6 +135,47 @@ public class SqlRewriter {
         ColumnDetectVisitor visitor = new ColumnDetectVisitor(columnName);
         expression.accept(visitor);
         return visitor.isFound();
+    }
+
+    /**
+     * 解析隔离字段名，表级配置优先。
+     *
+     * @param plainSelect 查询体
+     * @param config      租户配置
+     * @param tenantId    租户标识
+     * @return 隔离字段
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    private String resolveIsolationColumn(PlainSelect plainSelect, TenantDbConfig config, String tenantId) {
+        String defaultColumn = config.resolveLogicColumn();
+        if (plainSelect.getFromItem() == null || plainSelect.getJoins() != null && !plainSelect.getJoins().isEmpty()) {
+            return defaultColumn;
+        }
+        if (plainSelect.getFromItem() instanceof net.sf.jsqlparser.schema.Table table) {
+            String tableName = table.getName();
+            return metadataExtService.resolveIsolationField(tenantId, tableName).orElse(defaultColumn);
+        }
+        return defaultColumn;
+    }
+
+    /**
+     * 构建带别名的列。
+     *
+     * @param plainSelect 查询体
+     * @param columnName  字段名
+     * @return 列对象
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    private Column buildColumn(PlainSelect plainSelect, String columnName) {
+        Column column = new Column(columnName);
+        if (plainSelect.getFromItem() instanceof net.sf.jsqlparser.schema.Table table) {
+            if (table.getAlias() != null && table.getAlias().getName() != null) {
+                column.setTable(new net.sf.jsqlparser.schema.Table(table.getAlias().getName()));
+            }
+        }
+        return column;
     }
 
     /**

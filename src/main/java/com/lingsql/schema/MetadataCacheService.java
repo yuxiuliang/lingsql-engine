@@ -3,6 +3,7 @@ package com.lingsql.schema;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.schema.model.TableInfo;
+import com.lingsql.metadata.service.MetadataExtService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -26,6 +27,7 @@ public class MetadataCacheService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final LingSqlProperties properties;
+    private final MetadataExtService metadataExtService;
 
     private static final String SCHEMA_CACHE_PREFIX = "lingsql:schema:";
     private static final String COMMENT_CACHE_PREFIX = "lingsql:comment:";
@@ -43,8 +45,9 @@ public class MetadataCacheService {
         if (tables == null || tables.isEmpty()) {
             return "当前租户暂无可用表结构。";
         }
+        List<TableInfo> mergedTables = metadataExtService.mergeComments(tenantId, tables);
         StringBuilder sb = new StringBuilder();
-        for (TableInfo table : tables) {
+        for (TableInfo table : mergedTables) {
             sb.append("Table: ").append(table.getTableName())
                     .append(" (").append(normalizeComment(table.getTableComment())).append(")\n");
             sb.append("Columns:\n");
