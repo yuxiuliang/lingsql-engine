@@ -1,5 +1,6 @@
 import {useAuthStore} from '@/store/auth';
 import {pinia} from '@/store';
+import router from '@/router';
 
 /**
  * 统一请求响应结构定义。
@@ -55,9 +56,19 @@ export const request = async <T>(path: string, options: RequestInit = {}): Promi
     headers
   });
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      authStore.logout();
+      await router.push('/login');
+      throw new Error('未登录或无权限');
+    }
     throw new Error(`接口请求失败: ${response.status}`);
   }
   const payload = (await response.json()) as ApiResponse<T>;
+  if (payload.code === 401 || payload.code === 403) {
+    authStore.logout();
+    await router.push('/login');
+    throw new Error(payload.message || '未登录或无权限');
+  }
   if (payload.code !== 200) {
     throw new Error(payload.message || '接口返回失败');
   }

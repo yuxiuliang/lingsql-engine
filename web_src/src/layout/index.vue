@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import {computed, ref} from 'vue';
+import {computed, onMounted, ref} from 'vue';
 import {useRouter} from 'vue-router';
 import {useAuthStore} from '@/store/auth';
+import {fetchMenus, logout as logoutApi} from '@/api/auth';
 
 /**
  * 菜单项定义。
@@ -9,21 +10,13 @@ import {useAuthStore} from '@/store/auth';
  * @author 余炘洋
  * @date 2026-01-23
  */
-interface MenuItem {
-  path: string;
-  title: string;
-  icon: 'chat' | 'tenant' | 'metadata' | 'lexicon' | 'join' | 'model';
-}
-
-/**
- * 菜单分组定义。
- *
- * @author 余炘洋
- * @date 2026-01-23
- */
-interface MenuGroup {
-  title: string;
-  items: MenuItem[];
+interface MenuNode {
+  menuCode?: string;
+  menuName?: string;
+  path?: string;
+  icon?: string;
+  sort?: number;
+  children?: MenuNode[];
 }
 
 const router = useRouter();
@@ -37,36 +30,64 @@ const isCollapsed = ref(false);
  * @date 2026-01-23
  */
 const avatarText = computed(() => {
-  const username = authStore.username?.trim();
+  const username = authStore.nickname?.trim() || authStore.username?.trim();
   if (username) {
     return Array.from(username).slice(0, 2).join('');
   }
   return '用户';
 });
 
-const menuGroups: MenuGroup[] = [
-  {
-    title: '核心应用',
-    items: [
-      {path: '/chat', title: 'AI 语数对话', icon: 'chat'}
-    ]
-  },
-  {
-    title: '数据治理',
-    items: [
-      {path: '/tenant', title: '租户配置', icon: 'tenant'},
-      {path: '/metadata', title: '元数据字典', icon: 'metadata'},
-      {path: '/lexicon', title: '语义字典', icon: 'lexicon'},
-      {path: '/join-rule', title: 'Join 规则', icon: 'join'}
-    ]
-  },
-  {
-    title: '系统设置',
-    items: [
-      {path: '/model', title: '模型资源池', icon: 'model'}
-    ]
+const sortMenus = (menus: MenuNode[]): MenuNode[] => {
+  return [...menus]
+    .sort((a, b) => (a?.sort || 0) - (b?.sort || 0))
+    .map((menu) => ({
+      ...menu,
+      children: menu.children ? sortMenus(menu.children) : []
+    }));
+};
+
+const menuTree = computed<MenuNode[]>(() => sortMenus(authStore.menus || []));
+
+/**
+ * 加载菜单数据。
+ *
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const loadMenus = async () => {
+  if (!authStore.token) {
+    return;
   }
-];
+  if (authStore.menus && authStore.menus.length > 0) {
+    return;
+  }
+  try {
+    const menus = await fetchMenus();
+    authStore.setMenus(menus);
+  } catch {
+    authStore.logout();
+    await router.push('/login');
+  }
+};
+
+/**
+ * 解析图标类型。
+ *
+ * @param icon 原始图标
+ * @return 图标类型
+ * @author 余炘洋
+ * @date 2026-01-23
+ */
+const resolveIconType = (icon?: string): string => {
+  if (!icon) {
+    return 'default';
+  }
+  const normalized = icon.trim().toLowerCase();
+  if (['chat', 'tenant', 'metadata', 'lexicon', 'join', 'model'].includes(normalized)) {
+    return normalized;
+  }
+  return 'default';
+};
 
 /**
  * 执行退出登录操作。
@@ -75,8 +96,10 @@ const menuGroups: MenuGroup[] = [
  * @date 2026-01-23
  */
 const handleLogout = () => {
-  authStore.logout();
-  router.push('/login');
+  logoutApi().catch(() => null).finally(() => {
+    authStore.logout();
+    router.push('/login');
+  });
 };
 
 /**
@@ -88,6 +111,8 @@ const handleLogout = () => {
 const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value;
 };
+
+onMounted(loadMenus);
 </script>
 
 <template>
@@ -115,39 +140,79 @@ const toggleCollapse = () => {
         :collapse="isCollapsed"
         :collapse-transition="false"
       >
-        <template v-for="group in menuGroups" :key="group.title">
-          <div v-if="!isCollapsed" class="menu-group-title">{{ group.title }}</div>
-          <el-menu-item v-for="item in group.items" :key="item.path" :index="item.path" :title="item.title">
+        <template v-for="menu in menuTree" :key="menu.menuCode || menu.path">
+          <el-sub-menu v-if="menu.children && menu.children.length" :index="menu.path || menu.menuCode || ''">
+            <template #title>
+              <el-icon class="menu-icon">
+                <svg v-if="resolveIconType(menu.icon) === 'chat'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 5h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"
+                  />
+                </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'tenant'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 10l8-6 8 6v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'metadata'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 4h16v4H4V4zm0 6h16v10H4V10zm4 3h8v2H8v-2z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'lexicon'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 4h12a2 2 0 0 1 2 2v12l-4-2-4 2-4-2-4 2V6a2 2 0 0 1 2-2z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'join'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 7a4 4 0 0 1 4-4h2v2h-2a2 2 0 0 0-2 2v2H7V7zm8 0a2 2 0 0 0-2-2h-2V3h2a4 4 0 0 1 4 4v2h-2V7zM7 15h2v2a2 2 0 0 0 2 2h2v2h-2a4 4 0 0 1-4-4v-2zm10 0v2a4 4 0 0 1-4 4h-2v-2h2a2 2 0 0 0 2-2v-2h2z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'model'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
+                </svg>
+                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
+                </svg>
+              </el-icon>
+              <span class="menu-label">{{ menu.menuName }}</span>
+            </template>
+            <el-menu-item
+              v-for="child in menu.children"
+              :key="child.menuCode || child.path"
+              :index="child.path || ''"
+              :title="child.menuName"
+            >
+              <span class="menu-label">{{ child.menuName }}</span>
+            </el-menu-item>
+          </el-sub-menu>
+          <el-menu-item v-else :index="menu.path || ''" :title="menu.menuName">
             <el-icon class="menu-icon">
-              <svg v-if="item.icon === 'chat'" viewBox="0 0 24 24" aria-hidden="true">
+              <svg v-if="resolveIconType(menu.icon) === 'chat'" viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M4 5h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"
                 />
               </svg>
-              <svg v-else-if="item.icon === 'tenant'" viewBox="0 0 24 24" aria-hidden="true">
+              <svg v-else-if="resolveIconType(menu.icon) === 'tenant'" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M4 10l8-6 8 6v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9z"/>
               </svg>
-              <svg v-else-if="item.icon === 'metadata'" viewBox="0 0 24 24" aria-hidden="true">
+              <svg v-else-if="resolveIconType(menu.icon) === 'metadata'" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M4 4h16v4H4V4zm0 6h16v10H4V10zm4 3h8v2H8v-2z"/>
               </svg>
-              <svg v-else-if="item.icon === 'lexicon'" viewBox="0 0 24 24" aria-hidden="true">
+              <svg v-else-if="resolveIconType(menu.icon) === 'lexicon'" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M5 4h12a2 2 0 0 1 2 2v12l-4-2-4 2-4-2-4 2V6a2 2 0 0 1 2-2z"/>
               </svg>
-              <svg v-else-if="item.icon === 'join'" viewBox="0 0 24 24" aria-hidden="true">
+              <svg v-else-if="resolveIconType(menu.icon) === 'join'" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M7 7a4 4 0 0 1 4-4h2v2h-2a2 2 0 0 0-2 2v2H7V7zm8 0a2 2 0 0 0-2-2h-2V3h2a4 4 0 0 1 4 4v2h-2V7zM7 15h2v2a2 2 0 0 0 2 2h2v2h-2a4 4 0 0 1-4-4v-2zm10 0v2a4 4 0 0 1-4 4h-2v-2h2a2 2 0 0 0 2-2v-2h2z"/>
+              </svg>
+              <svg v-else-if="resolveIconType(menu.icon) === 'model'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
               </svg>
               <svg v-else viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
               </svg>
             </el-icon>
-            <span class="menu-label">{{ item.title }}</span>
+            <span class="menu-label">{{ menu.menuName }}</span>
           </el-menu-item>
         </template>
       </el-menu>
       <div class="sidebar-footer" :class="{collapsed: isCollapsed}">
         <div class="avatar-circle">{{ avatarText }}</div>
         <div v-if="!isCollapsed" class="user-info">
-          <div class="user-name">{{ authStore.username || '未命名用户' }}</div>
+          <div class="user-name">{{ authStore.nickname || authStore.username || '未命名用户' }}</div>
           <div class="user-role">租户：{{ authStore.tenantId || '未设置' }}</div>
         </div>
       </div>
@@ -158,7 +223,7 @@ const toggleCollapse = () => {
           <span class="header-title">管理控制台</span>
         </div>
         <div class="header-right">
-          <span class="user-name">{{ authStore.username || '未命名用户' }}</span>
+          <span class="user-name">{{ authStore.nickname || authStore.username || '未命名用户' }}</span>
           <el-tag class="tenant-tag" type="info" effect="light">当前租户：{{ authStore.tenantId || '未设置' }}</el-tag>
           <el-button size="small" @click="handleLogout">退出登录</el-button>
         </div>

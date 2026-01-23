@@ -3,6 +3,7 @@ import {onMounted, reactive, ref} from 'vue';
 import {useRouter} from 'vue-router';
 import {ElMessage, ElLoading} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
+import {fetchMenus, login as loginApi} from '@/api/auth';
 
 /**
  * 画布背景引用。
@@ -21,7 +22,7 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 const form = reactive({
   username: '',
   tenantId: '',
-  token: ''
+  password: ''
 });
 
 /**
@@ -77,8 +78,8 @@ const handleLogin = async () => {
     ElMessage.warning('请输入租户ID');
     return;
   }
-  if (!form.token.trim()) {
-    ElMessage.warning('请输入令牌');
+  if (!form.password.trim()) {
+    ElMessage.warning('请输入密码');
     return;
   }
   persistRememberTenant();
@@ -88,9 +89,26 @@ const handleLogin = async () => {
     background: 'rgba(15, 23, 42, 0.45)'
   });
   try {
-    authStore.login(form.token.trim(), form.tenantId.trim(), form.username.trim());
+    const response = await loginApi({
+      tenantId: form.tenantId.trim(),
+      username: form.username.trim(),
+      password: form.password.trim()
+    });
+    authStore.login(
+      response.token,
+      response.tenantId,
+      response.username,
+      response.nickname || '',
+      response.roles || [],
+      response.permissions || []
+    );
+    const menus = await fetchMenus();
+    authStore.setMenus(menus);
     ElMessage.success('登录成功');
     await router.push('/chat');
+  } catch (error: any) {
+    authStore.logout();
+    ElMessage.error(error?.message || '登录失败');
   } finally {
     loadingService.close();
   }
@@ -297,8 +315,8 @@ onMounted(() => {
               <el-form-item label="租户ID">
                 <el-input v-model="form.tenantId" placeholder="请输入租户ID" class="form-input"/>
               </el-form-item>
-              <el-form-item label="访问令牌">
-                <el-input v-model="form.token" placeholder="请输入令牌" show-password class="form-input"/>
+              <el-form-item label="密码">
+                <el-input v-model="form.password" placeholder="请输入密码" show-password class="form-input"/>
               </el-form-item>
               <div class="form-options">
                 <el-checkbox v-model="rememberTenant">记住租户 ID</el-checkbox>
