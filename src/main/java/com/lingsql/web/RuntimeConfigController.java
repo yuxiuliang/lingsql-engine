@@ -4,6 +4,7 @@ import com.lingsql.common.result.ApiResponse;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.web.dto.ChatRuntimeConfig;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -29,6 +30,7 @@ public class RuntimeConfigController {
      * @date 2026-01-23
      */
     @GetMapping("/chat")
+    @PreAuthorize("hasAuthority('CONFIG:CHAT:READ')")
     public ApiResponse<ChatRuntimeConfig> chatConfig() {
         int maxLength = lingSqlProperties.getChat().getMaxQuestionLength();
         return ApiResponse.success(new ChatRuntimeConfig(maxLength));

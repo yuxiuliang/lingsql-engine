@@ -1,7 +1,12 @@
 package com.lingsql.context;
 
+import com.lingsql.rbac.security.RbacSecurityUtils;
+import com.lingsql.rbac.security.RbacUserSession;
+import com.lingsql.rbac.security.SecureTenantResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -12,6 +17,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * @author 余炘洋
  * @date 2026-01-22
  */
+@Slf4j
 @Component
 public class TenantInterceptor implements HandlerInterceptor {
 
@@ -27,7 +33,24 @@ public class TenantInterceptor implements HandlerInterceptor {
      */
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        if ("/api/v1/auth/login".equalsIgnoreCase(request.getRequestURI())) {
+            return true;
+        }
         String tenantId = request.getHeader("X-Tenant-Id");
+        RbacUserSession session = RbacSecurityUtils.currentSession();
+        if (session != null) {
+            if (!SecureTenantResolver.isSysAdmin(session)
+                    && StringUtils.hasText(tenantId)
+                    && StringUtils.hasText(session.getTenantId())
+                    && !session.getTenantId().equalsIgnoreCase(tenantId.trim())) {
+                log.warn("越权租户访问拦截: userId={}, username={}, sessionTenantId={}, inputTenantId={}",
+                        session.getUserId(), session.getUsername(), session.getTenantId(), tenantId);
+                throw new AccessDeniedException("无权限访问");
+            }
+            if (!StringUtils.hasText(tenantId)) {
+                tenantId = session.getTenantId();
+            }
+        }
         if (StringUtils.hasText(tenantId)) {
             TenantContext.setTenantId(tenantId);
         }

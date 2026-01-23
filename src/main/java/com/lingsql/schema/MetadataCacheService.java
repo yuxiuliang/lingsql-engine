@@ -2,13 +2,16 @@ package com.lingsql.schema;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.config.LingSqlProperties;
-import com.lingsql.schema.model.TableInfo;
 import com.lingsql.metadata.service.MetadataExtService;
+import com.lingsql.schema.model.TableInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.DigestUtils;
+import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -73,9 +76,13 @@ public class MetadataCacheService {
      */
     public void cacheSchema(String tenantId, List<TableInfo> tables) {
         try {
+            String cacheKey = buildSchemaCacheKey(tenantId);
+            if (cacheKey == null) {
+                return;
+            }
             String json = objectMapper.writeValueAsString(tables);
             redisTemplate.opsForValue().set(
-                    SCHEMA_CACHE_PREFIX + tenantId,
+                    cacheKey,
                     json,
                     properties.getCache().getSchemaTtl().toSeconds(),
                     TimeUnit.SECONDS
@@ -94,7 +101,11 @@ public class MetadataCacheService {
      * @date 2026-01-22
      */
     public List<TableInfo> getCachedSchema(String tenantId) {
-        String json = redisTemplate.opsForValue().get(SCHEMA_CACHE_PREFIX + tenantId);
+        String cacheKey = buildSchemaCacheKey(tenantId);
+        if (cacheKey == null) {
+            return null;
+        }
+        String json = redisTemplate.opsForValue().get(cacheKey);
         if (json == null) {
             return null;
         }
@@ -105,6 +116,22 @@ public class MetadataCacheService {
             log.error("解析缓存 Schema 失败: ", e);
             return Collections.emptyList();
         }
+    }
+
+    /**
+     * 构建 Schema 缓存 Key。
+     *
+     * @param tenantId 租户标识
+     * @return 缓存 Key
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    private String buildSchemaCacheKey(String tenantId) {
+        if (!StringUtils.hasText(tenantId)) {
+            return null;
+        }
+        String safeSuffix = DigestUtils.md5DigestAsHex(tenantId.getBytes(StandardCharsets.UTF_8));
+        return SCHEMA_CACHE_PREFIX + safeSuffix;
     }
 
     /**

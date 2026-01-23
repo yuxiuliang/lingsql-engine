@@ -11,6 +11,7 @@ import com.lingsql.schema.repository.JoinRuleRepository;
 import com.lingsql.schema.repository.SemanticLexiconRepository;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -49,6 +50,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @GetMapping("/tenant")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
     public ApiResponse<List<TenantDbConfig>> listTenants() {
         return ApiResponse.success(tenantDbConfigRepository.findAll());
     }
@@ -62,6 +64,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @PostMapping("/tenant")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
     public ApiResponse<TenantDbConfig> createTenant(@RequestBody TenantDbConfig request) {
         request.setId(null);
         request.setTenantId(normalizeTenantId(request.getTenantId()));
@@ -77,6 +80,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @PostMapping("/tenant/test-connection")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:TEST')")
     public ApiResponse<String> testTenantConnection(@RequestBody TenantDbConfig request) {
         String driverClass = request.getDriverClass();
         String url = request.getJdbcUrl();
@@ -103,6 +107,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @PutMapping("/tenant/{id}")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
     public ApiResponse<TenantDbConfig> updateTenant(@PathVariable Long id, @RequestBody TenantDbConfig request) {
         TenantDbConfig config = tenantDbConfigRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("租户配置不存在"));
@@ -129,6 +134,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @DeleteMapping("/tenant/{id}")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:DELETE')")
     public ApiResponse<String> deleteTenant(@PathVariable Long id) {
         tenantDbConfigRepository.deleteById(id);
         return ApiResponse.success("租户配置已删除");
@@ -142,6 +148,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @GetMapping("/model")
+    @PreAuthorize("hasAuthority('ADMIN:MODEL:READ')")
     public ApiResponse<List<AiModelConfig>> listModels() {
         return ApiResponse.success(aiModelConfigRepository.findAll());
     }
@@ -155,6 +162,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @PostMapping("/model")
+    @PreAuthorize("hasAuthority('ADMIN:MODEL:WRITE')")
     public ApiResponse<AiModelConfig> createModel(@RequestBody AiModelConfig request) {
         request.setId(null);
         return ApiResponse.success(aiModelConfigRepository.save(request));
@@ -170,6 +178,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @PutMapping("/model/{id}")
+    @PreAuthorize("hasAuthority('ADMIN:MODEL:WRITE')")
     public ApiResponse<AiModelConfig> updateModel(@PathVariable Long id, @RequestBody AiModelConfig request) {
         AiModelConfig config = aiModelConfigRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("模型配置不存在"));
@@ -194,6 +203,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @DeleteMapping("/model/{id}")
+    @PreAuthorize("hasAuthority('ADMIN:MODEL:DELETE')")
     public ApiResponse<String> deleteModel(@PathVariable Long id) {
         aiModelConfigRepository.deleteById(id);
         return ApiResponse.success("模型配置已删除");
@@ -207,6 +217,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @GetMapping("/semantic")
+    @PreAuthorize("hasAuthority('ADMIN:SEMANTIC:READ')")
     public ApiResponse<List<SemanticLexiconItem>> listSemantic() {
         return ApiResponse.success(semanticLexiconRepository.findAll());
     }
@@ -220,6 +231,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @PostMapping("/semantic")
+    @PreAuthorize("hasAuthority('ADMIN:SEMANTIC:WRITE')")
     public ApiResponse<SemanticLexiconItem> createSemantic(@RequestBody SemanticLexiconItem request) {
         validateSemanticMapping(request.getMapping());
         request.setId(null);
@@ -239,6 +251,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @PutMapping("/semantic/{id}")
+    @PreAuthorize("hasAuthority('ADMIN:SEMANTIC:WRITE')")
     public ApiResponse<SemanticLexiconItem> updateSemantic(@PathVariable Long id, @RequestBody SemanticLexiconItem request) {
         validateSemanticMapping(request.getMapping());
         SemanticLexiconItem item = semanticLexiconRepository.findById(id)
@@ -261,6 +274,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @DeleteMapping("/semantic/{id}")
+    @PreAuthorize("hasAuthority('ADMIN:SEMANTIC:DELETE')")
     public ApiResponse<String> deleteSemantic(@PathVariable Long id) {
         semanticLexiconRepository.deleteById(id);
         return ApiResponse.success("语义字典已删除");
@@ -274,6 +288,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @GetMapping("/join-rule")
+    @PreAuthorize("hasAuthority('ADMIN:JOIN:READ')")
     public ApiResponse<List<JoinRule>> listJoinRules() {
         return ApiResponse.success(joinRuleRepository.findAll());
     }
@@ -287,6 +302,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @PostMapping("/join-rule")
+    @PreAuthorize("hasAuthority('ADMIN:JOIN:WRITE')")
     public ApiResponse<JoinRule> createJoinRule(@RequestBody JoinRule request) {
         request.setId(null);
         request.setTenantId(normalizeTenantId(request.getTenantId()));
@@ -305,6 +321,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @PutMapping("/join-rule/{id}")
+    @PreAuthorize("hasAuthority('ADMIN:JOIN:WRITE')")
     public ApiResponse<JoinRule> updateJoinRule(@PathVariable Long id, @RequestBody JoinRule request) {
         JoinRule item = joinRuleRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Join 规则不存在"));
@@ -327,6 +344,7 @@ public class AdminConfigController {
      * @date 2026-01-23
      */
     @DeleteMapping("/join-rule/{id}")
+    @PreAuthorize("hasAuthority('ADMIN:JOIN:DELETE')")
     public ApiResponse<String> deleteJoinRule(@PathVariable Long id) {
         joinRuleRepository.deleteById(id);
         return ApiResponse.success("Join 规则已删除");

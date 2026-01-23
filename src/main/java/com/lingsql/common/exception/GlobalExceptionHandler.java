@@ -2,6 +2,8 @@ package com.lingsql.common.exception;
 
 import com.lingsql.common.result.ApiResponse;
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -68,5 +70,31 @@ public class GlobalExceptionHandler {
                 .findFirst()
                 .orElse("参数校验失败");
         return ApiResponse.invalid(message);
+    }
+
+    /**
+     * 处理认证异常。
+     *
+     * @param ex 异常
+     * @return 统一响应
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    @ExceptionHandler(AuthenticationException.class)
+    public ApiResponse<Void> handleAuthenticationException(AuthenticationException ex) {
+        return ApiResponse.unauthorized("未登录或登录已过期");
+    }
+
+    /**
+     * 处理权限异常。
+     *
+     * @param ex 异常
+     * @return 统一响应
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ApiResponse<Void> handleAccessDeniedException(AccessDeniedException ex) {
+        return ApiResponse.forbidden("无权限访问");
     }
 }

@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 /**
  * 问答接口控制器。
@@ -51,6 +52,7 @@ public class ChatController {
      * @date 2026-01-22
      */
     @PostMapping("/ask")
+    @PreAuthorize("hasAuthority('API:CHAT:ASK')")
     public ApiResponse<ChatResult> ask(@Valid @RequestBody ChatRequest request) {
         String tenantId = TenantContext.getTenantId();
         SqlExecutionResult executionResult;
@@ -80,6 +82,7 @@ public class ChatController {
      * @date 2026-01-23
      */
     @GetMapping("/history")
+    @PreAuthorize("hasAuthority('API:CHAT:HISTORY:READ')")
     public ApiResponse<PageResult<ChatHistoryView>> history(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size,
@@ -98,6 +101,7 @@ public class ChatController {
      * @date 2026-01-23
      */
     @GetMapping("/history/{id}")
+    @PreAuthorize("hasAuthority('API:CHAT:HISTORY:READ')")
     public ApiResponse<ChatHistoryDetailView> historyDetail(@PathVariable Long id) {
         String tenantId = TenantContext.getTenantId();
         return ApiResponse.success(chatHistoryService.getHistoryDetail(tenantId, id));
@@ -113,6 +117,7 @@ public class ChatController {
      * @date 2026-01-23
      */
     @PutMapping("/history/{id}")
+    @PreAuthorize("hasAuthority('API:CHAT:HISTORY:WRITE')")
     public ApiResponse<ChatHistoryView> renameHistory(@PathVariable Long id, @RequestBody ChatHistoryUpdateRequest request) {
         String tenantId = TenantContext.getTenantId();
         return ApiResponse.success(chatHistoryService.renameHistory(tenantId, id, request.getQuestion()));
@@ -127,6 +132,7 @@ public class ChatController {
      * @date 2026-01-23
      */
     @DeleteMapping("/history/{id}")
+    @PreAuthorize("hasAuthority('API:CHAT:HISTORY:WRITE')")
     public ApiResponse<String> deleteHistory(@PathVariable Long id) {
         String tenantId = TenantContext.getTenantId();
         chatHistoryService.deleteHistory(tenantId, id);

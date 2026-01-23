@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import javax.sql.DataSource;
 import java.time.LocalDateTime;
@@ -32,7 +33,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/admin")
 @RequiredArgsConstructor
-public class AdminController {
+public class AdminController extends BaseController {
 
     private final TenantDbConfigRepository repository;
     private final DataSourceManager dataSourceManager;
@@ -51,19 +52,21 @@ public class AdminController {
      * @date 2026-01-22
      */
     @PostMapping("/sync-schema/{tenantId}")
+    @PreAuthorize("hasAuthority('ADMIN:SCHEMA:SYNC')")
     public ApiResponse<String> syncSchema(@PathVariable String tenantId) {
-        TenantDbConfig config = repository.findByTenantId(tenantId)
+        String resolvedTenantId = resolveSecureTenantId(tenantId);
+        TenantDbConfig config = repository.findByTenantId(resolvedTenantId)
                 .orElseThrow(() -> new RuntimeException("租户不存在"));
 
-        DataSource ds = dataSourceManager.getDataSource(tenantId);
-        List<TableInfo> tables = schemaScanner.scanSchema(tenantId, ds, config.getWhiteListTables());
-        cacheService.cacheSchema(tenantId, tables);
+        DataSource ds = dataSourceManager.getDataSource(resolvedTenantId);
+        List<TableInfo> tables = schemaScanner.scanSchema(resolvedTenantId, ds, config.getWhiteListTables());
+        cacheService.cacheSchema(resolvedTenantId, tables);
 
         config.setSchemaSyncStatus(1);
         config.setLastSyncTime(LocalDateTime.now());
         repository.save(config);
 
-        return ApiResponse.success("租户 [" + tenantId + "] 元数据同步完成，共扫描 " + tables.size() + " 张表");
+        return ApiResponse.success("租户 [" + resolvedTenantId + "] 元数据同步完成，共扫描 " + tables.size() + " 张表");
     }
 
     /**
@@ -75,9 +78,11 @@ public class AdminController {
      * @date 2026-01-22
      */
     @PostMapping("/refresh-semantic/{tenantId}")
+    @PreAuthorize("hasAuthority('ADMIN:SEMANTIC:REFRESH')")
     public ApiResponse<String> refreshSemantic(@PathVariable String tenantId) {
-        semanticConfigService.clearCache(tenantId);
-        return ApiResponse.success("租户 [" + tenantId + "] 语义字典与 Join 规则缓存已清理");
+        String resolvedTenantId = resolveSecureTenantId(tenantId);
+        semanticConfigService.clearCache(resolvedTenantId);
+        return ApiResponse.success("租户 [" + resolvedTenantId + "] 语义字典与 Join 规则缓存已清理");
     }
 
     /**
@@ -89,6 +94,7 @@ public class AdminController {
      * @date 2026-01-22
      */
     @PostMapping("/model/enable/{modelId}")
+    @PreAuthorize("hasAuthority('ADMIN:MODEL:ENABLE')")
     public ApiResponse<String> enableModel(@PathVariable Long modelId) {
         modelHealthService.enableModel(modelId);
         return ApiResponse.success("模型 [" + modelId + "] 已启用");
@@ -103,6 +109,7 @@ public class AdminController {
      * @date 2026-01-22
      */
     @PostMapping("/model/disable/{modelId}")
+    @PreAuthorize("hasAuthority('ADMIN:MODEL:DISABLE')")
     public ApiResponse<String> disableModel(@PathVariable Long modelId) {
         modelHealthService.disableModel(modelId);
         return ApiResponse.success("模型 [" + modelId + "] 已禁用");
@@ -116,6 +123,7 @@ public class AdminController {
      * @date 2026-01-22
      */
     @GetMapping("/model/health")
+    @PreAuthorize("hasAuthority('ADMIN:MODEL:HEALTH')")
     public ApiResponse<List<ModelHealthView>> listModelHealth() {
         List<AiModelConfig> models = modelConfigRepository.findAll();
         List<ModelHealthView> views = models.stream()
@@ -136,8 +144,10 @@ public class AdminController {
      * @date 2026-01-23
      */
     @GetMapping("/schema/{tenantId}")
+    @PreAuthorize("hasAuthority('ADMIN:SCHEMA:VIEW')")
     public ApiResponse<List<TableInfo>> getSchema(@PathVariable String tenantId) {
-        List<TableInfo> tables = cacheService.getCachedSchema(tenantId);
+        String resolvedTenantId = resolveSecureTenantId(tenantId);
+        List<TableInfo> tables = cacheService.getCachedSchema(resolvedTenantId);
         if (tables == null) {
             tables = List.of();
         }

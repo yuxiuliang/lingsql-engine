@@ -26,6 +26,30 @@ public class ApiResponse<T> {
         return new ApiResponse<>(400, msg, null);
     }
 
+    /**
+     * 未授权响应。
+     *
+     * @param msg 错误信息
+     * @return 响应体
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    public static <T> ApiResponse<T> unauthorized(String msg) {
+        return new ApiResponse<>(401, msg, null);
+    }
+
+    /**
+     * 无权限响应。
+     *
+     * @param msg 错误信息
+     * @return 响应体
+     * @author 余炘洋
+     * @date 2026-01-23
+     */
+    public static <T> ApiResponse<T> forbidden(String msg) {
+        return new ApiResponse<>(403, msg, null);
+    }
+
     public static <T> ApiResponse<T> error(String msg) {
         return new ApiResponse<>(500, msg, null);
     }
