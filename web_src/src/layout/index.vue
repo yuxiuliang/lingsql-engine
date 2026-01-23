@@ -141,5 +141,8 @@ const handleLogout = () => {
 
 .layout-main {
   padding: 20px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 </style>

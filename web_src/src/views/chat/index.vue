@@ -479,13 +479,15 @@ onMounted(() => {
 
 <style scoped>
 .chat-shell {
-  height: calc(100vh - 120px);
+  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-columns: 260px 1fr;
   gap: 16px;
   padding: 14px;
   background: radial-gradient(circle at top, #111827, #0f172a 60%);
   border-radius: 18px;
+  overflow: hidden;
 }
 
 .history-panel {
@@ -496,6 +498,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
 }
 
 .history-header {
@@ -551,6 +554,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 10px;
   padding-right: 4px;
+  min-height: 0;
 }
 
 .history-pagination {
@@ -639,6 +643,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   padding: 12px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .chat-messages {
@@ -648,6 +654,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
 }
 
 .bubble-row {

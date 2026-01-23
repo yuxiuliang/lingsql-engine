@@ -11,3 +11,4 @@ target/
 **/.env.development
 **/.env.production
 /src/main/resources/static/admin/
+**/dist/
