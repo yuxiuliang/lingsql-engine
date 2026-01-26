@@ -5,6 +5,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -25,6 +26,16 @@ public interface RbacUserRepository extends JpaRepository<RbacUser, Long> {
      * @date 2026-01-23
      */
     Optional<RbacUser> findByTenantIdAndUsername(String tenantId, String username);
+
+    /**
+     * 按账号查询最多两条用户，用于判断账号唯一性。
+     *
+     * @param username 账号
+     * @return 用户列表
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    List<RbacUser> findTop2ByUsername(String username);
 
     /**
      * 按租户与关键词分页查询用户。

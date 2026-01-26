@@ -73,8 +73,7 @@ public class AuthService {
     public LoginResponse login(LoginRequest request) {
         String tenantId = request.getTenantId() == null ? null : request.getTenantId().trim();
         String username = request.getUsername() == null ? null : request.getUsername().trim();
-        RbacUser user = userRepository.findByTenantIdAndUsername(tenantId, username)
-                .orElseThrow(() -> new RuntimeException("账号或密码错误"));
+        RbacUser user = resolveLoginUser(tenantId, username);
         if (user.getStatus() != null && user.getStatus() == 0) {
             throw new RuntimeException("账号已停用");
         }
@@ -124,6 +123,30 @@ public class AuthService {
         userRepository.save(user);
 
         return buildLoginResponse(session, token, tokenService.getExpireSeconds());
+    }
+
+    /**
+     * 解析登录用户，支持租户ID为空时按账号唯一识别。
+     *
+     * @param tenantId 租户ID
+     * @param username 账号
+     * @return 用户信息
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    private RbacUser resolveLoginUser(String tenantId, String username) {
+        if (StringUtils.hasText(tenantId)) {
+            return userRepository.findByTenantIdAndUsername(tenantId, username)
+                    .orElseThrow(() -> new RuntimeException("账号或密码错误"));
+        }
+        List<RbacUser> candidates = userRepository.findTop2ByUsername(username);
+        if (CollectionUtils.isEmpty(candidates)) {
+            throw new RuntimeException("账号或密码错误");
+        }
+        if (candidates.size() > 1) {
+            throw new RuntimeException("账号存在于多个租户，请联系管理员");
+        }
+        return candidates.get(0);
     }
 
     /**

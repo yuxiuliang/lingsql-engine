@@ -28,7 +28,13 @@ export interface TenantView {
  * @date 2026-01-26
  */
 export interface TenantCreateRequest {
-  tenantId: string;
+  /**
+   * 租户ID（由系统自动生成）。
+   *
+   * @author 余炘洋
+   * @date 2026-01-26
+   */
+  tenantId?: string;
   tenantName: string;
   status?: number;
   remark?: string;

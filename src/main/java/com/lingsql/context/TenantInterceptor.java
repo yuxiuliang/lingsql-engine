@@ -11,6 +11,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+
 /**
  * 租户拦截器，负责从请求头解析租户 ID 并写入 ThreadLocal。
  *
@@ -36,7 +39,7 @@ public class TenantInterceptor implements HandlerInterceptor {
         if ("/api/v1/auth/login".equalsIgnoreCase(request.getRequestURI())) {
             return true;
         }
-        String tenantId = request.getHeader("X-Tenant-Id");
+        String tenantId = decodeTenantId(request.getHeader("X-Tenant-Id"));
         RbacUserSession session = RbacSecurityUtils.currentSession();
         if (session == null || session.getUserId() == null) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -59,6 +62,29 @@ public class TenantInterceptor implements HandlerInterceptor {
             TenantContext.setSessionInfo(new SessionInfo(tenantId, session.getUserId()));
         }
         return true;
+    }
+
+    /**
+     * 解码租户请求头，兼容 URL 编码场景。
+     *
+     * @param tenantId 租户请求头
+     * @return 解码后的租户ID
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    private String decodeTenantId(String tenantId) {
+        if (!StringUtils.hasText(tenantId)) {
+            return tenantId;
+        }
+        if (!tenantId.contains("%")) {
+            return tenantId;
+        }
+        try {
+            return URLDecoder.decode(tenantId, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            log.warn("租户请求头解码失败: {}", tenantId, ex);
+            return tenantId;
+        }
     }
 
     /**

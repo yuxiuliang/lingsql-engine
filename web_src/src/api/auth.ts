@@ -7,7 +7,13 @@ import {request} from '@/utils/request';
  * @date 2026-01-23
  */
 export interface LoginRequest {
-  tenantId: string;
+  /**
+   * 租户ID（可选，账号唯一时自动识别）。
+   *
+   * @author 余炘洋
+   * @date 2026-01-26
+   */
+  tenantId?: string;
   username: string;
   password: string;
 }

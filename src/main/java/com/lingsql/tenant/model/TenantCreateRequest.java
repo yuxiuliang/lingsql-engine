@@ -12,7 +12,7 @@ import lombok.Data;
 public class TenantCreateRequest {
 
     /**
-     * 租户ID。
+     * 租户ID（由系统自动生成）。
      *
      * @author 余炘洋
      * @date 2026-01-26

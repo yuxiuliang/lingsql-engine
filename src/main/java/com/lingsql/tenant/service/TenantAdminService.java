@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 租户管理服务。
@@ -95,16 +96,10 @@ public class TenantAdminService {
             throw new RuntimeException("租户信息不能为空");
         }
         String tenantId = normalizeTenantId(request.getTenantId());
-        if (!StringUtils.hasText(tenantId)) {
-            throw new RuntimeException("租户ID不能为空");
-        }
         if (!StringUtils.hasText(request.getTenantName())) {
             throw new RuntimeException("租户名称不能为空");
         }
-        if (tenantRepository.existsByTenantIdAndIsDeleted(tenantId, NOT_DELETED)
-                || tenantRepository.existsByTenantIdAndIsDeleted(tenantId, DELETED)) {
-            throw new RuntimeException("租户ID已存在");
-        }
+        tenantId = resolveTenantIdForCreate(tenantId);
         TenantInfo tenant = new TenantInfo();
         tenant.setTenantId(tenantId);
         tenant.setTenantName(request.getTenantName().trim());
@@ -121,6 +116,48 @@ public class TenantAdminService {
         TenantInfo saved = tenantRepository.save(tenant);
         initializeTenant(saved, request);
         return toView(saved);
+    }
+
+    /**
+     * 创建租户时解析租户ID，支持系统自动生成。
+     *
+     * @param tenantId 输入租户ID
+     * @return 可用租户ID
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    private String resolveTenantIdForCreate(String tenantId) {
+        if (StringUtils.hasText(tenantId)) {
+            if (tenantRepository.existsByTenantIdAndIsDeleted(tenantId, NOT_DELETED)
+                    || tenantRepository.existsByTenantIdAndIsDeleted(tenantId, DELETED)) {
+                throw new RuntimeException("租户ID已存在");
+            }
+            return tenantId;
+        }
+        String generated = generateTenantId();
+        int attempts = 0;
+        while (tenantRepository.existsByTenantIdAndIsDeleted(generated, NOT_DELETED)
+                || tenantRepository.existsByTenantIdAndIsDeleted(generated, DELETED)) {
+            if (attempts++ >= 5) {
+                throw new RuntimeException("租户ID生成失败，请重试");
+            }
+            generated = generateTenantId();
+        }
+        return generated;
+    }
+
+    /**
+     * 生成租户ID。
+     *
+     * @return 租户ID
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    private String generateTenantId() {
+        String timestamp = DateTimeFormatter.ofPattern("yyyyMMddHHmmss", Locale.ROOT)
+                .format(LocalDateTime.now());
+        int random = ThreadLocalRandom.current().nextInt(1000, 10000);
+        return "T" + timestamp + random;
     }
 
     /**

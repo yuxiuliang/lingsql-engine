@@ -156,7 +156,6 @@ const handleEdit = (row: TenantView) => {
  */
 const buildCreatePayload = (): TenantCreateRequest => {
   const payload: TenantCreateRequest = {
-    tenantId: form.tenantId.trim(),
     tenantName: form.tenantName.trim(),
     status: form.status,
     remark: form.remark || undefined,
@@ -206,10 +205,6 @@ const buildUpdatePayload = (): TenantUpdateRequest => {
 const handleSave = async () => {
   if (!form.tenantName.trim()) {
     ElMessage.warning('请填写租户名称');
-    return;
-  }
-  if (!editingId.value && !form.tenantId.trim()) {
-    ElMessage.warning('请填写租户ID');
     return;
   }
   try {
@@ -325,8 +320,9 @@ loadTenants();
 
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑租户' : '新增租户'" width="640px">
       <el-form label-width="120px">
-        <el-form-item label="租户ID" required>
-          <el-input v-model="form.tenantId" :disabled="!!editingId" placeholder="请输入租户ID"/>
+        <el-form-item label="租户ID">
+          <el-tag v-if="editingId" type="info">{{ form.tenantId || '未生成' }}</el-tag>
+          <el-tag v-else type="info">系统自动生成</el-tag>
         </el-form-item>
         <el-form-item label="租户名称" required>
           <el-input v-model="form.tenantName" placeholder="请输入租户名称"/>

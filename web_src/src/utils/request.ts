@@ -49,7 +49,7 @@ export const request = async <T>(path: string, options: RequestInit = {}): Promi
     headers.set('Authorization', `Bearer ${token}`);
   }
   if (tenantId) {
-    headers.set('X-Tenant-Id', tenantId);
+    headers.set('X-Tenant-Id', encodeURIComponent(tenantId));
   }
   const response = await fetch(`${BASE_URL}${path}`, {
     ...options,

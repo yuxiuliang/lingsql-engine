@@ -60,6 +60,9 @@ public class AuthController {
             if (StringUtils.hasText(message) && message.contains("停用")) {
                 return ApiResponse.unauthorized(message);
             }
+            if (StringUtils.hasText(message) && message.contains("多个租户")) {
+                return ApiResponse.unauthorized(message);
+            }
             return ApiResponse.unauthorized("账号或密码错误");
         }
     }

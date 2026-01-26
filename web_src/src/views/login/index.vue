@@ -21,47 +21,11 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
  */
 const form = reactive({
   username: '',
-  tenantId: '',
   password: ''
 });
 
-/**
- * 记住租户ID开关。
- *
- * @author 余炘洋
- * @date 2026-01-23
- */
-const rememberTenant = ref(false);
-
 const router = useRouter();
 const authStore = useAuthStore();
-
-/**
- * 初始化租户记忆状态。
- *
- * @author 余炘洋
- * @date 2026-01-23
- */
-const initRememberTenant = () => {
-  const remember = localStorage.getItem('rememberTenant') === 'true';
-  rememberTenant.value = remember;
-  if (remember) {
-    form.tenantId = localStorage.getItem('tenantId') || '';
-  }
-};
-
-/**
- * 保存租户记忆状态。
- *
- * @author 余炘洋
- * @date 2026-01-23
- */
-const persistRememberTenant = () => {
-  localStorage.setItem('rememberTenant', String(rememberTenant.value));
-  if (!rememberTenant.value) {
-    localStorage.removeItem('tenantId');
-  }
-};
 
 /**
  * 提交登录表单并写入缓存。
@@ -74,15 +38,10 @@ const handleLogin = async () => {
     ElMessage.warning('请输入用户名');
     return;
   }
-  if (!form.tenantId.trim()) {
-    ElMessage.warning('请输入租户ID');
-    return;
-  }
   if (!form.password.trim()) {
     ElMessage.warning('请输入密码');
     return;
   }
-  persistRememberTenant();
   const loadingService = ElLoading.service({
     fullscreen: true,
     text: '正在登录...',
@@ -90,7 +49,6 @@ const handleLogin = async () => {
   });
   try {
     const response = await loginApi({
-      tenantId: form.tenantId.trim(),
       username: form.username.trim(),
       password: form.password.trim()
     });
@@ -254,7 +212,6 @@ const initCanvas = () => {
 };
 
 onMounted(() => {
-  initRememberTenant();
   initCanvas();
 });
 </script>
@@ -310,18 +267,12 @@ onMounted(() => {
           </div>
           <div class="card-right">
             <el-form label-position="top">
-              <el-form-item label="租户ID">
-                <el-input v-model="form.tenantId" placeholder="请输入租户ID" class="form-input"/>
-              </el-form-item>
               <el-form-item label="用户名">
                 <el-input v-model="form.username" placeholder="请输入用户名" class="form-input"/>
               </el-form-item>
               <el-form-item label="密码">
                 <el-input v-model="form.password" placeholder="请输入密码" show-password class="form-input"/>
               </el-form-item>
-              <div class="form-options">
-                <el-checkbox v-model="rememberTenant">记住租户 ID</el-checkbox>
-              </div>
               <el-button type="primary" class="login-button" @click="handleLogin">登录</el-button>
             </el-form>
           </div>
@@ -475,12 +426,6 @@ onMounted(() => {
 
 .form-input :deep(.el-input__inner) {
   color: #f8fafc;
-}
-
-.form-options {
-  display: flex;
-  justify-content: flex-start;
-  margin-bottom: 16px;
 }
 
 .login-button {
