@@ -20,6 +20,11 @@ VALUES
 ('MENU:ADMIN:JOIN', '菜单-Join规则', 'MENU', 1),
 ('MENU:ADMIN:METADATA', '菜单-元数据', 'MENU', 1),
 ('MENU:ADMIN:EXPERIENCE', '菜单-体验账号', 'MENU', 1),
+('MENU:ADMIN:USER', '菜单-用户管理', 'MENU', 1),
+('MENU:ADMIN:ROLE', '菜单-角色管理', 'MENU', 1),
+('MENU:ADMIN:PERMISSION', '菜单-权限管理', 'MENU', 1),
+('MENU:ADMIN:AUDIT', '菜单-审计日志', 'MENU', 1),
+('MENU:ADMIN:SQLLOG', '菜单-SQL日志', 'MENU', 1),
 ('API:CHAT:ASK', '接口-问答', 'API', 1),
 ('API:CHAT:HISTORY:READ', '接口-问答历史查询', 'API', 1),
 ('API:CHAT:HISTORY:WRITE', '接口-问答历史维护', 'API', 1),
@@ -45,6 +50,16 @@ VALUES
 ('ADMIN:METADATA:READ', '接口-元数据读取', 'API', 1),
 ('ADMIN:METADATA:WRITE', '接口-元数据维护', 'API', 1),
 ('ADMIN:METADATA:AI', '接口-元数据AI建议', 'API', 1),
+('ADMIN:USER:READ', '接口-用户读取', 'API', 1),
+('ADMIN:USER:WRITE', '接口-用户维护', 'API', 1),
+('ADMIN:USER:RESET', '接口-用户重置密码', 'API', 1),
+('ADMIN:ROLE:READ', '接口-角色读取', 'API', 1),
+('ADMIN:ROLE:WRITE', '接口-角色维护', 'API', 1),
+('ADMIN:PERM:READ', '接口-权限读取', 'API', 1),
+('ADMIN:TENANT:POOL', '接口-租户权限池维护', 'API', 1),
+('ADMIN:AUDIT:READ', '接口-审计日志读取', 'API', 1),
+('ADMIN:SQLLOG:READ', '接口-SQL日志读取', 'API', 1),
+('ADMIN:SQLLOG:EXPORT', '接口-SQL日志导出', 'API', 1),
 ('CONFIG:CHAT:READ', '接口-聊天配置读取', 'API', 1),
 ('RBAC:EXPERIENCE:READ', '接口-体验账号读取', 'API', 1),
 ('RBAC:EXPERIENCE:WRITE', '接口-体验账号维护', 'API', 1)
@@ -56,10 +71,10 @@ ON DUPLICATE KEY UPDATE
 -- 角色初始化
 INSERT INTO t_lingsql_engine_role (tenant_id, role_code, role_name, status)
 VALUES
-(NULL, 'SYS_ADMIN', '系统管理员', 1),
 (NULL, 'SUPER_ADMIN', '超级管理员', 1),
-(@tenant_id, 'TENANT_ADMIN', '租户管理员', 1),
-(@tenant_id, 'EXPERIENCE', '体验账号', 1)
+(NULL, 'SYS_ADMIN', '系统管理员', 1),
+(NULL, 'ROLE_EXPERIENCE_TEMPLATE', '体验账号模板', 1),
+(@tenant_id, 'TENANT_ADMIN', '租户管理员', 1)
 ON DUPLICATE KEY UPDATE
     role_name = VALUES(role_name),
     status = VALUES(status);
@@ -89,7 +104,12 @@ VALUES
 (NULL, 'MENU_ADMIN_SEMANTIC', '语义字典', @menu_admin_id, '/lexicon', 'SemanticConfig', 'lexicon', 130, 1, 1, 'MENU:ADMIN:SEMANTIC'),
 (NULL, 'MENU_ADMIN_JOIN', 'Join规则', @menu_admin_id, '/join-rule', 'JoinRule', 'join', 140, 1, 1, 'MENU:ADMIN:JOIN'),
 (NULL, 'MENU_ADMIN_METADATA', '元数据', @menu_admin_id, '/metadata', 'Metadata', 'metadata', 150, 1, 1, 'MENU:ADMIN:METADATA'),
-(NULL, 'MENU_ADMIN_EXPERIENCE', '体验账号', @menu_admin_id, '/experience', 'Experience', 'tenant', 160, 1, 1, 'MENU:ADMIN:EXPERIENCE')
+(NULL, 'MENU_ADMIN_EXPERIENCE', '体验账号', @menu_admin_id, '/experience', 'Experience', 'tenant', 160, 1, 1, 'MENU:ADMIN:EXPERIENCE'),
+(NULL, 'MENU_ADMIN_USER', '用户管理', @menu_admin_id, '/user', 'UserManage', 'user', 170, 1, 1, 'MENU:ADMIN:USER'),
+(NULL, 'MENU_ADMIN_ROLE', '角色管理', @menu_admin_id, '/role', 'RoleManage', 'role', 180, 1, 1, 'MENU:ADMIN:ROLE'),
+(NULL, 'MENU_ADMIN_PERMISSION', '权限管理', @menu_admin_id, '/permission', 'PermissionManage', 'permission', 190, 1, 1, 'MENU:ADMIN:PERMISSION'),
+(NULL, 'MENU_ADMIN_AUDIT', '审计日志', @menu_admin_id, '/audit', 'AuditLog', 'audit', 200, 1, 1, 'MENU:ADMIN:AUDIT'),
+(NULL, 'MENU_ADMIN_SQLLOG', 'SQL日志', @menu_admin_id, '/sql-log', 'SqlLog', 'sql', 210, 1, 1, 'MENU:ADMIN:SQLLOG')
 ON DUPLICATE KEY UPDATE
     menu_name = VALUES(menu_name),
     parent_id = VALUES(parent_id),
@@ -105,7 +125,7 @@ ON DUPLICATE KEY UPDATE
 SET @sys_admin_role_id = (SELECT id FROM t_lingsql_engine_role WHERE role_code = 'SYS_ADMIN' AND tenant_id IS NULL LIMIT 1);
 SET @super_admin_role_id = (SELECT id FROM t_lingsql_engine_role WHERE role_code = 'SUPER_ADMIN' AND tenant_id IS NULL LIMIT 1);
 SET @tenant_admin_role_id = (SELECT id FROM t_lingsql_engine_role WHERE role_code = 'TENANT_ADMIN' AND tenant_id = @tenant_id LIMIT 1);
-SET @experience_role_id = (SELECT id FROM t_lingsql_engine_role WHERE role_code = 'EXPERIENCE' AND tenant_id = @tenant_id LIMIT 1);
+SET @experience_role_id = (SELECT id FROM t_lingsql_engine_role WHERE role_code = 'ROLE_EXPERIENCE_TEMPLATE' AND tenant_id IS NULL LIMIT 1);
 
 INSERT IGNORE INTO t_lingsql_engine_role_permission (role_id, perm_id)
 SELECT @sys_admin_role_id, id FROM t_lingsql_engine_permission;
@@ -175,6 +195,10 @@ VALUES
 (@admin_user_id, @sys_admin_role_id),
 (@admin_user_id, @tenant_admin_role_id),
 (@experience_user_id, @experience_role_id);
+
+-- 初始化租户权限池（默认分配全部权限）
+INSERT IGNORE INTO t_lingsql_engine_tenant_permission (tenant_id, perm_id)
+SELECT @tenant_id, id FROM t_lingsql_engine_permission;
 
 -- 体验账号策略示例（可按需修改）
 INSERT INTO t_lingsql_engine_user_experience_policy (user_id, menu_whitelist, data_scope_override, status)

@@ -39,6 +39,7 @@ CREATE TABLE `t_lingsql_engine_ai_model_config`
     `id`               bigint       NOT NULL AUTO_INCREMENT,
     `provider_name`    varchar(64)  NOT NULL COMMENT '供应商名称: 阿里, OpenAI, DeepSeek',
     `model_name`       varchar(64)  NOT NULL COMMENT '模型具体名称: qwen-plus, gpt-4',
+    `model_version`    varchar(64)  DEFAULT NULL COMMENT '模型版本',
     `base_url`         varchar(256) NOT NULL,
     `api_key`          varchar(256) NOT NULL,
     `is_active`        tinyint      DEFAULT '1' COMMENT '是否启用',
@@ -104,6 +105,8 @@ CREATE TABLE `t_lingsql_engine_user`
     `status`          tinyint     DEFAULT 1 COMMENT '状态: 1-启用, 0-禁用',
     `is_experience`   tinyint     DEFAULT 0 COMMENT '是否体验账号: 1-是, 0-否',
     `last_login_time` datetime    DEFAULT NULL COMMENT '最近登录时间',
+    `failed_login_count` int      DEFAULT 0 COMMENT '登录失败次数',
+    `lock_until`      datetime    DEFAULT NULL COMMENT '锁定截止时间',
     `create_time`     datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time`     datetime    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -169,6 +172,19 @@ CREATE TABLE `t_lingsql_engine_role_permission`
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='角色权限关系表';
+
+-- 租户权限池表
+CREATE TABLE `t_lingsql_engine_tenant_permission`
+(
+    `id`          bigint      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`   varchar(64) NOT NULL COMMENT '租户ID',
+    `perm_id`     bigint      NOT NULL COMMENT '权限ID',
+    `create_time` datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_tenant_perm` (`tenant_id`, `perm_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='租户权限池表';
 
 -- 菜单表
 CREATE TABLE `t_lingsql_engine_menu`
@@ -242,3 +258,51 @@ CREATE TABLE `t_lingsql_engine_user_experience_policy`
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='体验账号策略表';
+
+-- 管理操作审计日志
+CREATE TABLE `t_lingsql_engine_audit_log`
+(
+    `id`           bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`    varchar(64)  DEFAULT NULL COMMENT '租户ID',
+    `user_id`      bigint       DEFAULT NULL COMMENT '用户ID',
+    `username`     varchar(64)  DEFAULT NULL COMMENT '账号',
+    `action`       varchar(128) DEFAULT NULL COMMENT '操作动作',
+    `resource`     varchar(128) DEFAULT NULL COMMENT '操作对象',
+    `detail`       text         DEFAULT NULL COMMENT '操作详情(JSON)',
+    `success`      tinyint      DEFAULT 1 COMMENT '是否成功',
+    `error_message` text        DEFAULT NULL COMMENT '错误信息',
+    `request_ip`   varchar(64)  DEFAULT NULL COMMENT '请求IP',
+    `create_time`  datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_audit_tenant` (`tenant_id`),
+    KEY `idx_audit_user` (`user_id`),
+    KEY `idx_audit_time` (`create_time`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='管理操作审计日志';
+
+-- SQL 执行日志
+CREATE TABLE `t_lingsql_engine_sql_execute_log`
+(
+    `id`             bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`      varchar(64)  NOT NULL COMMENT '租户ID',
+    `user_id`        bigint       DEFAULT NULL COMMENT '执行人ID',
+    `question`       text         DEFAULT NULL COMMENT '原始问题',
+    `ai_sql`         text         DEFAULT NULL COMMENT 'AI生成SQL',
+    `executed_sql`   text         DEFAULT NULL COMMENT '执行SQL',
+    `success`        tinyint      DEFAULT 1 COMMENT '是否成功',
+    `error_message`  text         DEFAULT NULL COMMENT '错误信息',
+    `model_provider` varchar(64)  DEFAULT NULL COMMENT '模型供应商',
+    `model_name`     varchar(64)  DEFAULT NULL COMMENT '模型名称',
+    `model_version`  varchar(64)  DEFAULT NULL COMMENT '模型版本',
+    `execute_cost_ms` bigint      DEFAULT NULL COMMENT '执行耗时(毫秒)',
+    `result_rows`    int          DEFAULT NULL COMMENT '返回行数',
+    `request_source` varchar(32)  DEFAULT NULL COMMENT '请求来源',
+    `create_time`    datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_sql_tenant` (`tenant_id`),
+    KEY `idx_sql_user` (`user_id`),
+    KEY `idx_sql_time` (`create_time`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='SQL 执行日志';
