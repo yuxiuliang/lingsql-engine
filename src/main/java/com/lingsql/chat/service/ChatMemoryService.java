@@ -13,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
-import net.sf.jsqlparser.statement.select.SelectBody;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -196,8 +195,8 @@ public class ChatMemoryService {
     private String resolveMainTableName(String sql) {
         try {
             Select select = (Select) CCJSqlParserUtil.parse(sql);
-            SelectBody body = select.getSelectBody();
-            if (body instanceof PlainSelect plainSelect && plainSelect.getFromItem() instanceof net.sf.jsqlparser.schema.Table table) {
+            PlainSelect plainSelect = select.getPlainSelect();
+            if (plainSelect != null && plainSelect.getFromItem() instanceof net.sf.jsqlparser.schema.Table table) {
                 return table.getName();
             }
         } catch (Exception ex) {
