@@ -10,13 +10,16 @@ import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
+import com.lingsql.rbac.security.SecureTenantResolver;
 import com.lingsql.schema.entity.JoinRule;
 import com.lingsql.schema.entity.SemanticLexiconItem;
 import com.lingsql.schema.repository.JoinRuleRepository;
 import com.lingsql.schema.repository.SemanticLexiconRepository;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,6 +27,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
@@ -346,14 +350,19 @@ public class AdminConfigController {
     /**
      * 查询语义字典列表。
      *
+     * @param tenantId 租户标识
      * @return 语义字典列表
      * @author 余炘洋
-     * @date 2026-01-23
+     * @date 2026-01-26
      */
     @GetMapping("/semantic")
     @PreAuthorize("hasAuthority('ADMIN:SEMANTIC:READ')")
-    public ApiResponse<List<SemanticLexiconItem>> listSemantic() {
-        return ApiResponse.success(semanticLexiconRepository.findAll());
+    public ApiResponse<List<SemanticLexiconItem>> listSemantic(@RequestParam(required = false) String tenantId) {
+        String resolvedTenantId = SecureTenantResolver.resolveSecureTenantId(tenantId);
+        if (isSysAdmin() && !StringUtils.hasText(tenantId)) {
+            return ApiResponse.success(semanticLexiconRepository.findAll());
+        }
+        return ApiResponse.success(semanticLexiconRepository.findByTenantIdOrTenantIdIsNull(resolvedTenantId));
     }
 
     /**
@@ -369,7 +378,8 @@ public class AdminConfigController {
     public ApiResponse<SemanticLexiconItem> createSemantic(@RequestBody SemanticLexiconItem request) {
         validateSemanticMapping(request.getMapping());
         request.setId(null);
-        request.setTenantId(normalizeTenantId(request.getTenantId()));
+        String resolvedTenantId = SecureTenantResolver.resolveSecureTenantId(request.getTenantId());
+        request.setTenantId(normalizeTenantId(resolvedTenantId));
         request.setCreateTime(LocalDateTime.now());
         request.setUpdateTime(LocalDateTime.now());
         return ApiResponse.success(semanticLexiconRepository.save(request));
@@ -390,7 +400,13 @@ public class AdminConfigController {
         validateSemanticMapping(request.getMapping());
         SemanticLexiconItem item = semanticLexiconRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("语义字典不存在"));
-        item.setTenantId(normalizeTenantId(request.getTenantId()));
+        String resolvedTenantId = SecureTenantResolver.resolveSecureTenantId(request.getTenantId());
+        if (!isSysAdmin()) {
+            if (!StringUtils.hasText(item.getTenantId()) || !item.getTenantId().equalsIgnoreCase(resolvedTenantId)) {
+                throw new AccessDeniedException("无权限访问");
+            }
+        }
+        item.setTenantId(normalizeTenantId(isSysAdmin() ? request.getTenantId() : resolvedTenantId));
         item.setTerm(request.getTerm());
         item.setMapping(request.getMapping());
         item.setDescription(request.getDescription());
@@ -410,6 +426,14 @@ public class AdminConfigController {
     @DeleteMapping("/semantic/{id}")
     @PreAuthorize("hasAuthority('ADMIN:SEMANTIC:DELETE')")
     public ApiResponse<String> deleteSemantic(@PathVariable Long id) {
+        SemanticLexiconItem item = semanticLexiconRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("语义字典不存在"));
+        if (!isSysAdmin()) {
+            String resolvedTenantId = SecureTenantResolver.resolveSecureTenantId(null);
+            if (!StringUtils.hasText(item.getTenantId()) || !item.getTenantId().equalsIgnoreCase(resolvedTenantId)) {
+                throw new AccessDeniedException("无权限访问");
+            }
+        }
         semanticLexiconRepository.deleteById(id);
         return ApiResponse.success("语义字典已删除");
     }
@@ -417,14 +441,19 @@ public class AdminConfigController {
     /**
      * 查询 Join 规则列表。
      *
+     * @param tenantId 租户标识
      * @return Join 规则列表
      * @author 余炘洋
-     * @date 2026-01-23
+     * @date 2026-01-26
      */
     @GetMapping("/join-rule")
     @PreAuthorize("hasAuthority('ADMIN:JOIN:READ')")
-    public ApiResponse<List<JoinRule>> listJoinRules() {
-        return ApiResponse.success(joinRuleRepository.findAll());
+    public ApiResponse<List<JoinRule>> listJoinRules(@RequestParam(required = false) String tenantId) {
+        String resolvedTenantId = SecureTenantResolver.resolveSecureTenantId(tenantId);
+        if (isSysAdmin() && !StringUtils.hasText(tenantId)) {
+            return ApiResponse.success(joinRuleRepository.findAll());
+        }
+        return ApiResponse.success(joinRuleRepository.findByTenantIdOrTenantIdIsNull(resolvedTenantId));
     }
 
     /**
@@ -439,7 +468,8 @@ public class AdminConfigController {
     @PreAuthorize("hasAuthority('ADMIN:JOIN:WRITE')")
     public ApiResponse<JoinRule> createJoinRule(@RequestBody JoinRule request) {
         request.setId(null);
-        request.setTenantId(normalizeTenantId(request.getTenantId()));
+        String resolvedTenantId = SecureTenantResolver.resolveSecureTenantId(request.getTenantId());
+        request.setTenantId(normalizeTenantId(resolvedTenantId));
         request.setCreateTime(LocalDateTime.now());
         request.setUpdateTime(LocalDateTime.now());
         return ApiResponse.success(joinRuleRepository.save(request));
@@ -459,7 +489,13 @@ public class AdminConfigController {
     public ApiResponse<JoinRule> updateJoinRule(@PathVariable Long id, @RequestBody JoinRule request) {
         JoinRule item = joinRuleRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Join 规则不存在"));
-        item.setTenantId(normalizeTenantId(request.getTenantId()));
+        String resolvedTenantId = SecureTenantResolver.resolveSecureTenantId(request.getTenantId());
+        if (!isSysAdmin()) {
+            if (!StringUtils.hasText(item.getTenantId()) || !item.getTenantId().equalsIgnoreCase(resolvedTenantId)) {
+                throw new AccessDeniedException("无权限访问");
+            }
+        }
+        item.setTenantId(normalizeTenantId(isSysAdmin() ? request.getTenantId() : resolvedTenantId));
         item.setLeftTable(request.getLeftTable());
         item.setRightTable(request.getRightTable());
         item.setOnExpr(request.getOnExpr());
@@ -480,6 +516,14 @@ public class AdminConfigController {
     @DeleteMapping("/join-rule/{id}")
     @PreAuthorize("hasAuthority('ADMIN:JOIN:DELETE')")
     public ApiResponse<String> deleteJoinRule(@PathVariable Long id) {
+        JoinRule item = joinRuleRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Join 规则不存在"));
+        if (!isSysAdmin()) {
+            String resolvedTenantId = SecureTenantResolver.resolveSecureTenantId(null);
+            if (!StringUtils.hasText(item.getTenantId()) || !item.getTenantId().equalsIgnoreCase(resolvedTenantId)) {
+                throw new AccessDeniedException("无权限访问");
+            }
+        }
         joinRuleRepository.deleteById(id);
         return ApiResponse.success("Join 规则已删除");
     }

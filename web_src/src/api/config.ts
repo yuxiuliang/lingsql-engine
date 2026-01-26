@@ -220,12 +220,14 @@ export const deleteModelConfig = async (id: number): Promise<string> => {
 /**
  * 查询语义字典列表。
  *
+ * @param tenantId 租户标识
  * @return 语义字典列表
  * @author 余炘洋
- * @date 2026-01-23
+ * @date 2026-01-26
  */
-export const fetchLexiconItems = async (): Promise<SemanticLexiconItem[]> => {
-  return request<SemanticLexiconItem[]>('/api/v1/admin/config/semantic');
+export const fetchLexiconItems = async (tenantId?: string): Promise<SemanticLexiconItem[]> => {
+  const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  return request<SemanticLexiconItem[]>(`/api/v1/admin/config/semantic${query}`);
 };
 
 /**
@@ -276,12 +278,14 @@ export const deleteLexiconItem = async (id: number): Promise<string> => {
 /**
  * 查询 Join 规则列表。
  *
+ * @param tenantId 租户标识
  * @return Join 规则列表
  * @author 余炘洋
- * @date 2026-01-23
+ * @date 2026-01-26
  */
-export const fetchJoinRules = async (): Promise<JoinRuleItem[]> => {
-  return request<JoinRuleItem[]>('/api/v1/admin/config/join-rule');
+export const fetchJoinRules = async (tenantId?: string): Promise<JoinRuleItem[]> => {
+  const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  return request<JoinRuleItem[]>(`/api/v1/admin/config/join-rule${query}`);
 };
 
 /**

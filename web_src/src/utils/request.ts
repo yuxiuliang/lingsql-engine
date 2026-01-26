@@ -40,7 +40,7 @@ const BASE_URL = resolveBaseUrl();
 export const request = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
   const authStore = useAuthStore(pinia);
   const token = authStore.token || '';
-  const tenantId = authStore.tenantId || '';
+  const tenantId = authStore.isSysAdmin ? (authStore.activeTenantId || '') : (authStore.activeTenantId || authStore.tenantId || '');
   const headers = new Headers(options.headers || {});
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');

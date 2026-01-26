@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, onMounted, ref} from 'vue';
+import {computed, onMounted, ref, watch} from 'vue';
 import {ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
 import {syncTenantSchema} from '@/api/admin';
@@ -38,13 +38,54 @@ const activeTableName = ref('');
 const savedRowKeys = ref<Set<string>>(new Set());
 
 /**
+ * 判断是否系统管理员。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const isSysAdmin = computed(() => {
+  return (authStore.roles || []).some((role) => ['SYS_ADMIN', 'SUPER_ADMIN'].includes(role));
+});
+
+/**
+ * 当前选中租户ID。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const activeTenantId = computed(() => {
+  return isSysAdmin.value ? authStore.activeTenantId : authStore.tenantId;
+});
+
+/**
+ * 当前租户名称。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const activeTenantName = computed(() => {
+  return isSysAdmin.value ? authStore.activeTenantName : authStore.tenantName;
+});
+
+/**
+ * 判断是否已选择租户。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const hasTenantSelected = computed(() => {
+  return !isSysAdmin.value || !!authStore.activeTenantId;
+});
+
+/**
  * 构建树形结构。
  *
  * @author 余炘洋
  * @date 2026-01-23
  */
 const buildTree = () => {
-  const tenantId = authStore.tenantId || '未知租户';
+  const tenantId = activeTenantId.value || '未选择租户';
+  const tenantName = activeTenantName.value || tenantId;
   const groups: Record<string, MetadataTableInfo[]> = {};
   schemaTables.value.forEach((table) => {
     const schemaName = table.schemaName || 'default';
@@ -67,7 +108,7 @@ const buildTree = () => {
   treeData.value = [
     {
       id: `tenant:${tenantId}`,
-      label: `租户：${tenantId}`,
+      label: `租户：${tenantName}`,
       type: 'tenant',
       children: schemaNodes
     }
@@ -81,13 +122,12 @@ const buildTree = () => {
  * @date 2026-01-23
  */
 const loadSchema = async () => {
-  if (!authStore.tenantId) {
-    ElMessage.warning('请先登录并设置租户ID');
+  if (!hasTenantSelected.value || !activeTenantId.value) {
     return;
   }
   schemaLoading.value = true;
   try {
-    schemaTables.value = await fetchMetadataSchema(authStore.tenantId);
+    schemaTables.value = await fetchMetadataSchema(activeTenantId.value);
     buildTree();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载 Schema 失败');
@@ -103,12 +143,12 @@ const loadSchema = async () => {
  * @date 2026-01-23
  */
 const handleSyncSchema = async () => {
-  if (!authStore.tenantId) {
-    ElMessage.warning('请先设置租户ID');
+  if (!hasTenantSelected.value || !activeTenantId.value) {
+    ElMessage.warning('请先选择租户');
     return;
   }
   try {
-    const message = await syncTenantSchema(authStore.tenantId);
+    const message = await syncTenantSchema(activeTenantId.value);
     ElMessage.success(message);
     await loadSchema();
   } catch (error) {
@@ -124,13 +164,13 @@ const handleSyncSchema = async () => {
  * @date 2026-01-23
  */
 const loadTableDetail = async (tableName: string) => {
-  if (!authStore.tenantId) {
+  if (!activeTenantId.value) {
     return;
   }
   tableLoading.value = true;
   activeTableName.value = tableName;
   try {
-    activeTable.value = await fetchMetadataTable(authStore.tenantId, tableName);
+    activeTable.value = await fetchMetadataTable(activeTenantId.value, tableName);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载表详情失败');
   } finally {
@@ -159,11 +199,11 @@ const handleNodeClick = (node: TreeNode) => {
  * @date 2026-01-23
  */
 const handleSaveComment = async (row: MetadataFieldView) => {
-  if (!authStore.tenantId || !activeTableName.value) {
+  if (!activeTenantId.value || !activeTableName.value) {
     return;
   }
   try {
-    await updateMetadataField(authStore.tenantId, activeTableName.value, row.columnName, row.businessComment || '');
+    await updateMetadataField(activeTenantId.value, activeTableName.value, row.columnName, row.businessComment || '');
     ElMessage.success('已保存');
     highlightRow(row.columnName);
   } catch (error) {
@@ -179,11 +219,11 @@ const handleSaveComment = async (row: MetadataFieldView) => {
  * @date 2026-01-23
  */
 const handleIsolationChange = async (row: MetadataFieldView) => {
-  if (!authStore.tenantId || !activeTableName.value) {
+  if (!activeTenantId.value || !activeTableName.value) {
     return;
   }
   try {
-    await updateIsolationField(authStore.tenantId, activeTableName.value, row.columnName, row.isolatedField || false);
+    await updateIsolationField(activeTenantId.value, activeTableName.value, row.columnName, row.isolatedField || false);
     if (row.isolatedField) {
       activeTable.value?.columns.forEach((item) => {
         if (item.columnName !== row.columnName) {
@@ -204,13 +244,13 @@ const handleIsolationChange = async (row: MetadataFieldView) => {
  * @date 2026-01-23
  */
 const handleAiSuggest = async () => {
-  if (!authStore.tenantId || !activeTable.value) {
+  if (!activeTenantId.value || !activeTable.value) {
     ElMessage.warning('请先选择表');
     return;
   }
   try {
     const response = await aiSuggestMetadata(
-      authStore.tenantId,
+      activeTenantId.value,
       activeTable.value.tableName,
       activeTable.value.columns.map((item) => ({
         name: item.columnName,
@@ -324,72 +364,97 @@ const tableTitle = computed(() => {
 onMounted(() => {
   loadSchema();
 });
+
+watch(activeTenantId, () => {
+  activeTable.value = null;
+  activeTableName.value = '';
+  schemaTables.value = [];
+  treeData.value = [];
+  if (hasTenantSelected.value) {
+    loadSchema();
+  }
+});
 </script>
 
 <template>
-  <div class="metadata-page">
-    <aside class="metadata-sidebar">
-      <div class="sidebar-header">
-        <div class="sidebar-title">元数据字典</div>
-        <div class="sidebar-subtitle">缓存视图</div>
-      </div>
-      <el-button class="sync-button" @click="handleSyncSchema">一键同步</el-button>
-      <el-tree
-        v-loading="schemaLoading"
-        class="schema-tree"
-        :data="treeData"
-        node-key="id"
-        default-expand-all
-        highlight-current
-        @node-click="handleNodeClick"
-      />
-    </aside>
-    <section class="metadata-content">
-      <div class="content-header">
-        <div class="content-title">{{ tableTitle }}</div>
-        <div class="content-actions">
-          <el-button type="primary" @click="handleAiSuggest">AI 语义解析</el-button>
+  <div class="metadata-wrapper">
+    <div v-if="!hasTenantSelected" class="metadata-empty">
+      <el-empty description="请在顶部选择要管理的租户"/>
+    </div>
+    <div v-else class="metadata-page">
+      <aside class="metadata-sidebar">
+        <div class="sidebar-header">
+          <div class="sidebar-title">元数据字典</div>
+          <div class="sidebar-subtitle">缓存视图</div>
         </div>
-      </div>
-      <el-table
-        v-loading="tableLoading"
-        :data="activeTable?.columns || []"
-        border
-        class="metadata-table"
-        :row-class-name="rowClassName"
-      >
-        <el-table-column prop="columnName" label="字段名" min-width="140"/>
-        <el-table-column label="类型" min-width="120">
-          <template #default="{row}">
-            <span class="data-type">{{ row.dataType }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="原始注释" min-width="200">
-          <template #default="{row}">
-            <span>{{ formatComment(row.columnComment) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="业务注释" min-width="240">
-          <template #default="{row}">
-            <el-input v-model="row.businessComment" placeholder="填写业务注释" size="small"/>
-          </template>
-        </el-table-column>
-        <el-table-column label="隔离字段" width="120">
-          <template #default="{row}">
-            <el-switch v-model="row.isolatedField" @change="() => handleIsolationChange(row)"/>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="120">
-          <template #default="{row}">
-            <el-button size="small" @click="handleSaveComment(row)">保存</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </section>
+        <el-button class="sync-button" @click="handleSyncSchema">一键同步</el-button>
+        <el-tree
+          v-loading="schemaLoading"
+          class="schema-tree"
+          :data="treeData"
+          node-key="id"
+          default-expand-all
+          highlight-current
+          @node-click="handleNodeClick"
+        />
+      </aside>
+      <section class="metadata-content">
+        <div class="content-header">
+          <div class="content-title">{{ tableTitle }}</div>
+          <div class="content-actions">
+            <el-button type="primary" @click="handleAiSuggest">AI 语义解析</el-button>
+          </div>
+        </div>
+        <el-table
+          v-loading="tableLoading"
+          :data="activeTable?.columns || []"
+          border
+          class="metadata-table"
+          :row-class-name="rowClassName"
+        >
+          <el-table-column prop="columnName" label="字段名" min-width="140"/>
+          <el-table-column label="类型" min-width="120">
+            <template #default="{row}">
+              <span class="data-type">{{ row.dataType }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="原始注释" min-width="200">
+            <template #default="{row}">
+              <span>{{ formatComment(row.columnComment) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="业务注释" min-width="240">
+            <template #default="{row}">
+              <el-input v-model="row.businessComment" placeholder="填写业务注释" size="small"/>
+            </template>
+          </el-table-column>
+          <el-table-column label="隔离字段" width="120">
+            <template #default="{row}">
+              <el-switch v-model="row.isolatedField" @change="() => handleIsolationChange(row)"/>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120">
+            <template #default="{row}">
+              <el-button size="small" @click="handleSaveComment(row)">保存</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.metadata-wrapper {
+  background: transparent;
+}
+
+.metadata-empty {
+  padding: 40px 0;
+  background: #ffffff;
+  border-radius: 16px;
+}
+
 .metadata-page {
   height: calc(100vh - 120px);
   display: grid;

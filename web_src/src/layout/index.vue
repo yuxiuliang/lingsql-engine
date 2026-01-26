@@ -3,6 +3,7 @@ import {computed, onMounted, ref} from 'vue';
 import {useRouter} from 'vue-router';
 import {useAuthStore} from '@/store/auth';
 import {fetchMenus, logout as logoutApi} from '@/api/auth';
+import {fetchTenants, TenantView} from '@/api/tenant';
 
 /**
  * 菜单项定义。
@@ -22,6 +23,43 @@ interface MenuNode {
 const router = useRouter();
 const authStore = useAuthStore();
 const isCollapsed = ref(false);
+const tenantOptions = ref<TenantView[]>([]);
+const tenantLoading = ref(false);
+
+/**
+ * 判断是否系统管理员。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const isSysAdmin = computed(() => authStore.isSysAdmin);
+
+/**
+ * 当前租户名称。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const currentTenantName = computed(() => {
+  if (isSysAdmin.value) {
+    return authStore.activeTenantName || '';
+  }
+  return authStore.tenantName || authStore.tenantId || '';
+});
+
+/**
+ * 选中的租户ID。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const activeTenantId = computed({
+  get: () => authStore.activeTenantId,
+  set: (value: string) => {
+    const selected = tenantOptions.value.find((item) => item.tenantId === value);
+    authStore.setActiveTenant(value, selected?.tenantName || '');
+  }
+});
 
 /**
  * 解析侧边栏头像显示文本。
@@ -67,6 +105,32 @@ const loadMenus = async () => {
   } catch {
     authStore.logout();
     await router.push('/login');
+  }
+};
+
+/**
+ * 加载租户列表。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const loadTenants = async () => {
+  if (!authStore.token || !isSysAdmin.value) {
+    return;
+  }
+  tenantLoading.value = true;
+  try {
+    tenantOptions.value = await fetchTenants();
+    if (authStore.activeTenantId) {
+      const selected = tenantOptions.value.find((item) => item.tenantId === authStore.activeTenantId);
+      if (selected) {
+        authStore.setActiveTenant(selected.tenantId, selected.tenantName || '');
+      }
+    }
+  } catch {
+    tenantOptions.value = [];
+  } finally {
+    tenantLoading.value = false;
   }
 };
 
@@ -146,6 +210,12 @@ const toggleCollapse = () => {
 };
 
 onMounted(loadMenus);
+onMounted(() => {
+  if (!isSysAdmin.value && authStore.tenantId && !authStore.activeTenantId) {
+    authStore.setActiveTenant(authStore.tenantId, authStore.tenantName || authStore.tenantId);
+  }
+});
+onMounted(loadTenants);
 </script>
 
 <template>
@@ -316,7 +386,7 @@ onMounted(loadMenus);
         <div class="avatar-circle">{{ avatarText }}</div>
         <div v-if="!isCollapsed" class="user-info">
           <div class="user-name">{{ authStore.nickname || authStore.username || '未命名用户' }}</div>
-          <div class="user-role">租户：{{ authStore.tenantId || '未设置' }}</div>
+          <div class="user-role">租户：{{ currentTenantName || '未设置' }}</div>
         </div>
       </div>
     </el-aside>
@@ -326,8 +396,29 @@ onMounted(loadMenus);
           <span class="header-title">管理控制台</span>
         </div>
         <div class="header-right">
+          <template v-if="isSysAdmin">
+            <el-select
+              v-model="activeTenantId"
+              class="tenant-selector"
+              filterable
+              clearable
+              placeholder="请选择租户"
+              :loading="tenantLoading"
+            >
+              <el-option
+                v-for="tenant in tenantOptions"
+                :key="tenant.id"
+                :label="`${tenant.tenantName} (${tenant.tenantId})`"
+                :value="tenant.tenantId"
+              />
+            </el-select>
+          </template>
+          <template v-else>
+            <el-tag class="tenant-tag" type="info" effect="light">
+              当前租户：{{ currentTenantName || '未设置' }}
+            </el-tag>
+          </template>
           <span class="user-name">{{ authStore.nickname || authStore.username || '未命名用户' }}</span>
-          <el-tag class="tenant-tag" type="info" effect="light">当前租户：{{ authStore.tenantId || '未设置' }}</el-tag>
           <el-button size="small" @click="handleLogout">退出登录</el-button>
         </div>
       </el-header>
@@ -568,6 +659,10 @@ onMounted(loadMenus);
   border: none;
   color: #475569;
   background: #f1f5f9;
+}
+
+.tenant-selector {
+  width: 220px;
 }
 
 .layout-main {

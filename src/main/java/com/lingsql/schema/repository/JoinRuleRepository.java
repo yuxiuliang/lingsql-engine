@@ -25,6 +25,26 @@ public interface JoinRuleRepository extends JpaRepository<JoinRule, Long> {
     List<JoinRule> findByTenantIdAndStatus(String tenantId, Integer status);
 
     /**
+     * 查询租户级别 Join 规则（包含全部状态）。
+     *
+     * @param tenantId 租户标识
+     * @return Join 规则列表
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    List<JoinRule> findByTenantId(String tenantId);
+
+    /**
+     * 查询租户或全局 Join 规则（包含全部状态）。
+     *
+     * @param tenantId 租户标识
+     * @return Join 规则列表
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    List<JoinRule> findByTenantIdOrTenantIdIsNull(String tenantId);
+
+    /**
      * 查询全局 Join 规则。
      *
      * @param status 状态

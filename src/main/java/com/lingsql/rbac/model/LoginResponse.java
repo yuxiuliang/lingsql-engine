@@ -46,6 +46,14 @@ public class LoginResponse {
     private String tenantId;
 
     /**
+     * 租户名称。
+     *
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    private String tenantName;
+
+    /**
      * 账号。
      *
      * @author 余炘洋

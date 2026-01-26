@@ -100,7 +100,8 @@ const handleLogin = async () => {
       response.username,
       response.nickname || '',
       response.roles || [],
-      response.permissions || []
+      response.permissions || [],
+      response.tenantName || ''
     );
     const menus = await fetchMenus();
     authStore.setMenus(menus);

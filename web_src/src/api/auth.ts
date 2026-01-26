@@ -23,6 +23,7 @@ export interface LoginResponse {
   expiresIn: number;
   userId: number;
   tenantId: string;
+  tenantName?: string;
   username: string;
   nickname?: string;
   experience?: boolean;

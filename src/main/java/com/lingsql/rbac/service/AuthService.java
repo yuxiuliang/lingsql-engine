@@ -20,6 +20,7 @@ import com.lingsql.rbac.repository.RbacUserExperiencePolicyRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import com.lingsql.rbac.security.RbacUserSession;
+import com.lingsql.tenant.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -57,6 +58,7 @@ public class AuthService {
     private final RbacUserDataScopeRepository userDataScopeRepository;
     private final RbacUserExperiencePolicyRepository experiencePolicyRepository;
     private final TokenService tokenService;
+    private final TenantRepository tenantRepository;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
 
@@ -140,12 +142,30 @@ public class AuthService {
         response.setExpiresIn(expiresIn);
         response.setUserId(session.getUserId());
         response.setTenantId(session.getTenantId());
+        response.setTenantName(resolveTenantName(session.getTenantId()));
         response.setUsername(session.getUsername());
         response.setNickname(session.getNickname());
         response.setExperience(session.isExperience());
         response.setRoles(session.getRoles());
         response.setPermissions(session.getPermissions());
         return response;
+    }
+
+    /**
+     * 解析租户名称。
+     *
+     * @param tenantId 租户ID
+     * @return 租户名称
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    private String resolveTenantName(String tenantId) {
+        if (!StringUtils.hasText(tenantId)) {
+            return null;
+        }
+        return tenantRepository.findByTenantIdAndIsDeleted(tenantId.trim(), 0)
+                .map(item -> item.getTenantName())
+                .orElse(null);
     }
 
     /**

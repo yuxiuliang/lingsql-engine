@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, nextTick, ref, reactive} from 'vue';
+import {computed, nextTick, reactive, ref, watch} from 'vue';
 import {ElMessage, ElMessageBox} from 'element-plus';
 import {
   TenantDbConfig,
@@ -10,6 +10,7 @@ import {
   updateTenantConfig
 } from '@/api/config';
 import {fetchTenantSchema, refreshTenantSemantic, SchemaTableInfo, syncTenantSchema} from '@/api/admin';
+import {useAuthStore} from '@/store/auth';
 
 const tenantConfigs = ref<TenantDbConfig[]>([]);
 const loading = ref(false);
@@ -24,6 +25,7 @@ const selectedTables = ref<string[]>([]);
 const selectedColumns = ref<string[]>([]);
 const tableTreeRef = ref<any>(null);
 const columnTreeRef = ref<any>(null);
+const authStore = useAuthStore();
 
 const form = reactive<TenantDbConfig>({
   tenantId: '',
@@ -37,6 +39,62 @@ const form = reactive<TenantDbConfig>({
   whiteListColumns: '',
   sensitiveColumns: '',
   status: 1
+});
+
+/**
+ * 判断是否系统管理员。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const isSysAdmin = computed(() => {
+  return (authStore.roles || []).some((role) => ['SYS_ADMIN', 'SUPER_ADMIN'].includes(role));
+});
+
+/**
+ * 当前选中租户ID。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const activeTenantId = computed(() => {
+  return isSysAdmin.value ? authStore.activeTenantId : authStore.tenantId;
+});
+
+/**
+ * 当前租户名称。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const activeTenantName = computed(() => {
+  return isSysAdmin.value ? authStore.activeTenantName : authStore.tenantName;
+});
+
+/**
+ * 判断是否已选择租户。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const hasTenantSelected = computed(() => {
+  return !isSysAdmin.value || !!authStore.activeTenantId;
+});
+
+/**
+ * 解析表单租户展示名称。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const formTenantLabel = computed(() => {
+  if (!form.tenantId) {
+    return '未选择';
+  }
+  if (form.tenantId === activeTenantId.value && activeTenantName.value) {
+    return activeTenantName.value;
+  }
+  return form.tenantId;
 });
 
 /**
@@ -67,9 +125,15 @@ const buildEmptyTenant = (): TenantDbConfig => ({
  * @date 2026-01-23
  */
 const loadTenants = async () => {
+  if (!hasTenantSelected.value || !activeTenantId.value) {
+    tenantConfigs.value = [];
+    loading.value = false;
+    return;
+  }
   loading.value = true;
   try {
-    tenantConfigs.value = await fetchTenantConfigs();
+    const list = await fetchTenantConfigs();
+    tenantConfigs.value = list.filter((item) => item.tenantId === activeTenantId.value);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载数据源配置失败');
   } finally {
@@ -84,8 +148,13 @@ const loadTenants = async () => {
  * @date 2026-01-23
  */
 const handleCreate = () => {
+  if (!hasTenantSelected.value || !activeTenantId.value) {
+    ElMessage.warning('请先选择要管理的租户');
+    return;
+  }
   editingId.value = null;
   Object.assign(form, buildEmptyTenant());
+  form.tenantId = activeTenantId.value || '';
   dialogVisible.value = true;
 };
 
@@ -109,11 +178,18 @@ const handleEdit = (row: TenantDbConfig) => {
  * @date 2026-01-23
  */
 const handleSave = async () => {
-  if (!form.tenantId || !form.jdbcUrl) {
-    ElMessage.warning('请填写租户ID与JDBC地址');
+  if (!activeTenantId.value) {
+    ElMessage.warning('请先选择租户');
+    return;
+  }
+  if (!form.jdbcUrl) {
+    ElMessage.warning('请填写 JDBC 地址');
     return;
   }
   try {
+    if (!editingId.value) {
+      form.tenantId = activeTenantId.value || '';
+    }
     if (editingId.value) {
       await updateTenantConfig(editingId.value, form);
       ElMessage.success('数据源配置已更新');
@@ -218,7 +294,7 @@ const handleRefreshSemantic = async (row: TenantDbConfig) => {
 const loadSchema = async () => {
   const tenantId = form.tenantId?.trim();
   if (!tenantId) {
-    ElMessage.warning('请先填写租户ID');
+    ElMessage.warning('请先选择租户');
     return false;
   }
   if (schemaTenantId.value === tenantId && schemaTables.value.length) {
@@ -378,100 +454,112 @@ const isMessageBoxCancel = (error: unknown) => {
   return error === 'cancel' || error === 'close';
 };
 
+watch(activeTenantId, () => {
+  dialogVisible.value = false;
+  schemaTenantId.value = '';
+  schemaTables.value = [];
+  loadTenants();
+});
+
 loadTenants();
 </script>
 
 <template>
   <div class="tenant-page">
-    <div class="toolbar">
-      <el-button type="primary" @click="handleCreate">新增数据源</el-button>
-      <el-button @click="loadTenants">刷新</el-button>
+    <div v-if="!hasTenantSelected" class="empty-state">
+      <el-empty description="请在顶部选择要管理的租户"/>
     </div>
-    <el-table :data="tenantConfigs" border v-loading="loading">
-      <el-table-column prop="tenantId" label="租户ID" min-width="140"/>
-      <el-table-column prop="jdbcUrl" label="JDBC地址" min-width="220"/>
-      <el-table-column prop="isolationMode" label="隔离模式" width="100"/>
-      <el-table-column prop="schemaSyncStatus" label="同步状态" width="90"/>
-      <el-table-column prop="lastSyncTime" label="最近同步" min-width="160"/>
-      <el-table-column prop="status" label="状态" width="90">
-        <template #default="scope">
-          <el-tag :type="resolveStatusType(scope.row.status)">{{ resolveStatusText(scope.row.status) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="运维操作" width="220">
-        <template #default="scope">
-          <el-button size="small" type="primary" @click="handleSyncSchema(scope.row)">同步元数据</el-button>
-          <el-button size="small" @click="handleRefreshSemantic(scope.row)">刷新语义</el-button>
-        </template>
-      </el-table-column>
-      <el-table-column label="配置操作" width="160">
-        <template #default="scope">
-          <el-button size="small" @click="handleEdit(scope.row)">编辑</el-button>
-          <el-button size="small" type="danger" @click="handleDelete(scope.row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <template v-else>
+      <div class="toolbar">
+        <el-button type="primary" @click="handleCreate">新增数据源</el-button>
+        <el-button @click="loadTenants">刷新</el-button>
+      </div>
+      <el-table :data="tenantConfigs" border v-loading="loading">
+        <el-table-column prop="tenantId" label="租户ID" min-width="140"/>
+        <el-table-column prop="jdbcUrl" label="JDBC地址" min-width="220"/>
+        <el-table-column prop="isolationMode" label="隔离模式" width="100"/>
+        <el-table-column prop="schemaSyncStatus" label="同步状态" width="90"/>
+        <el-table-column prop="lastSyncTime" label="最近同步" min-width="160"/>
+        <el-table-column prop="status" label="状态" width="90">
+          <template #default="scope">
+            <el-tag :type="resolveStatusType(scope.row.status)">{{ resolveStatusText(scope.row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="运维操作" width="220">
+          <template #default="scope">
+            <el-button size="small" type="primary" @click="handleSyncSchema(scope.row)">同步元数据</el-button>
+            <el-button size="small" @click="handleRefreshSemantic(scope.row)">刷新语义</el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="配置操作" width="160">
+          <template #default="scope">
+            <el-button size="small" @click="handleEdit(scope.row)">编辑</el-button>
+            <el-button size="small" type="danger" @click="handleDelete(scope.row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
 
-    <el-dialog v-model="dialogVisible" title="数据源配置" width="620px">
-      <el-form label-width="120px">
-        <el-form-item label="租户ID">
-          <el-input v-model="form.tenantId" placeholder="请输入租户ID"/>
-        </el-form-item>
-        <el-form-item label="JDBC地址">
-          <el-input v-model="form.jdbcUrl" placeholder="jdbc:mysql://host:port/db"/>
-        </el-form-item>
-        <el-form-item label="用户名">
-          <el-input v-model="form.username" placeholder="数据库账号"/>
-        </el-form-item>
-        <el-form-item label="密码">
-          <el-input v-model="form.password" placeholder="数据库密码" show-password/>
-        </el-form-item>
-        <el-form-item label="驱动类">
-          <el-input v-model="form.driverClass" placeholder="com.mysql.cj.jdbc.Driver"/>
-        </el-form-item>
-        <el-form-item label="隔离模式">
-          <el-select v-model="form.isolationMode" style="width: 100%">
-            <el-option label="物理隔离" value="PHYSICAL"/>
-            <el-option label="逻辑隔离" value="LOGICAL"/>
-          </el-select>
-        </el-form-item>
-        <el-form-item label="逻辑隔离字段">
-          <el-input v-model="form.logicColumn" placeholder="tenant_id"/>
-        </el-form-item>
-        <el-form-item label="表白名单">
-          <el-input v-model="form.whiteListTables" placeholder="表名逗号分隔">
-            <template #append>
-              <el-button @click="openTableSelect">选择</el-button>
-            </template>
-          </el-input>
-        </el-form-item>
-        <el-form-item label="字段白名单">
-          <el-input v-model="form.whiteListColumns" placeholder="字段逗号分隔">
-            <template #append>
-              <el-button @click="openColumnSelect('whitelist')">选择</el-button>
-            </template>
-          </el-input>
-        </el-form-item>
-        <el-form-item label="敏感字段">
-          <el-input v-model="form.sensitiveColumns" placeholder="敏感字段逗号分隔">
-            <template #append>
-              <el-button @click="openColumnSelect('sensitive')">选择</el-button>
-            </template>
-          </el-input>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="form.status" style="width: 100%">
-            <el-option :value="1" label="启用"/>
-            <el-option :value="0" label="停用"/>
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button @click="handleTestConnection">测试连接</el-button>
-        <el-button type="primary" @click="handleSave">保存</el-button>
-      </template>
-    </el-dialog>
+      <el-dialog v-model="dialogVisible" title="数据源配置" width="620px">
+        <el-form label-width="120px">
+          <el-form-item label="所属租户">
+            <el-tag :type="form.tenantId ? 'success' : 'info'">{{ formTenantLabel }}</el-tag>
+          </el-form-item>
+          <el-form-item label="JDBC地址">
+            <el-input v-model="form.jdbcUrl" placeholder="jdbc:mysql://host:port/db"/>
+          </el-form-item>
+          <el-form-item label="用户名">
+            <el-input v-model="form.username" placeholder="数据库账号"/>
+          </el-form-item>
+          <el-form-item label="密码">
+            <el-input v-model="form.password" placeholder="数据库密码" show-password/>
+          </el-form-item>
+          <el-form-item label="驱动类">
+            <el-input v-model="form.driverClass" placeholder="com.mysql.cj.jdbc.Driver"/>
+          </el-form-item>
+          <el-form-item label="隔离模式">
+            <el-select v-model="form.isolationMode" style="width: 100%">
+              <el-option label="物理隔离" value="PHYSICAL"/>
+              <el-option label="逻辑隔离" value="LOGICAL"/>
+            </el-select>
+          </el-form-item>
+          <el-form-item label="逻辑隔离字段">
+            <el-input v-model="form.logicColumn" placeholder="tenant_id"/>
+          </el-form-item>
+          <el-form-item label="表白名单">
+            <el-input v-model="form.whiteListTables" placeholder="表名逗号分隔">
+              <template #append>
+                <el-button @click="openTableSelect">选择</el-button>
+              </template>
+            </el-input>
+          </el-form-item>
+          <el-form-item label="字段白名单">
+            <el-input v-model="form.whiteListColumns" placeholder="字段逗号分隔">
+              <template #append>
+                <el-button @click="openColumnSelect('whitelist')">选择</el-button>
+              </template>
+            </el-input>
+          </el-form-item>
+          <el-form-item label="敏感字段">
+            <el-input v-model="form.sensitiveColumns" placeholder="敏感字段逗号分隔">
+              <template #append>
+                <el-button @click="openColumnSelect('sensitive')">选择</el-button>
+              </template>
+            </el-input>
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select v-model="form.status" style="width: 100%">
+              <el-option :value="1" label="启用"/>
+              <el-option :value="0" label="停用"/>
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button @click="handleTestConnection">测试连接</el-button>
+          <el-button type="primary" @click="handleSave">保存</el-button>
+        </template>
+      </el-dialog>
+    </template>
     <el-dialog v-model="tableSelectVisible" title="选择表白名单" width="520px">
       <el-tree
         ref="tableTreeRef"
@@ -515,5 +603,9 @@ loadTenants();
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.empty-state {
+  padding: 24px 0;
 }
 </style>

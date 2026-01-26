@@ -25,6 +25,26 @@ public interface SemanticLexiconRepository extends JpaRepository<SemanticLexicon
     List<SemanticLexiconItem> findByTenantIdAndStatus(String tenantId, Integer status);
 
     /**
+     * 查询租户级别词典（包含全部状态）。
+     *
+     * @param tenantId 租户标识
+     * @return 词典列表
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    List<SemanticLexiconItem> findByTenantId(String tenantId);
+
+    /**
+     * 查询租户或全局词典（包含全部状态）。
+     *
+     * @param tenantId 租户标识
+     * @return 词典列表
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    List<SemanticLexiconItem> findByTenantIdOrTenantIdIsNull(String tenantId);
+
+    /**
      * 查询全局词典。
      *
      * @param status 状态

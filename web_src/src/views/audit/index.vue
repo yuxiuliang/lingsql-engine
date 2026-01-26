@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, reactive, ref} from 'vue';
+import {computed, reactive, ref, watch} from 'vue';
 import {ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
 import {AuditLogView, fetchAuditLogs, PageResult} from '@/api/audit';
@@ -12,7 +12,6 @@ const page = ref(1);
 const size = ref(10);
 
 const searchForm = reactive({
-  tenantId: '',
   userId: '',
   action: '',
   dateRange: [] as [Date, Date] | []
@@ -26,6 +25,32 @@ const searchForm = reactive({
  */
 const isSysAdmin = computed(() => {
   return (authStore.roles || []).some((role) => ['SYS_ADMIN', 'SUPER_ADMIN'].includes(role));
+});
+
+/**
+ * 当前选中租户ID。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const activeTenantId = computed(() => {
+  return isSysAdmin.value ? authStore.activeTenantId : authStore.tenantId;
+});
+
+/**
+ * 当前租户范围展示文本。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const tenantScopeLabel = computed(() => {
+  if (isSysAdmin.value) {
+    if (!activeTenantId.value) {
+      return '全部';
+    }
+    return authStore.activeTenantName || activeTenantId.value;
+  }
+  return authStore.tenantName || authStore.tenantId || '当前租户';
 });
 
 /**
@@ -76,7 +101,7 @@ const loadLogs = async () => {
   try {
     const {startTime, endTime} = resolveTimeRange();
     const result: PageResult<AuditLogView> = await fetchAuditLogs({
-      tenantId: isSysAdmin.value ? searchForm.tenantId : undefined,
+      tenantId: isSysAdmin.value ? activeTenantId.value || undefined : undefined,
       userId: searchForm.userId ? Number(searchForm.userId) : undefined,
       action: searchForm.action || undefined,
       startTime,
@@ -128,6 +153,12 @@ const handleSearch = () => {
   loadLogs();
 };
 
+watch(activeTenantId, () => {
+  if (isSysAdmin.value) {
+    handleSearch();
+  }
+});
+
 loadLogs();
 </script>
 
@@ -139,7 +170,10 @@ loadLogs();
     <el-card class="card" shadow="never">
       <div class="toolbar">
         <div class="filters">
-          <el-input v-if="isSysAdmin" v-model="searchForm.tenantId" placeholder="租户ID" style="width: 160px"/>
+          <div class="tenant-scope">
+            当前范围：
+            <el-tag size="small" :type="activeTenantId ? 'success' : 'info'">{{ tenantScopeLabel }}</el-tag>
+          </div>
           <el-input v-model="searchForm.userId" placeholder="用户ID" style="width: 120px"/>
           <el-input v-model="searchForm.action" placeholder="动作关键词" style="width: 160px"/>
           <el-date-picker
@@ -214,6 +248,13 @@ loadLogs();
   gap: 12px;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.tenant-scope {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #64748b;
 }
 
 .pagination {
