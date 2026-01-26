@@ -6,7 +6,9 @@ import com.lingsql.rbac.security.RbacUserSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.DigestUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
 
@@ -130,6 +132,7 @@ public class TokenService {
      * @date 2026-01-23
      */
     private String buildKey(String token) {
-        return RbacSecurityConstants.TOKEN_CACHE_PREFIX + token;
+        String safeSuffix = DigestUtils.md5DigestAsHex(token.getBytes(StandardCharsets.UTF_8));
+        return RbacSecurityConstants.TOKEN_CACHE_PREFIX + safeSuffix;
     }
 }
