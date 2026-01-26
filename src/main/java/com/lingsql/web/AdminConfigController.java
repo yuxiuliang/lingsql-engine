@@ -1,10 +1,15 @@
 package com.lingsql.web;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.agent.model.AiModelConfig;
 import com.lingsql.agent.repository.AiModelConfigRepository;
+import com.lingsql.audit.model.AuditLogCommand;
+import com.lingsql.audit.service.AuditLogService;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
+import com.lingsql.rbac.security.RbacSecurityUtils;
+import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.schema.entity.JoinRule;
 import com.lingsql.schema.entity.SemanticLexiconItem;
 import com.lingsql.schema.repository.JoinRuleRepository;
@@ -41,6 +46,8 @@ public class AdminConfigController {
     private final AiModelConfigRepository aiModelConfigRepository;
     private final SemanticLexiconRepository semanticLexiconRepository;
     private final JoinRuleRepository joinRuleRepository;
+    private final AuditLogService auditLogService;
+    private final ObjectMapper objectMapper;
 
     /**
      * 查询租户配置列表。
@@ -52,6 +59,9 @@ public class AdminConfigController {
     @GetMapping("/tenant")
     @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
     public ApiResponse<List<TenantDbConfig>> listTenants() {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
         return ApiResponse.success(tenantDbConfigRepository.findAll());
     }
 
@@ -66,9 +76,19 @@ public class AdminConfigController {
     @PostMapping("/tenant")
     @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
     public ApiResponse<TenantDbConfig> createTenant(@RequestBody TenantDbConfig request) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
         request.setId(null);
         request.setTenantId(normalizeTenantId(request.getTenantId()));
-        return ApiResponse.success(tenantDbConfigRepository.save(request));
+        try {
+            TenantDbConfig saved = tenantDbConfigRepository.save(request);
+            recordAudit("TENANT_CREATE", "TENANT", request, true, null);
+            return ApiResponse.success(saved);
+        } catch (Exception ex) {
+            recordAudit("TENANT_CREATE", "TENANT", request, false, ex.getMessage());
+            return ApiResponse.error(ex.getMessage());
+        }
     }
 
     /**
@@ -82,6 +102,9 @@ public class AdminConfigController {
     @PostMapping("/tenant/test-connection")
     @PreAuthorize("hasAuthority('ADMIN:TENANT:TEST')")
     public ApiResponse<String> testTenantConnection(@RequestBody TenantDbConfig request) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
         String driverClass = request.getDriverClass();
         String url = request.getJdbcUrl();
         if (driverClass == null || driverClass.isBlank()) {
@@ -109,6 +132,9 @@ public class AdminConfigController {
     @PutMapping("/tenant/{id}")
     @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
     public ApiResponse<TenantDbConfig> updateTenant(@PathVariable Long id, @RequestBody TenantDbConfig request) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
         TenantDbConfig config = tenantDbConfigRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("租户配置不存在"));
         config.setTenantId(normalizeTenantId(request.getTenantId()));
@@ -122,7 +148,14 @@ public class AdminConfigController {
         config.setWhiteListColumns(request.getWhiteListColumns());
         config.setSensitiveColumns(request.getSensitiveColumns());
         config.setStatus(request.getStatus());
-        return ApiResponse.success(tenantDbConfigRepository.save(config));
+        try {
+            TenantDbConfig saved = tenantDbConfigRepository.save(config);
+            recordAudit("TENANT_UPDATE", "TENANT", request, true, null);
+            return ApiResponse.success(saved);
+        } catch (Exception ex) {
+            recordAudit("TENANT_UPDATE", "TENANT", request, false, ex.getMessage());
+            return ApiResponse.error(ex.getMessage());
+        }
     }
 
     /**
@@ -136,8 +169,17 @@ public class AdminConfigController {
     @DeleteMapping("/tenant/{id}")
     @PreAuthorize("hasAuthority('ADMIN:TENANT:DELETE')")
     public ApiResponse<String> deleteTenant(@PathVariable Long id) {
-        tenantDbConfigRepository.deleteById(id);
-        return ApiResponse.success("租户配置已删除");
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        try {
+            tenantDbConfigRepository.deleteById(id);
+            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, true, null);
+            return ApiResponse.success("租户配置已删除");
+        } catch (Exception ex) {
+            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, false, ex.getMessage());
+            return ApiResponse.error(ex.getMessage());
+        }
     }
 
     /**
@@ -150,6 +192,9 @@ public class AdminConfigController {
     @GetMapping("/model")
     @PreAuthorize("hasAuthority('ADMIN:MODEL:READ')")
     public ApiResponse<List<AiModelConfig>> listModels() {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
         return ApiResponse.success(aiModelConfigRepository.findAll());
     }
 
@@ -164,8 +209,18 @@ public class AdminConfigController {
     @PostMapping("/model")
     @PreAuthorize("hasAuthority('ADMIN:MODEL:WRITE')")
     public ApiResponse<AiModelConfig> createModel(@RequestBody AiModelConfig request) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
         request.setId(null);
-        return ApiResponse.success(aiModelConfigRepository.save(request));
+        try {
+            AiModelConfig saved = aiModelConfigRepository.save(request);
+            recordAudit("MODEL_CREATE", "MODEL", request, true, null);
+            return ApiResponse.success(saved);
+        } catch (Exception ex) {
+            recordAudit("MODEL_CREATE", "MODEL", request, false, ex.getMessage());
+            return ApiResponse.error(ex.getMessage());
+        }
     }
 
     /**
@@ -180,10 +235,14 @@ public class AdminConfigController {
     @PutMapping("/model/{id}")
     @PreAuthorize("hasAuthority('ADMIN:MODEL:WRITE')")
     public ApiResponse<AiModelConfig> updateModel(@PathVariable Long id, @RequestBody AiModelConfig request) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
         AiModelConfig config = aiModelConfigRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("模型配置不存在"));
         config.setProviderName(request.getProviderName());
         config.setModelName(request.getModelName());
+        config.setModelVersion(request.getModelVersion());
         config.setBaseUrl(request.getBaseUrl());
         config.setApiKey(request.getApiKey());
         config.setIsActive(request.getIsActive());
@@ -191,7 +250,14 @@ public class AdminConfigController {
         config.setPriority(request.getPriority());
         config.setAutoRecover(request.getAutoRecover());
         config.setCooldownSeconds(request.getCooldownSeconds());
-        return ApiResponse.success(aiModelConfigRepository.save(config));
+        try {
+            AiModelConfig saved = aiModelConfigRepository.save(config);
+            recordAudit("MODEL_UPDATE", "MODEL", request, true, null);
+            return ApiResponse.success(saved);
+        } catch (Exception ex) {
+            recordAudit("MODEL_UPDATE", "MODEL", request, false, ex.getMessage());
+            return ApiResponse.error(ex.getMessage());
+        }
     }
 
     /**
@@ -205,8 +271,76 @@ public class AdminConfigController {
     @DeleteMapping("/model/{id}")
     @PreAuthorize("hasAuthority('ADMIN:MODEL:DELETE')")
     public ApiResponse<String> deleteModel(@PathVariable Long id) {
-        aiModelConfigRepository.deleteById(id);
-        return ApiResponse.success("模型配置已删除");
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        try {
+            aiModelConfigRepository.deleteById(id);
+            recordAudit("MODEL_DELETE", "MODEL", "id=" + id, true, null);
+            return ApiResponse.success("模型配置已删除");
+        } catch (Exception ex) {
+            recordAudit("MODEL_DELETE", "MODEL", "id=" + id, false, ex.getMessage());
+            return ApiResponse.error(ex.getMessage());
+        }
+    }
+
+    /**
+     * 记录审计日志。
+     *
+     * @param action   动作
+     * @param resource 资源
+     * @param request  请求体
+     * @param success  是否成功
+     * @param error    错误信息
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    private void recordAudit(String action, String resource, Object request, boolean success, String error) {
+        RbacUserSession session = RbacSecurityUtils.currentSession();
+        if (session == null) {
+            return;
+        }
+        AuditLogCommand command = new AuditLogCommand();
+        command.setTenantId(session.getTenantId());
+        command.setUserId(session.getUserId());
+        command.setUsername(session.getUsername());
+        command.setAction(action);
+        command.setResource(resource);
+        command.setDetail(serialize(request));
+        command.setSuccess(success);
+        command.setErrorMessage(error);
+        auditLogService.record(command);
+    }
+
+    /**
+     * 序列化对象。
+     *
+     * @param value 对象
+     * @return JSON 字符串
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    private String serialize(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    /**
+     * 判断是否系统管理员。
+     *
+     * @return 是否系统管理员
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    private boolean isSysAdmin() {
+        RbacUserSession session = RbacSecurityUtils.currentSession();
+        return com.lingsql.rbac.security.SecureTenantResolver.isSysAdmin(session);
     }
 
     /**

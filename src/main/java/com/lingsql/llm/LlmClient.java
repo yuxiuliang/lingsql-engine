@@ -133,6 +133,12 @@ public class LlmClient {
                 modelConfig.getProviderName(),
                 modelConfig.getModelName(),
                 costMs);
+        LlmTraceInfo traceInfo = new LlmTraceInfo();
+        traceInfo.setProviderName(modelConfig.getProviderName());
+        traceInfo.setModelName(modelConfig.getModelName());
+        traceInfo.setModelVersion(modelConfig.getModelVersion());
+        traceInfo.setCostMs(costMs);
+        LlmTraceContext.set(traceInfo);
         return content;
     }
 

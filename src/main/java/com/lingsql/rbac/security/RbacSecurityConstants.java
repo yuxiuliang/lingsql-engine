@@ -38,7 +38,7 @@ public final class RbacSecurityConstants {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    public static final long DEFAULT_EXPIRE_SECONDS = 7200L;
+    public static final long DEFAULT_EXPIRE_SECONDS = 86400L;
 
     private RbacSecurityConstants() {
     }

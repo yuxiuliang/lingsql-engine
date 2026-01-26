@@ -269,6 +269,39 @@ public class LingSqlProperties {
     }
 
     /**
+     * 认证配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    @Data
+    public static class Auth {
+        /**
+         * JWT 密钥(至少 32 字符)。
+         *
+         * @author 余炘洋
+         * @date 2026-01-26
+         */
+        private String jwtSecret = "change-me-to-a-secure-secret-key-32";
+
+        /**
+         * JWT 签发方。
+         *
+         * @author 余炘洋
+         * @date 2026-01-26
+         */
+        private String jwtIssuer = "lingsql-engine";
+
+        /**
+         * JWT 有效期。
+         *
+         * @author 余炘洋
+         * @date 2026-01-26
+         */
+        private Duration jwtTtl = Duration.ofHours(24);
+    }
+
+    /**
      * 安全配置。
      *
      * @author 余炘洋
@@ -330,4 +363,12 @@ public class LingSqlProperties {
      * @date 2026-01-23
      */
     private Cors cors = new Cors();
+
+    /**
+     * 认证配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    private Auth auth = new Auth();
 }

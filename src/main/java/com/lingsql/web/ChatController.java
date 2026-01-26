@@ -60,7 +60,7 @@ public class ChatController {
         Long userId = TenantContext.getUserId();
         SqlExecutionResult executionResult;
         try {
-            executionResult = sqlExecutor.execute(tenantId, request.getQuestion());
+            executionResult = sqlExecutor.execute(tenantId, request.getQuestion(), "WEB");
         } catch (Exception ex) {
             executionResult = SqlExecutionResult.failure(null, ex.getMessage());
         }

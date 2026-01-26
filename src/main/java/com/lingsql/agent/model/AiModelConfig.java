@@ -50,6 +50,15 @@ public class AiModelConfig {
     private String modelName;
 
     /**
+     * 模型版本。
+     *
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    @Column(name = "model_version")
+    private String modelVersion;
+
+    /**
      * 模型基础地址。
      *
      * @author 余炘洋

@@ -1,29 +1,38 @@
 package com.lingsql.rbac.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lingsql.rbac.security.RbacSecurityConstants;
+import com.lingsql.config.LingSqlProperties;
 import com.lingsql.rbac.security.RbacUserSession;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.util.DigestUtils;
+import org.springframework.util.StringUtils;
 
+import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.UUID;
+import java.time.Instant;
+import java.util.Date;
+import java.util.Map;
 
 /**
- * Token 会话管理服务。
+ * Token 会话管理服务（JWT 无状态）。
  *
  * @author 余炘洋
- * @date 2026-01-23
+ * @date 2026-01-26
  */
 @Service
 @RequiredArgsConstructor
 public class TokenService {
 
-    private final StringRedisTemplate stringRedisTemplate;
+    private static final String SESSION_CLAIM = "session";
+
+    private final LingSqlProperties properties;
     private final ObjectMapper objectMapper;
+    private volatile SecretKey signingKey;
 
     /**
      * 创建 Token 并缓存会话。
@@ -31,12 +40,24 @@ public class TokenService {
      * @param session 会话数据
      * @return Token
      * @author 余炘洋
-     * @date 2026-01-23
+     * @date 2026-01-26
      */
     public String createToken(RbacUserSession session) {
-        String token = UUID.randomUUID().toString().replace("-", "");
-        cacheSession(token, session);
-        return token;
+        if (session == null || session.getUserId() == null) {
+            throw new RuntimeException("会话数据不能为空");
+        }
+        Instant now = Instant.now();
+        Instant expiresAt = now.plus(resolveTtl());
+        Map<String, Object> sessionMap = objectMapper.convertValue(session, new TypeReference<>() {
+        });
+        return Jwts.builder()
+                .issuer(resolveIssuer())
+                .subject(String.valueOf(session.getUserId()))
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(expiresAt))
+                .claim(SESSION_CLAIM, sessionMap)
+                .signWith(resolveSigningKey())
+                .compact();
     }
 
     /**
@@ -45,18 +66,23 @@ public class TokenService {
      * @param token Token
      * @return 会话数据
      * @author 余炘洋
-     * @date 2026-01-23
+     * @date 2026-01-26
      */
     public RbacUserSession getSession(String token) {
-        if (token == null || token.isBlank()) {
-            return null;
-        }
-        String value = stringRedisTemplate.opsForValue().get(buildKey(token));
-        if (value == null || value.isBlank()) {
+        if (!StringUtils.hasText(token)) {
             return null;
         }
         try {
-            return objectMapper.readValue(value, RbacUserSession.class);
+            Claims claims = Jwts.parser()
+                    .verifyWith(resolveSigningKey())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+            Object sessionObj = claims.get(SESSION_CLAIM);
+            if (sessionObj == null) {
+                return null;
+            }
+            return objectMapper.convertValue(sessionObj, RbacUserSession.class);
         } catch (Exception ex) {
             return null;
         }
@@ -68,13 +94,10 @@ public class TokenService {
      * @param token   Token
      * @param session 会话数据
      * @author 余炘洋
-     * @date 2026-01-23
+     * @date 2026-01-26
      */
     public void refreshSession(String token, RbacUserSession session) {
-        if (token == null || token.isBlank() || session == null) {
-            return;
-        }
-        cacheSession(token, session);
+        // JWT 无状态模式下无需刷新
     }
 
     /**
@@ -82,13 +105,10 @@ public class TokenService {
      *
      * @param token Token
      * @author 余炘洋
-     * @date 2026-01-23
+     * @date 2026-01-26
      */
     public void revokeToken(String token) {
-        if (token == null || token.isBlank()) {
-            return;
-        }
-        stringRedisTemplate.delete(buildKey(token));
+        // JWT 无状态模式下无需吊销
     }
 
     /**
@@ -96,43 +116,68 @@ public class TokenService {
      *
      * @return 过期秒数
      * @author 余炘洋
-     * @date 2026-01-23
+     * @date 2026-01-26
      */
     public long getExpireSeconds() {
-        return RbacSecurityConstants.DEFAULT_EXPIRE_SECONDS;
+        return resolveTtl().getSeconds();
     }
 
     /**
-     * 缓存会话信息。
+     * 解析 JWT 签发方。
      *
-     * @param token   Token
-     * @param session 会话
+     * @return 签发方
      * @author 余炘洋
-     * @date 2026-01-23
+     * @date 2026-01-26
      */
-    private void cacheSession(String token, RbacUserSession session) {
-        try {
-            String json = objectMapper.writeValueAsString(session);
-            stringRedisTemplate.opsForValue().set(
-                    buildKey(token),
-                    json,
-                    Duration.ofSeconds(getExpireSeconds())
-            );
-        } catch (Exception ex) {
-            throw new RuntimeException("缓存登录会话失败");
+    private String resolveIssuer() {
+        LingSqlProperties.Auth auth = properties.getAuth();
+        if (auth == null || !StringUtils.hasText(auth.getJwtIssuer())) {
+            return "lingsql-engine";
         }
+        return auth.getJwtIssuer().trim();
     }
 
     /**
-     * 构建缓存 Key。
+     * 解析 Token 有效期。
      *
-     * @param token Token
-     * @return Key
+     * @return 有效期
      * @author 余炘洋
-     * @date 2026-01-23
+     * @date 2026-01-26
      */
-    private String buildKey(String token) {
-        String safeSuffix = DigestUtils.md5DigestAsHex(token.getBytes(StandardCharsets.UTF_8));
-        return RbacSecurityConstants.TOKEN_CACHE_PREFIX + safeSuffix;
+    private Duration resolveTtl() {
+        LingSqlProperties.Auth auth = properties.getAuth();
+        if (auth == null || auth.getJwtTtl() == null) {
+            return Duration.ofHours(24);
+        }
+        return auth.getJwtTtl();
+    }
+
+    /**
+     * 获取签名密钥。
+     *
+     * @return 密钥
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    private SecretKey resolveSigningKey() {
+        if (signingKey != null) {
+            return signingKey;
+        }
+        synchronized (this) {
+            if (signingKey != null) {
+                return signingKey;
+            }
+            LingSqlProperties.Auth auth = properties.getAuth();
+            String secret = auth == null ? null : auth.getJwtSecret();
+            if (!StringUtils.hasText(secret)) {
+                throw new RuntimeException("JWT 密钥未配置");
+            }
+            byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+            if (keyBytes.length < 32) {
+                throw new RuntimeException("JWT 密钥长度不足 32 字符");
+            }
+            signingKey = Keys.hmacShaKeyFor(keyBytes);
+            return signingKey;
+        }
     }
 }

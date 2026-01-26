@@ -95,6 +95,24 @@ public class RbacUser {
     private LocalDateTime lastLoginTime;
 
     /**
+     * 登录失败次数。
+     *
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    @Column(name = "failed_login_count")
+    private Integer failedLoginCount;
+
+    /**
+     * 锁定截止时间。
+     *
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    @Column(name = "lock_until")
+    private LocalDateTime lockUntil;
+
+    /**
      * 创建时间。
      *
      * @author 余炘洋

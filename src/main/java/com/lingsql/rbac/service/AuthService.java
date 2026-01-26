@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -43,6 +44,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+
+    private static final int MAX_LOGIN_FAILURES = 5;
+    private static final Duration LOCK_DURATION = Duration.ofMinutes(30);
 
     private final RbacUserRepository userRepository;
     private final RbacUserRoleRepository userRoleRepository;
@@ -72,7 +76,24 @@ public class AuthService {
         if (user.getStatus() != null && user.getStatus() == 0) {
             throw new RuntimeException("账号已停用");
         }
+        LocalDateTime now = LocalDateTime.now();
+        if (user.getLockUntil() != null && user.getLockUntil().isAfter(now)) {
+            long minutes = Duration.between(now, user.getLockUntil()).toMinutes();
+            long remain = Math.max(1, minutes);
+            throw new RuntimeException("账号已锁定，请在 " + remain + " 分钟后重试");
+        }
+        if (user.getLockUntil() != null && !user.getLockUntil().isAfter(now)) {
+            user.setLockUntil(null);
+            user.setFailedLoginCount(0);
+        }
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            int failures = user.getFailedLoginCount() == null ? 0 : user.getFailedLoginCount();
+            failures++;
+            user.setFailedLoginCount(failures);
+            if (failures >= MAX_LOGIN_FAILURES) {
+                user.setLockUntil(now.plus(LOCK_DURATION));
+            }
+            userRepository.save(user);
             throw new RuntimeException("账号或密码错误");
         }
 
@@ -95,7 +116,9 @@ public class AuthService {
         RbacUserSession session = buildSession(user, roleCodes, permCodes, dataScope, menuWhitelist);
         String token = tokenService.createToken(session);
 
-        user.setLastLoginTime(LocalDateTime.now());
+        user.setLastLoginTime(now);
+        user.setFailedLoginCount(0);
+        user.setLockUntil(null);
         userRepository.save(user);
 
         return buildLoginResponse(session, token, tokenService.getExpireSeconds());
