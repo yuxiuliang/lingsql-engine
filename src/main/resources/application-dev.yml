@@ -92,3 +92,7 @@ lingsql:
     exposed-headers: [ ]
     allow-credentials: true
     max-age: 3600
+  auth:
+    jwt-secret: "lingsql-dev-secret-key-32chars-2026!"
+    jwt-issuer: "lingsql-engine"
+    jwt-ttl: 24h
