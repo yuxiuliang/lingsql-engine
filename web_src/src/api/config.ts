@@ -33,6 +33,7 @@ export interface AiModelConfig {
   id?: number;
   providerName?: string;
   modelName?: string;
+  modelVersion?: string;
   baseUrl?: string;
   apiKey?: string;
   isActive?: number;

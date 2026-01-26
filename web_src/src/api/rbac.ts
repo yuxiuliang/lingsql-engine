@@ -1,0 +1,354 @@
+import {request} from '@/utils/request';
+
+/**
+ * 分页结果定义。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface PageResult<T> {
+  list: T[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+/**
+ * 用户视图。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface UserView {
+  id: number;
+  tenantId: string;
+  username: string;
+  nickname?: string;
+  status?: number;
+  isExperience?: number;
+  lastLoginTime?: string;
+  roleIds?: number[];
+}
+
+/**
+ * 用户创建请求。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface UserCreateRequest {
+  tenantId?: string;
+  username: string;
+  password: string;
+  nickname?: string;
+  status?: number;
+  isExperience?: number;
+  roleIds?: number[];
+}
+
+/**
+ * 用户更新请求。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface UserUpdateRequest {
+  nickname?: string;
+  status?: number;
+  isExperience?: number;
+  roleIds?: number[];
+}
+
+/**
+ * 密码重置请求。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface UserPasswordResetRequest {
+  newPassword: string;
+}
+
+/**
+ * 角色视图。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface RoleView {
+  id: number;
+  tenantId?: string;
+  roleCode: string;
+  roleName: string;
+  status?: number;
+  permIds?: number[];
+}
+
+/**
+ * 角色创建请求。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface RoleCreateRequest {
+  tenantId?: string;
+  roleCode: string;
+  roleName: string;
+  status?: number;
+  permIds?: number[];
+}
+
+/**
+ * 角色更新请求。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface RoleUpdateRequest {
+  roleName?: string;
+  status?: number;
+  permIds?: number[];
+}
+
+/**
+ * 权限视图。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface PermissionView {
+  id: number;
+  permCode: string;
+  permName: string;
+  permType: string;
+  status?: number;
+}
+
+/**
+ * 租户权限池请求。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface TenantPermissionRequest {
+  permIds?: number[];
+}
+
+/**
+ * 数据权限规则。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface DataScopeRule {
+  scopeType?: string;
+  scopeColumn?: string;
+  scopeRule?: string;
+}
+
+/**
+ * 体验账号策略。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface ExperiencePolicyView {
+  userId?: number;
+  menuWhitelist?: string[];
+  dataScopeOverride?: DataScopeRule;
+  status?: number;
+}
+
+/**
+ * 体验账号策略请求。
+ *
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export interface ExperiencePolicyRequest {
+  menuWhitelist?: string[];
+  dataScopeOverride?: DataScopeRule;
+  enabled?: boolean;
+}
+
+/**
+ * 查询用户列表。
+ *
+ * @param params 查询参数
+ * @return 用户分页
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export const fetchUsers = async (params: {tenantId?: string; keyword?: string; page: number; size: number}): Promise<PageResult<UserView>> => {
+  const query = new URLSearchParams({
+    page: String(params.page),
+    size: String(params.size)
+  });
+  if (params.tenantId) {
+    query.set('tenantId', params.tenantId);
+  }
+  if (params.keyword) {
+    query.set('keyword', params.keyword);
+  }
+  return request<PageResult<UserView>>(`/api/v1/admin/users?${query.toString()}`);
+};
+
+/**
+ * 创建用户。
+ *
+ * @param payload 请求体
+ * @return 用户信息
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export const createUser = async (payload: UserCreateRequest): Promise<UserView> => {
+  return request<UserView>('/api/v1/admin/users', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 更新用户。
+ *
+ * @param id 用户ID
+ * @param payload 请求体
+ * @return 用户信息
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export const updateUser = async (id: number, payload: UserUpdateRequest): Promise<UserView> => {
+  return request<UserView>(`/api/v1/admin/users/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 重置用户密码。
+ *
+ * @param id 用户ID
+ * @param payload 请求体
+ * @return 重置结果
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export const resetUserPassword = async (id: number, payload: UserPasswordResetRequest): Promise<string> => {
+  return request<string>(`/api/v1/admin/users/${id}/password`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 查询角色列表。
+ *
+ * @param tenantId 租户ID
+ * @return 角色列表
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export const fetchRoles = async (tenantId?: string): Promise<RoleView[]> => {
+  const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  return request<RoleView[]>(`/api/v1/admin/roles${query}`);
+};
+
+/**
+ * 创建角色。
+ *
+ * @param payload 请求体
+ * @return 角色信息
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export const createRole = async (payload: RoleCreateRequest): Promise<RoleView> => {
+  return request<RoleView>('/api/v1/admin/roles', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 更新角色。
+ *
+ * @param id 角色ID
+ * @param payload 请求体
+ * @return 角色信息
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export const updateRole = async (id: number, payload: RoleUpdateRequest): Promise<RoleView> => {
+  return request<RoleView>(`/api/v1/admin/roles/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 查询权限列表。
+ *
+ * @return 权限列表
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export const fetchPermissions = async (): Promise<PermissionView[]> => {
+  return request<PermissionView[]>('/api/v1/admin/permissions');
+};
+
+/**
+ * 查询租户权限池。
+ *
+ * @param tenantId 租户ID
+ * @return 权限列表
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export const fetchTenantPermissionPool = async (tenantId: string): Promise<PermissionView[]> => {
+  return request<PermissionView[]>(`/api/v1/admin/permissions/pool/${encodeURIComponent(tenantId)}`);
+};
+
+/**
+ * 更新租户权限池。
+ *
+ * @param tenantId 租户ID
+ * @param payload 请求体
+ * @return 更新结果
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export const updateTenantPermissionPool = async (tenantId: string, payload: TenantPermissionRequest): Promise<string> => {
+  return request<string>(`/api/v1/admin/permissions/pool/${encodeURIComponent(tenantId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+};
+
+/**
+ * 查询体验账号策略。
+ *
+ * @param userId 用户ID
+ * @return 策略信息
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export const fetchExperiencePolicy = async (userId: number): Promise<ExperiencePolicyView> => {
+  return request<ExperiencePolicyView>(`/api/v1/rbac/experience/${userId}`);
+};
+
+/**
+ * 保存体验账号策略。
+ *
+ * @param userId 用户ID
+ * @param payload 请求体
+ * @return 策略信息
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+export const saveExperiencePolicy = async (userId: number, payload: ExperiencePolicyRequest): Promise<ExperiencePolicyView> => {
+  return request<ExperiencePolicyView>(`/api/v1/rbac/experience/${userId}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+};

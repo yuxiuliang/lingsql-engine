@@ -24,6 +24,12 @@ const routes: Array<RouteRecordRaw> = [
                 meta: {title: 'AI 语数对话', icon: 'ChatLineRound'}
             },
             {
+                path: '/chat/history',
+                name: 'ChatHistory',
+                component: () => import('@/views/chat/index.vue'),
+                meta: {title: '问答历史', icon: 'ChatLineRound'}
+            },
+            {
                 path: '/model',
                 name: 'Model',
                 component: () => import('@/views/model/index.vue'),
@@ -52,6 +58,42 @@ const routes: Array<RouteRecordRaw> = [
                 name: 'Metadata',
                 component: () => import('@/views/metadata/index.vue'),
                 meta: {title: '元数据字典', icon: 'Notebook'}
+            },
+            {
+                path: '/experience',
+                name: 'Experience',
+                component: () => import('@/views/experience/index.vue'),
+                meta: {title: '体验账号', icon: 'User'}
+            },
+            {
+                path: '/user',
+                name: 'UserManage',
+                component: () => import('@/views/user/index.vue'),
+                meta: {title: '用户管理', icon: 'User'}
+            },
+            {
+                path: '/role',
+                name: 'RoleManage',
+                component: () => import('@/views/role/index.vue'),
+                meta: {title: '角色管理', icon: 'Role'}
+            },
+            {
+                path: '/permission',
+                name: 'PermissionManage',
+                component: () => import('@/views/permission/index.vue'),
+                meta: {title: '权限管理', icon: 'Permission'}
+            },
+            {
+                path: '/audit',
+                name: 'AuditLog',
+                component: () => import('@/views/audit/index.vue'),
+                meta: {title: '审计日志', icon: 'Audit'}
+            },
+            {
+                path: '/sql-log',
+                name: 'SqlLog',
+                component: () => import('@/views/sql-log/index.vue'),
+                meta: {title: 'SQL 日志', icon: 'Sql'}
             }
         ]
     },

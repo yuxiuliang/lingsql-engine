@@ -83,7 +83,7 @@ const resolveIconType = (icon?: string): string => {
     return 'default';
   }
   const normalized = icon.trim().toLowerCase();
-  if (['chat', 'tenant', 'metadata', 'lexicon', 'join', 'model'].includes(normalized)) {
+  if (['chat', 'tenant', 'metadata', 'lexicon', 'join', 'model', 'user', 'role', 'permission', 'audit', 'sql'].includes(normalized)) {
     return normalized;
   }
   if (['history'].includes(normalized)) {
@@ -91,6 +91,21 @@ const resolveIconType = (icon?: string): string => {
   }
   if (['database', 'user', 'officebuilding'].includes(normalized)) {
     return 'tenant';
+  }
+  if (['member', 'account'].includes(normalized)) {
+    return 'user';
+  }
+  if (['auth', 'rbac'].includes(normalized)) {
+    return 'role';
+  }
+  if (['perm'].includes(normalized)) {
+    return 'permission';
+  }
+  if (['log', 'logs'].includes(normalized)) {
+    return 'audit';
+  }
+  if (['sql-log', 'sqls'].includes(normalized)) {
+    return 'sql';
   }
   if (['table', 'notebook'].includes(normalized)) {
     return 'metadata';
@@ -182,6 +197,21 @@ onMounted(loadMenus);
                 <svg v-else-if="resolveIconType(menu.icon) === 'model'" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
                 </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'user'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.4 0-8 2-8 4v2h16v-2c0-2-3.6-4-8-4z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'role'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6l7-4z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'permission'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 14a5 5 0 1 1 4.6 3H9v3H7v-6zm4-7a3 3 0 1 0 3 3 3 3 0 0 0-3-3z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'audit'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 2h9l5 5v15H6V2zm8 1.5V7h3.5L14 3.5zM8 10h8v2H8v-2zm0 4h8v2H8v-2z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'sql'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 2c-4.4 0-8 1.3-8 3v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 .9 6 1s-2.1 1-6 1-6-.9-6-1 2.1-1 6-1zm0 4c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2V7c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2v-3c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v2c0 1.1-2.1 2-6 2s-6-.9-6-2v-2c0 .1 2.1 1 6 1z"/>
+                </svg>
                 <svg v-else viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
                 </svg>
@@ -215,6 +245,21 @@ onMounted(loadMenus);
                 <svg v-else-if="resolveIconType(child.icon) === 'model'" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
                 </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'user'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.4 0-8 2-8 4v2h16v-2c0-2-3.6-4-8-4z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'role'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6l7-4z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'permission'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 14a5 5 0 1 1 4.6 3H9v3H7v-6zm4-7a3 3 0 1 0 3 3 3 3 0 0 0-3-3z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'audit'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 2h9l5 5v15H6V2zm8 1.5V7h3.5L14 3.5zM8 10h8v2H8v-2zm0 4h8v2H8v-2z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'sql'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 2c-4.4 0-8 1.3-8 3v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 .9 6 1s-2.1 1-6 1-6-.9-6-1 2.1-1 6-1zm0 4c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2V7c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2v-3c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v2c0 1.1-2.1 2-6 2s-6-.9-6-2v-2c0 .1 2.1 1 6 1z"/>
+                </svg>
                 <svg v-else viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
                 </svg>
@@ -243,6 +288,21 @@ onMounted(loadMenus);
               </svg>
               <svg v-else-if="resolveIconType(menu.icon) === 'model'" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
+              </svg>
+              <svg v-else-if="resolveIconType(menu.icon) === 'user'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.4 0-8 2-8 4v2h16v-2c0-2-3.6-4-8-4z"/>
+              </svg>
+              <svg v-else-if="resolveIconType(menu.icon) === 'role'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6l7-4z"/>
+              </svg>
+              <svg v-else-if="resolveIconType(menu.icon) === 'permission'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 14a5 5 0 1 1 4.6 3H9v3H7v-6zm4-7a3 3 0 1 0 3 3 3 3 0 0 0-3-3z"/>
+              </svg>
+              <svg v-else-if="resolveIconType(menu.icon) === 'audit'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 2h9l5 5v15H6V2zm8 1.5V7h3.5L14 3.5zM8 10h8v2H8v-2zm0 4h8v2H8v-2z"/>
+              </svg>
+              <svg v-else-if="resolveIconType(menu.icon) === 'sql'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2c-4.4 0-8 1.3-8 3v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 .9 6 1s-2.1 1-6 1-6-.9-6-1 2.1-1 6-1zm0 4c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2V7c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2v-3c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v2c0 1.1-2.1 2-6 2s-6-.9-6-2v-2c0 .1 2.1 1 6 1z"/>
               </svg>
               <svg v-else viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>

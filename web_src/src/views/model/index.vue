@@ -14,6 +14,7 @@ const editingId = ref<number | null>(null);
 const form = reactive<AiModelConfig>({
   providerName: '',
   modelName: '',
+  modelVersion: '',
   baseUrl: '',
   apiKey: '',
   isActive: 1,
@@ -33,6 +34,7 @@ const form = reactive<AiModelConfig>({
 const buildEmptyModel = (): AiModelConfig => ({
   providerName: '',
   modelName: '',
+  modelVersion: '',
   baseUrl: '',
   apiKey: '',
   isActive: 1,
@@ -262,6 +264,7 @@ loadModelHealth();
           <el-table-column prop="id" label="ID" width="80"/>
           <el-table-column prop="providerName" label="供应商" min-width="120"/>
           <el-table-column prop="modelName" label="模型名称" min-width="140"/>
+          <el-table-column prop="modelVersion" label="模型版本" min-width="120"/>
           <el-table-column prop="baseUrl" label="地址" min-width="220"/>
           <el-table-column prop="weight" label="权重" width="80"/>
           <el-table-column prop="priority" label="优先级" width="90"/>
@@ -286,6 +289,7 @@ loadModelHealth();
           <el-table-column prop="id" label="ID" width="80"/>
           <el-table-column prop="providerName" label="供应商" min-width="120"/>
           <el-table-column prop="modelName" label="模型名称" min-width="140"/>
+          <el-table-column prop="modelVersion" label="模型版本" min-width="120"/>
           <el-table-column prop="baseUrl" label="地址" min-width="220"/>
           <el-table-column prop="weight" label="权重" width="80"/>
           <el-table-column prop="priority" label="优先级" width="90"/>
@@ -318,6 +322,9 @@ loadModelHealth();
         </el-form-item>
         <el-form-item label="模型名称">
           <el-input v-model="form.modelName" placeholder="例如：Qwen-7B"/>
+        </el-form-item>
+        <el-form-item label="模型版本">
+          <el-input v-model="form.modelVersion" placeholder="例如：2026-01"/>
         </el-form-item>
         <el-form-item label="模型地址">
           <el-input v-model="form.baseUrl" placeholder="例如：http://localhost:8000"/>

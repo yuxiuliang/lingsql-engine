@@ -2,6 +2,27 @@ import {defineStore} from 'pinia';
 import type {MenuView} from '@/api/auth';
 
 /**
+ * 读取本地数组缓存。
+ *
+ * @param key 缓存键
+ * @return 数组
+ * @author 余炘洋
+ * @date 2026-01-26
+ */
+const readArray = (key: string): string[] => {
+  const raw = localStorage.getItem(key);
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+};
+
+/**
  * 认证状态定义。
  *
  * @author 余炘洋
@@ -29,8 +50,8 @@ export const useAuthStore = defineStore('auth', {
     tenantId: localStorage.getItem('tenantId') || '',
     username: localStorage.getItem('username') || '',
     nickname: localStorage.getItem('nickname') || '',
-    roles: [],
-    permissions: [],
+    roles: readArray('roles'),
+    permissions: readArray('permissions'),
     menus: []
   }),
   actions: {
@@ -54,6 +75,8 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem('tenantId', tenantId);
       localStorage.setItem('username', username);
       localStorage.setItem('nickname', nickname || '');
+      localStorage.setItem('roles', JSON.stringify(roles || []));
+      localStorage.setItem('permissions', JSON.stringify(permissions || []));
     },
     /**
      * 更新菜单树。
@@ -83,6 +106,8 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('tenantId');
       localStorage.removeItem('username');
       localStorage.removeItem('nickname');
+      localStorage.removeItem('roles');
+      localStorage.removeItem('permissions');
     },
     /**
      * 更新租户标识。
