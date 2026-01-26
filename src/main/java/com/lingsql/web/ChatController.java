@@ -6,6 +6,7 @@ import com.lingsql.chat.entity.ChatHistory;
 import com.lingsql.chat.model.ChatHistoryDetailView;
 import com.lingsql.chat.model.ChatHistoryView;
 import com.lingsql.chat.service.ChatHistoryService;
+import com.lingsql.chat.service.ChatMemoryService;
 import com.lingsql.context.TenantContext;
 import com.lingsql.executor.ResultRefiner;
 import com.lingsql.executor.SmartSqlExecutor;
@@ -41,6 +42,7 @@ public class ChatController {
     private final SmartSqlExecutor sqlExecutor;
     private final ResultRefiner resultRefiner;
     private final ChatHistoryService chatHistoryService;
+    private final ChatMemoryService chatMemoryService;
 
     /**
      * 核心问答接口。
@@ -55,6 +57,7 @@ public class ChatController {
     @PreAuthorize("hasAuthority('API:CHAT:ASK')")
     public ApiResponse<ChatResult> ask(@Valid @RequestBody ChatRequest request) {
         String tenantId = TenantContext.getTenantId();
+        Long userId = TenantContext.getUserId();
         SqlExecutionResult executionResult;
         try {
             executionResult = sqlExecutor.execute(tenantId, request.getQuestion());
@@ -63,8 +66,18 @@ public class ChatController {
         }
         String finalAnswer = resultRefiner.refine(request.getQuestion(), executionResult);
         String sqlText = normalizeSqlForView(executionResult);
+        if (executionResult.isSuccess()) {
+            chatMemoryService.saveSuccessExchange(
+                    tenantId,
+                    request.getQuestion(),
+                    finalAnswer,
+                    executionResult.getSql(),
+                    executionResult.getData()
+            );
+        }
         ChatHistory history = chatHistoryService.saveHistory(
                 tenantId,
+                userId,
                 request.getQuestion(),
                 finalAnswer,
                 sqlText,
@@ -89,7 +102,8 @@ public class ChatController {
             @RequestParam(required = false) String keyword
     ) {
         String tenantId = TenantContext.getTenantId();
-        return ApiResponse.success(chatHistoryService.listHistory(tenantId, keyword, page, size));
+        Long userId = TenantContext.getUserId();
+        return ApiResponse.success(chatHistoryService.listHistory(tenantId, userId, keyword, page, size));
     }
 
     /**
@@ -104,7 +118,8 @@ public class ChatController {
     @PreAuthorize("hasAuthority('API:CHAT:HISTORY:READ')")
     public ApiResponse<ChatHistoryDetailView> historyDetail(@PathVariable Long id) {
         String tenantId = TenantContext.getTenantId();
-        return ApiResponse.success(chatHistoryService.getHistoryDetail(tenantId, id));
+        Long userId = TenantContext.getUserId();
+        return ApiResponse.success(chatHistoryService.getHistoryDetail(tenantId, userId, id));
     }
 
     /**
@@ -120,7 +135,8 @@ public class ChatController {
     @PreAuthorize("hasAuthority('API:CHAT:HISTORY:WRITE')")
     public ApiResponse<ChatHistoryView> renameHistory(@PathVariable Long id, @RequestBody ChatHistoryUpdateRequest request) {
         String tenantId = TenantContext.getTenantId();
-        return ApiResponse.success(chatHistoryService.renameHistory(tenantId, id, request.getQuestion()));
+        Long userId = TenantContext.getUserId();
+        return ApiResponse.success(chatHistoryService.renameHistory(tenantId, userId, id, request.getQuestion()));
     }
 
     /**
@@ -135,7 +151,8 @@ public class ChatController {
     @PreAuthorize("hasAuthority('API:CHAT:HISTORY:WRITE')")
     public ApiResponse<String> deleteHistory(@PathVariable Long id) {
         String tenantId = TenantContext.getTenantId();
-        chatHistoryService.deleteHistory(tenantId, id);
+        Long userId = TenantContext.getUserId();
+        chatHistoryService.deleteHistory(tenantId, userId, id);
         return ApiResponse.success("历史记录已删除");
     }
 

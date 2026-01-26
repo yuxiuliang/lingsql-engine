@@ -38,6 +38,10 @@ public class TenantInterceptor implements HandlerInterceptor {
         }
         String tenantId = request.getHeader("X-Tenant-Id");
         RbacUserSession session = RbacSecurityUtils.currentSession();
+        if (session == null || session.getUserId() == null) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return false;
+        }
         if (session != null) {
             if (!SecureTenantResolver.isSysAdmin(session)
                     && StringUtils.hasText(tenantId)
@@ -52,7 +56,7 @@ public class TenantInterceptor implements HandlerInterceptor {
             }
         }
         if (StringUtils.hasText(tenantId)) {
-            TenantContext.setTenantId(tenantId);
+            TenantContext.setSessionInfo(new SessionInfo(tenantId, session.getUserId()));
         }
         return true;
     }

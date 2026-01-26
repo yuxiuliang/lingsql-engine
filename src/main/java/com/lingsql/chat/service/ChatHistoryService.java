@@ -50,9 +50,10 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    public ChatHistory saveHistory(String tenantId, String question, String answer, String sqlText, List<Map<String, Object>> data) {
+    public ChatHistory saveHistory(String tenantId, Long userId, String question, String answer, String sqlText, List<Map<String, Object>> data) {
         ChatHistory history = new ChatHistory();
         history.setTenantId(tenantId);
+        history.setUserId(userId);
         history.setQuestion(question);
         history.setAnswer(answer);
         history.setSqlText(sqlText);
@@ -60,8 +61,8 @@ public class ChatHistoryService {
         history.setCreateTime(LocalDateTime.now());
         history.setDataJson(toJson(data));
         ChatHistory saved = chatHistoryRepository.save(history);
-        evictListCache(tenantId);
-        cacheDetail(tenantId, saved);
+        evictListCache(tenantId, userId);
+        cacheDetail(tenantId, userId, saved);
         return saved;
     }
 
@@ -73,10 +74,10 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    public PageResult<ChatHistoryView> listHistory(String tenantId, String keyword, int page, int size) {
+    public PageResult<ChatHistoryView> listHistory(String tenantId, Long userId, String keyword, int page, int size) {
         int safePage = Math.max(page, 1);
         int safeSize = Math.max(1, Math.min(size, 50));
-        String cacheKey = buildListKey(tenantId, safePage, safeSize, keyword);
+        String cacheKey = buildListKey(tenantId, userId, safePage, safeSize, keyword);
         String cached = stringRedisTemplate.opsForValue().get(cacheKey);
         if (cached != null && !cached.isBlank()) {
             PageResult<ChatHistoryView> cachedResult = fromJsonPage(cached);
@@ -87,10 +88,11 @@ public class ChatHistoryService {
         Pageable pageable = PageRequest.of(safePage - 1, safeSize);
         Page<ChatHistory> historyPage;
         if (keyword == null || keyword.isBlank()) {
-            historyPage = chatHistoryRepository.findByTenantIdOrderByCreateTimeDesc(tenantId, pageable);
+            historyPage = chatHistoryRepository.findByTenantIdAndUserIdOrderByCreateTimeDesc(tenantId, userId, pageable);
         } else {
-            historyPage = chatHistoryRepository.findByTenantIdAndQuestionContainingOrderByCreateTimeDesc(
+            historyPage = chatHistoryRepository.findByTenantIdAndUserIdAndQuestionContainingOrderByCreateTimeDesc(
                     tenantId,
+                    userId,
                     keyword.trim(),
                     pageable
             );
@@ -100,7 +102,7 @@ public class ChatHistoryService {
                 .map(ChatHistoryView::from)
                 .toList();
         PageResult<ChatHistoryView> result = new PageResult<>(views, historyPage.getTotalElements(), safePage, safeSize);
-        cachePage(tenantId, safePage, safeSize, keyword, result);
+        cachePage(tenantId, userId, safePage, safeSize, keyword, result);
         return result;
     }
 
@@ -113,8 +115,8 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    public ChatHistoryDetailView getHistoryDetail(String tenantId, Long id) {
-        String cacheKey = buildDetailKey(tenantId, id);
+    public ChatHistoryDetailView getHistoryDetail(String tenantId, Long userId, Long id) {
+        String cacheKey = buildDetailKey(tenantId, userId, id);
         String cached = stringRedisTemplate.opsForValue().get(cacheKey);
         if (cached != null && !cached.isBlank()) {
             ChatHistoryDetailView cachedView = fromJsonDetail(cached);
@@ -122,10 +124,10 @@ public class ChatHistoryService {
                 return cachedView;
             }
         }
-        ChatHistory history = chatHistoryRepository.findByIdAndTenantId(id, tenantId)
+        ChatHistory history = chatHistoryRepository.findByIdAndTenantIdAndUserId(id, tenantId, userId)
                 .orElseThrow(() -> new RuntimeException("历史记录不存在"));
         ChatHistoryDetailView view = toDetailView(history);
-        cacheDetail(tenantId, history);
+        cacheDetail(tenantId, userId, history);
         return view;
     }
 
@@ -139,16 +141,16 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    public ChatHistoryView renameHistory(String tenantId, Long id, String question) {
+    public ChatHistoryView renameHistory(String tenantId, Long userId, Long id, String question) {
         if (question == null || question.isBlank()) {
             throw new RuntimeException("标题不能为空");
         }
-        ChatHistory history = chatHistoryRepository.findByIdAndTenantId(id, tenantId)
+        ChatHistory history = chatHistoryRepository.findByIdAndTenantIdAndUserId(id, tenantId, userId)
                 .orElseThrow(() -> new RuntimeException("历史记录不存在"));
         history.setQuestion(question.trim());
         ChatHistory saved = chatHistoryRepository.save(history);
-        evictListCache(tenantId);
-        cacheDetail(tenantId, saved);
+        evictListCache(tenantId, userId);
+        cacheDetail(tenantId, userId, saved);
         return ChatHistoryView.from(saved);
     }
 
@@ -160,10 +162,10 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    public void deleteHistory(String tenantId, Long id) {
-        chatHistoryRepository.deleteByIdAndTenantId(id, tenantId);
-        evictListCache(tenantId);
-        evictDetailCache(tenantId, id);
+    public void deleteHistory(String tenantId, Long userId, Long id) {
+        chatHistoryRepository.deleteByIdAndTenantIdAndUserId(id, tenantId, userId);
+        evictListCache(tenantId, userId);
+        evictDetailCache(tenantId, userId, id);
     }
 
     /**
@@ -215,10 +217,10 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private void cachePage(String tenantId, int page, int size, String keyword, PageResult<ChatHistoryView> result) {
+    private void cachePage(String tenantId, Long userId, int page, int size, String keyword, PageResult<ChatHistoryView> result) {
         try {
             String json = objectMapper.writeValueAsString(result);
-            stringRedisTemplate.opsForValue().set(buildListKey(tenantId, page, size, keyword), json, resolveTtl());
+            stringRedisTemplate.opsForValue().set(buildListKey(tenantId, userId, page, size, keyword), json, resolveTtl());
         } catch (Exception ex) {
             log.warn("缓存历史列表失败: {}", ex.getMessage());
         }
@@ -250,11 +252,11 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private void cacheDetail(String tenantId, ChatHistory history) {
+    private void cacheDetail(String tenantId, Long userId, ChatHistory history) {
         try {
             ChatHistoryDetailView view = toDetailView(history);
             String json = objectMapper.writeValueAsString(view);
-            stringRedisTemplate.opsForValue().set(buildDetailKey(tenantId, history.getId()), json, resolveTtl());
+            stringRedisTemplate.opsForValue().set(buildDetailKey(tenantId, userId, history.getId()), json, resolveTtl());
         } catch (Exception ex) {
             log.warn("缓存历史详情失败: {}", ex.getMessage());
         }
@@ -305,9 +307,9 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private String buildListKey(String tenantId, int page, int size, String keyword) {
+    private String buildListKey(String tenantId, Long userId, int page, int size, String keyword) {
         String keyToken = (keyword == null || keyword.isBlank()) ? "all" : String.valueOf(keyword.trim().hashCode());
-        return "lingsql:chat:history:list:" + tenantId + ":" + page + ":" + size + ":" + keyToken;
+        return "lingsql:chat:history:list:" + tenantId + ":" + userId + ":" + page + ":" + size + ":" + keyToken;
     }
 
     /**
@@ -319,8 +321,8 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private String buildDetailKey(String tenantId, Long id) {
-        return "lingsql:chat:history:detail:" + tenantId + ":" + id;
+    private String buildDetailKey(String tenantId, Long userId, Long id) {
+        return "lingsql:chat:history:detail:" + tenantId + ":" + userId + ":" + id;
     }
 
     /**
@@ -330,8 +332,8 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private void evictListCache(String tenantId) {
-        var keys = stringRedisTemplate.keys("lingsql:chat:history:list:" + tenantId + ":*");
+    private void evictListCache(String tenantId, Long userId) {
+        var keys = stringRedisTemplate.keys("lingsql:chat:history:list:" + tenantId + ":" + userId + ":*");
         if (keys != null && !keys.isEmpty()) {
             stringRedisTemplate.delete(keys);
         }
@@ -345,8 +347,8 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private void evictDetailCache(String tenantId, Long id) {
-        stringRedisTemplate.delete(buildDetailKey(tenantId, id));
+    private void evictDetailCache(String tenantId, Long userId, Long id) {
+        stringRedisTemplate.delete(buildDetailKey(tenantId, userId, id));
     }
 
     /**

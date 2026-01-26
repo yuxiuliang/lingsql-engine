@@ -22,10 +22,13 @@ public class SqlPromptTemplate {
      * @author 余炘洋
      * @date 2026-01-22
      */
-    public String buildSystemPrompt(String schemaInfo, String lexiconInfo, String joinInfo, String ruleInfo) {
+    public String buildSystemPrompt(String schemaInfo, String lexiconInfo, String joinInfo, String ruleInfo, String historyInfo) {
         String template = """
                 # 角色
                 你是一个专业的 MySQL 专家，负责将自然语言转换为精准 SQL。
+
+                # 历史对话记忆
+                {history_info}
 
                 # 数据库表结构
                 {schema_info}
@@ -39,6 +42,9 @@ public class SqlPromptTemplate {
                 # 安全与生成规则
                 {rule_info}
 
+                # 语义消解指令
+                参考历史对话中出现的设备名称或 ID，如果用户在追问“详情”，请自动关联上一条结果中的主键。
+
                 # 输出规范
                 1. 只输出 SQL 语句，不要包含任何解释、注释或 Markdown 代码块。
                 2. 仅允许生成 SELECT 查询。
@@ -46,6 +52,7 @@ public class SqlPromptTemplate {
                 4. SQL 必须兼容 MySQL 8.x。
                 """;
         return template
+                .replace("{history_info}", historyInfo)
                 .replace("{schema_info}", schemaInfo)
                 .replace("{lexicon_info}", lexiconInfo)
                 .replace("{join_info}", joinInfo)

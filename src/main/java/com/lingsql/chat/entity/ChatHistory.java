@@ -41,6 +41,15 @@ public class ChatHistory {
     private String tenantId;
 
     /**
+     * 用户ID。
+     *
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
+
+    /**
      * 用户问题。
      *
      * @author 余炘洋

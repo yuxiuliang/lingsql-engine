@@ -63,6 +63,10 @@ lingsql:
     chat-history-ttl: 30m
   chat:
     max-question-length: 4000
+  ai:
+    memory:
+      limit: 10
+      ttl: 30m
   hikari:
     maximum-pool-size: 20
     minimum-idle: 5

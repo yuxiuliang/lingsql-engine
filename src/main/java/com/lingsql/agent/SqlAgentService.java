@@ -1,6 +1,7 @@
 package com.lingsql.agent;
 
 import com.lingsql.agent.prompt.SqlPromptTemplate;
+import com.lingsql.chat.service.ChatMemoryService;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.datasource.DataSourceManager;
 import com.lingsql.datasource.model.TenantDbConfig;
@@ -37,6 +38,7 @@ public class SqlAgentService {
     private final DataSourceManager dataSourceManager;
     private final TenantDbConfigRepository tenantDbConfigRepository;
     private final LingSqlProperties properties;
+    private final ChatMemoryService chatMemoryService;
 
     /**
      * 将自然语言转换为 SQL。
@@ -96,7 +98,11 @@ public class SqlAgentService {
         String joinInfo = semanticLexicon.renderJoinRules(tenantId);
         String ruleInfo = buildRuleInfo(config);
 
-        String systemPrompt = sqlPromptTemplate.buildSystemPrompt(schemaInfo, lexiconInfo, joinInfo, ruleInfo);
+        String historyPrompt = chatMemoryService.getHistoryPrompt();
+        if (!StringUtils.hasText(historyPrompt)) {
+            historyPrompt = "无";
+        }
+        String systemPrompt = sqlPromptTemplate.buildSystemPrompt(schemaInfo, lexiconInfo, joinInfo, ruleInfo, historyPrompt);
         String finalUserInput = buildUserPrompt(userInput, reason);
 
         log.info("AI 正在生成租户 [{}] 的 SQL...", tenantId);

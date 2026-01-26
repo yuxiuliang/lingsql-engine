@@ -87,6 +87,48 @@ public class LingSqlProperties {
     }
 
     /**
+     * AI 记忆配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    @Data
+    public static class Ai {
+        /**
+         * 记忆配置。
+         *
+         * @author 余炘洋
+         * @date 2026-01-26
+         */
+        @Data
+        public static class Memory {
+            /**
+             * 记忆条数。
+             *
+             * @author 余炘洋
+             * @date 2026-01-26
+             */
+            private int limit = 10;
+
+            /**
+             * 记忆 TTL。
+             *
+             * @author 余炘洋
+             * @date 2026-01-26
+             */
+            private Duration ttl = Duration.ofMinutes(30);
+        }
+
+        /**
+         * 记忆参数。
+         *
+         * @author 余炘洋
+         * @date 2026-01-26
+         */
+        private Memory memory = new Memory();
+    }
+
+    /**
      * Hikari 连接池配置。
      *
      * @author 余炘洋
@@ -265,6 +307,14 @@ public class LingSqlProperties {
      * @date 2026-01-23
      */
     private Chat chat = new Chat();
+
+    /**
+     * AI 配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    private Ai ai = new Ai();
 
     /**
      * 语义配置已迁移至数据库，不再使用配置文件维护。

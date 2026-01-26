@@ -24,7 +24,7 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
      * @author 余炘洋
      * @date 2026-01-23
      */
-    List<ChatHistory> findTop50ByTenantIdOrderByCreateTimeDesc(String tenantId);
+    List<ChatHistory> findTop50ByTenantIdAndUserIdOrderByCreateTimeDesc(String tenantId, Long userId);
 
     /**
      * 分页查询租户历史记录。
@@ -35,7 +35,7 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
      * @author 余炘洋
      * @date 2026-01-23
      */
-    Page<ChatHistory> findByTenantIdOrderByCreateTimeDesc(String tenantId, Pageable pageable);
+    Page<ChatHistory> findByTenantIdAndUserIdOrderByCreateTimeDesc(String tenantId, Long userId, Pageable pageable);
 
     /**
      * 分页查询租户历史记录（关键词过滤）。
@@ -47,7 +47,7 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
      * @author 余炘洋
      * @date 2026-01-23
      */
-    Page<ChatHistory> findByTenantIdAndQuestionContainingOrderByCreateTimeDesc(String tenantId, String keyword, Pageable pageable);
+    Page<ChatHistory> findByTenantIdAndUserIdAndQuestionContainingOrderByCreateTimeDesc(String tenantId, Long userId, String keyword, Pageable pageable);
 
     /**
      * 根据租户与ID查询历史记录。
@@ -58,7 +58,7 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
      * @author 余炘洋
      * @date 2026-01-23
      */
-    Optional<ChatHistory> findByIdAndTenantId(Long id, String tenantId);
+    Optional<ChatHistory> findByIdAndTenantIdAndUserId(Long id, String tenantId, Long userId);
 
     /**
      * 根据租户与ID删除历史记录。
@@ -68,5 +68,5 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
      * @author 余炘洋
      * @date 2026-01-23
      */
-    void deleteByIdAndTenantId(Long id, String tenantId);
+    void deleteByIdAndTenantIdAndUserId(Long id, String tenantId, Long userId);
 }

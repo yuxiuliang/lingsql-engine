@@ -1,5 +1,6 @@
 package com.lingsql.rbac.security;
 
+import com.lingsql.context.SessionInfo;
 import com.lingsql.context.TenantContext;
 import com.lingsql.rbac.service.TokenService;
 import jakarta.servlet.FilterChain;
@@ -53,6 +54,10 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
             if (StringUtils.hasText(token)) {
                 RbacUserSession session = tokenService.getSession(token);
                 if (session != null) {
+                    if (session.getUserId() == null) {
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        return;
+                    }
                     List<SimpleGrantedAuthority> authorities = session.getPermissions().stream()
                             .filter(StringUtils::hasText)
                             .map(SimpleGrantedAuthority::new)
@@ -60,9 +65,7 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                     UsernamePasswordAuthenticationToken authenticationToken =
                             new UsernamePasswordAuthenticationToken(session, token, authorities);
                     SecurityContextHolder.getContext().setAuthentication(authenticationToken);
-                    if (StringUtils.hasText(session.getTenantId())) {
-                        TenantContext.setTenantId(session.getTenantId());
-                    }
+                    TenantContext.setSessionInfo(new SessionInfo(session.getTenantId(), session.getUserId()));
                 }
             }
         }
