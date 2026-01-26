@@ -9,6 +9,14 @@ SET @experience_username = '测试';
 -- 密码需使用 BCrypt 加密后写入  ***REDACTED-SECRET***
 SET @password_hash = '{BCryptHashHere}';
 
+-- 租户初始化
+INSERT INTO t_lingsql_engine_tenant (tenant_id, tenant_name, status, is_deleted)
+VALUES (@tenant_id, '默认租户', 1, 0)
+ON DUPLICATE KEY UPDATE
+    tenant_name = VALUES(tenant_name),
+    status = VALUES(status),
+    is_deleted = VALUES(is_deleted);
+
 -- 权限初始化
 INSERT INTO t_lingsql_engine_permission (perm_code, perm_name, perm_type, status)
 VALUES
@@ -100,7 +108,8 @@ SET @menu_admin_id = (SELECT id FROM t_lingsql_engine_menu WHERE menu_code = 'ME
 
 INSERT INTO t_lingsql_engine_menu (tenant_id, menu_code, menu_name, parent_id, path, component, icon, sort, visible, status, perm_code)
 VALUES
-(NULL, 'MENU_ADMIN_TENANT', '租户配置', @menu_admin_id, '/tenant', 'TenantConfig', 'tenant', 110, 1, 1, 'MENU:ADMIN:TENANT'),
+(NULL, 'MENU_ADMIN_TENANT', '租户管理', @menu_admin_id, '/tenant', 'TenantManage', 'tenant', 110, 1, 1, 'MENU:ADMIN:TENANT'),
+(NULL, 'MENU_ADMIN_DATASOURCE', '数据源管理', @menu_admin_id, '/datasource', 'TenantConfig', 'tenant', 115, 1, 1, 'MENU:ADMIN:TENANT'),
 (NULL, 'MENU_ADMIN_MODEL', '模型资源池', @menu_admin_id, '/model', 'ModelConfig', 'model', 120, 1, 1, 'MENU:ADMIN:MODEL'),
 (NULL, 'MENU_ADMIN_SEMANTIC', '语义字典', @menu_admin_id, '/lexicon', 'SemanticConfig', 'lexicon', 130, 1, 1, 'MENU:ADMIN:SEMANTIC'),
 (NULL, 'MENU_ADMIN_JOIN', 'Join规则', @menu_admin_id, '/join-rule', 'JoinRule', 'join', 140, 1, 1, 'MENU:ADMIN:JOIN'),
@@ -209,3 +218,8 @@ ON DUPLICATE KEY UPDATE
     menu_whitelist = VALUES(menu_whitelist),
     data_scope_override = VALUES(data_scope_override),
     status = VALUES(status);
+
+ALTER TABLE t_lingsql_engine_menu
+    ADD COLUMN tenant_key varchar(64)
+        GENERATED ALWAYS AS (IFNULL(tenant_id,'GLOBAL')) STORED COMMENT '租户唯一键(兼容NULL)',
+    ADD UNIQUE KEY uk_menu_tenant_key (tenant_key, menu_code);

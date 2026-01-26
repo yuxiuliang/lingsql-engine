@@ -48,4 +48,15 @@ public interface RbacUserRepository extends JpaRepository<RbacUser, Long> {
      * @date 2026-01-26
      */
     Page<RbacUser> findByTenantId(String tenantId, Pageable pageable);
+
+    /**
+     * 统计租户下指定状态用户数量。
+     *
+     * @param tenantId 租户ID
+     * @param status   状态
+     * @return 用户数量
+     * @author 余炘洋
+     * @date 2026-01-26
+     */
+    long countByTenantIdAndStatus(String tenantId, Integer status);
 }

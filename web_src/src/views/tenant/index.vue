@@ -40,9 +40,9 @@ const form = reactive<TenantDbConfig>({
 });
 
 /**
- * 创建空租户配置。
+ * 创建空数据源配置。
  *
- * @return 租户配置
+ * @return 数据源配置
  * @author 余炘洋
  * @date 2026-01-23
  */
@@ -61,7 +61,7 @@ const buildEmptyTenant = (): TenantDbConfig => ({
 });
 
 /**
- * 加载租户配置列表。
+ * 加载数据源配置列表。
  *
  * @author 余炘洋
  * @date 2026-01-23
@@ -71,14 +71,14 @@ const loadTenants = async () => {
   try {
     tenantConfigs.value = await fetchTenantConfigs();
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载租户配置失败');
+    ElMessage.error(error instanceof Error ? error.message : '加载数据源配置失败');
   } finally {
     loading.value = false;
   }
 };
 
 /**
- * 新增租户配置。
+ * 新增数据源配置。
  *
  * @author 余炘洋
  * @date 2026-01-23
@@ -90,9 +90,9 @@ const handleCreate = () => {
 };
 
 /**
- * 编辑租户配置。
+ * 编辑数据源配置。
  *
- * @param row 租户配置
+ * @param row 数据源配置
  * @author 余炘洋
  * @date 2026-01-23
  */
@@ -103,7 +103,7 @@ const handleEdit = (row: TenantDbConfig) => {
 };
 
 /**
- * 保存租户配置。
+ * 保存数据源配置。
  *
  * @author 余炘洋
  * @date 2026-01-23
@@ -116,10 +116,10 @@ const handleSave = async () => {
   try {
     if (editingId.value) {
       await updateTenantConfig(editingId.value, form);
-      ElMessage.success('租户配置已更新');
+      ElMessage.success('数据源配置已更新');
     } else {
       await createTenantConfig(form);
-      ElMessage.success('租户配置已创建');
+      ElMessage.success('数据源配置已创建');
     }
     dialogVisible.value = false;
     await loadTenants();
@@ -148,9 +148,9 @@ const handleTestConnection = async () => {
 };
 
 /**
- * 删除租户配置。
+ * 删除数据源配置。
  *
- * @param row 租户配置
+ * @param row 数据源配置
  * @author 余炘洋
  * @date 2026-01-23
  */
@@ -159,9 +159,9 @@ const handleDelete = async (row: TenantDbConfig) => {
     return;
   }
   try {
-    await ElMessageBox.confirm('确认删除该租户配置？', '提示', {type: 'warning'});
+    await ElMessageBox.confirm('确认删除该数据源配置？', '提示', {type: 'warning'});
     await deleteTenantConfig(row.id);
-    ElMessage.success('租户配置已删除');
+    ElMessage.success('数据源配置已删除');
     await loadTenants();
   } catch (error) {
     if (!isMessageBoxCancel(error)) {
@@ -173,7 +173,7 @@ const handleDelete = async (row: TenantDbConfig) => {
 /**
  * 同步租户元数据。
  *
- * @param row 租户配置
+ * @param row 数据源配置
  * @author 余炘洋
  * @date 2026-01-23
  */
@@ -193,7 +193,7 @@ const handleSyncSchema = async (row: TenantDbConfig) => {
 /**
  * 刷新语义缓存。
  *
- * @param row 租户配置
+ * @param row 数据源配置
  * @author 余炘洋
  * @date 2026-01-23
  */
@@ -384,7 +384,7 @@ loadTenants();
 <template>
   <div class="tenant-page">
     <div class="toolbar">
-      <el-button type="primary" @click="handleCreate">新增租户</el-button>
+      <el-button type="primary" @click="handleCreate">新增数据源</el-button>
       <el-button @click="loadTenants">刷新</el-button>
     </div>
     <el-table :data="tenantConfigs" border v-loading="loading">
@@ -412,7 +412,7 @@ loadTenants();
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialogVisible" title="租户配置" width="620px">
+    <el-dialog v-model="dialogVisible" title="数据源配置" width="620px">
       <el-form label-width="120px">
         <el-form-item label="租户ID">
           <el-input v-model="form.tenantId" placeholder="请输入租户ID"/>

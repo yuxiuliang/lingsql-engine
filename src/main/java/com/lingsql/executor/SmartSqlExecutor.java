@@ -35,6 +35,7 @@ public class SmartSqlExecutor {
     private final SqlRewriter rewriter;
     private final TenantDbConfigRepository tenantDbConfigRepository;
     private final SqlExecuteLogService sqlExecuteLogService;
+    private final SqlTaskTracker sqlTaskTracker;
 
     @Qualifier("businessJdbcTemplate")
     private final JdbcTemplate jdbcTemplate;
@@ -63,20 +64,24 @@ public class SmartSqlExecutor {
      * @date 2026-01-26
      */
     public SqlExecutionResult execute(String tenantId, String question, String requestSource) {
-        TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId)
-                .orElseThrow(() -> new RuntimeException("租户不存在: " + tenantId));
-
         SqlExecuteLogCommand logCommand = new SqlExecuteLogCommand();
         logCommand.setTenantId(tenantId);
         logCommand.setUserId(TenantContext.getUserId());
         logCommand.setQuestion(question);
         logCommand.setRequestSource(requestSource);
         LlmTraceContext.clear();
+        sqlTaskTracker.start(tenantId);
         try {
+            TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId)
+                    .orElseThrow(() -> new RuntimeException("租户不存在: " + tenantId));
             return executeWithRetry(config, tenantId, question, logCommand);
+        } catch (RuntimeException ex) {
+            fillFailureLog(logCommand, null, ex.getMessage());
+            throw ex;
         } finally {
             sqlExecuteLogService.record(logCommand);
             LlmTraceContext.clear();
+            sqlTaskTracker.finish(tenantId);
         }
     }
 

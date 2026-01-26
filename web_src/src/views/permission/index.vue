@@ -10,11 +10,11 @@ import {
   TenantPermissionRequest,
   updateTenantPermissionPool
 } from '@/api/rbac';
-import {fetchTenantConfigs, TenantDbConfig} from '@/api/config';
+import {fetchTenants, TenantView} from '@/api/tenant';
 
 const authStore = useAuthStore();
 const permissions = ref<PermissionView[]>([]);
-const tenantConfigs = ref<TenantDbConfig[]>([]);
+const tenants = ref<TenantView[]>([]);
 const loading = ref(false);
 const tenantLoading = ref(false);
 const poolLoading = ref(false);
@@ -93,7 +93,7 @@ const loadTenants = async () => {
   }
   tenantLoading.value = true;
   try {
-    tenantConfigs.value = await fetchTenantConfigs();
+    tenants.value = await fetchTenants();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载租户失败');
   } finally {
@@ -176,11 +176,11 @@ const applyTreeCheckedKeys = async () => {
 /**
  * 处理租户选中事件。
  *
- * @param tenant 租户配置
+ * @param tenant 租户信息
  * @author 余炘洋
  * @date 2026-01-26
  */
-const handleTenantSelect = (tenant: TenantDbConfig) => {
+const handleTenantSelect = (tenant: TenantView) => {
   poolForm.tenantId = tenant.tenantId;
   selectedPermIds.value = [];
   treeRef.value?.setCheckedKeys([]);
@@ -379,7 +379,7 @@ loadTenants();
           <div class="section-title">租户列表</div>
           <el-table
             class="tenant-table"
-            :data="tenantConfigs"
+            :data="tenants"
             v-loading="tenantLoading"
             highlight-current-row
             :row-key="(row) => row.tenantId"

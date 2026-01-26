@@ -38,8 +38,14 @@ const routes: Array<RouteRecordRaw> = [
             {
                 path: '/tenant',
                 name: 'Tenant',
+                component: () => import('@/views/tenant-manage/index.vue'),
+                meta: {title: '租户管理', icon: 'OfficeBuilding'}
+            },
+            {
+                path: '/datasource',
+                name: 'DatasourceManage',
                 component: () => import('@/views/tenant/index.vue'),
-                meta: {title: '租户配置', icon: 'OfficeBuilding'}
+                meta: {title: '数据源管理', icon: 'OfficeBuilding'}
             },
             {
                 path: '/lexicon',

@@ -32,6 +32,28 @@ CREATE TABLE `t_lingsql_engine_tenant_db_config`
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='租户数据源及安全配置表';
 
+-- 租户信息表
+CREATE TABLE `t_lingsql_engine_tenant`
+(
+    `id`            bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`     varchar(64)  NOT NULL COMMENT '租户唯一标识',
+    `tenant_name`   varchar(128) NOT NULL COMMENT '租户名称',
+    `status`        tinyint      DEFAULT '1' COMMENT '状态: 1-启用, 0-停用',
+    `remark`        varchar(255) DEFAULT NULL COMMENT '备注',
+    `contact_name`  varchar(64)  DEFAULT NULL COMMENT '联系人',
+    `contact_phone` varchar(32)  DEFAULT NULL COMMENT '联系电话',
+    `contact_email` varchar(128) DEFAULT NULL COMMENT '联系邮箱',
+    `expire_time`   datetime     DEFAULT NULL COMMENT '到期时间',
+    `plan_name`     varchar(128) DEFAULT NULL COMMENT '套餐名称',
+    `is_deleted`    tinyint      DEFAULT '0' COMMENT '删除标记: 1-删除, 0-正常',
+    `create_time`   datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`   datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_tenant_info` (`tenant_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='租户信息表';
+
 
 
 CREATE TABLE `t_lingsql_engine_ai_model_config`
@@ -120,6 +142,7 @@ CREATE TABLE `t_lingsql_engine_role`
 (
     `id`          bigint      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `tenant_id`   varchar(64) DEFAULT NULL COMMENT '租户ID，NULL 表示全局',
+    `tenant_key`  varchar(64) GENERATED ALWAYS AS (IFNULL(`tenant_id`, 'GLOBAL')) STORED COMMENT '租户唯一键(兼容NULL)',
     `role_code`   varchar(64) NOT NULL COMMENT '角色编码',
     `role_name`   varchar(64) NOT NULL COMMENT '角色名称',
     `status`      tinyint     DEFAULT 1 COMMENT '状态: 1-启用, 0-禁用',
@@ -204,7 +227,8 @@ CREATE TABLE `t_lingsql_engine_menu`
     `create_time` datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` datetime    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_menu_tenant` (`tenant_id`, `menu_code`)
+    UNIQUE KEY `uk_menu_tenant` (`tenant_id`, `menu_code`),
+    UNIQUE KEY `uk_menu_tenant_key` (`tenant_key`, `menu_code`)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='菜单表';
