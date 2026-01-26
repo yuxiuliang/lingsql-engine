@@ -741,7 +741,7 @@ onMounted(() => {
 }
 
 .avatar-circle.user {
-  background: #64748b;
+  background: #409EFF;
 }
 
 .bubble {
