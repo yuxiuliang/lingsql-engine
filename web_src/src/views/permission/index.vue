@@ -374,7 +374,7 @@ loadTenants();
     <div class="page-title">权限管理</div>
     <div class="page-desc">查看权限清单并配置租户权限池。</div>
     <el-row class="board" :gutter="16">
-      <el-col :span="8">
+      <el-col :span="6">
         <el-card class="card" shadow="never">
           <div class="section-title">租户列表</div>
           <el-table
@@ -398,7 +398,7 @@ loadTenants();
           <div v-if="!isSysAdmin" class="tenant-hint">仅系统管理员可查看租户列表。</div>
         </el-card>
       </el-col>
-      <el-col :span="16">
+      <el-col :span="18">
         <el-card class="card" shadow="never">
           <div class="section-title">权限配置</div>
           <div class="permission-toolbar">
@@ -520,7 +520,7 @@ loadTenants();
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 12px;
-  max-height: 520px;
+  max-height: 620px;
   overflow: auto;
 }
 
