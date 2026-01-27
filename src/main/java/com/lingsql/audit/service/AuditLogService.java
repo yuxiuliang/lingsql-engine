@@ -6,6 +6,9 @@ import com.lingsql.audit.model.AuditLogQuery;
 import com.lingsql.audit.model.AuditLogView;
 import com.lingsql.audit.repository.AuditLogRepository;
 import com.lingsql.common.result.PageResult;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -16,6 +19,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 管理操作审计日志服务。
@@ -29,6 +36,7 @@ import java.time.LocalDateTime;
 public class AuditLogService {
 
     private final AuditLogRepository repository;
+    private final ObjectMapper objectMapper;
 
     /**
      * 写入审计日志。
@@ -45,13 +53,16 @@ public class AuditLogService {
             AuditLog logEntity = new AuditLog();
             logEntity.setTenantId(command.getTenantId());
             logEntity.setUserId(command.getUserId());
+            logEntity.setRealUserId(resolveRealUserId(command));
             logEntity.setUsername(command.getUsername());
             logEntity.setAction(command.getAction());
             logEntity.setResource(command.getResource());
-            logEntity.setDetail(command.getDetail());
+            logEntity.setDetail(sanitizeDetail(command.getDetail()));
+            logEntity.setSummary(resolveSummary(command));
             logEntity.setSuccess(command.isSuccess() ? 1 : 0);
             logEntity.setErrorMessage(command.getErrorMessage());
             logEntity.setRequestIp(command.getRequestIp());
+            logEntity.setUserAgent(command.getUserAgent());
             logEntity.setCreateTime(LocalDateTime.now());
             repository.save(logEntity);
         } catch (Exception ex) {
@@ -113,14 +124,196 @@ public class AuditLogService {
         view.setId(logEntity.getId());
         view.setTenantId(logEntity.getTenantId());
         view.setUserId(logEntity.getUserId());
+        view.setRealUserId(logEntity.getRealUserId());
         view.setUsername(logEntity.getUsername());
         view.setAction(logEntity.getAction());
         view.setResource(logEntity.getResource());
         view.setDetail(logEntity.getDetail());
+        view.setSummary(logEntity.getSummary());
         view.setSuccess(logEntity.getSuccess());
         view.setErrorMessage(logEntity.getErrorMessage());
         view.setRequestIp(logEntity.getRequestIp());
+        view.setUserAgent(logEntity.getUserAgent());
         view.setCreateTime(logEntity.getCreateTime());
         return view;
+    }
+
+    /**
+     * 解析真实操作人ID。
+     *
+     * @param command 写入请求
+     * @return 真实操作人ID
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private Long resolveRealUserId(AuditLogCommand command) {
+        if (command == null) {
+            return null;
+        }
+        if (command.getRealUserId() != null) {
+            return command.getRealUserId();
+        }
+        return command.getUserId();
+    }
+
+    /**
+     * 生成摘要信息。
+     *
+     * @param command 写入请求
+     * @return 摘要
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String resolveSummary(AuditLogCommand command) {
+        if (command == null) {
+            return null;
+        }
+        if (StringUtils.hasText(command.getSummary())) {
+            return command.getSummary().trim();
+        }
+        String action = normalize(command.getAction());
+        String baseSummary = resolveActionSummary(action);
+        String prefix = command.isSuccess() ? "成功" : "失败";
+        String summary = prefix + baseSummary;
+        String resource = normalize(command.getResource());
+        if (StringUtils.hasText(resource) && !isGenericResource(resource)) {
+            summary = summary + "，资源=" + resource;
+        }
+        return summary;
+    }
+
+    /**
+     * 过滤详情中的敏感字段。
+     *
+     * @param detail 详情
+     * @return 脱敏后的详情
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String sanitizeDetail(String detail) {
+        if (!StringUtils.hasText(detail)) {
+            return detail;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(detail);
+            removePasswordFields(root);
+            return objectMapper.writeValueAsString(root);
+        } catch (Exception ex) {
+            return detail;
+        }
+    }
+
+    /**
+     * 递归移除 password 字段。
+     *
+     * @param node JSON 节点
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private void removePasswordFields(JsonNode node) {
+        if (node == null) {
+            return;
+        }
+        if (node.isObject() && node instanceof ObjectNode objectNode) {
+            List<String> toRemove = new ArrayList<>();
+            Iterator<Map.Entry<String, JsonNode>> fields = objectNode.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
+                String fieldName = entry.getKey();
+                if (shouldMaskField(fieldName)) {
+                    toRemove.add(fieldName);
+                    continue;
+                }
+                removePasswordFields(entry.getValue());
+            }
+            if (!toRemove.isEmpty()) {
+                objectNode.remove(toRemove);
+            }
+            return;
+        }
+        if (node.isArray()) {
+            for (JsonNode item : node) {
+                removePasswordFields(item);
+            }
+        }
+    }
+
+    /**
+     * 判断字段是否需要脱敏。
+     *
+     * @param fieldName 字段名
+     * @return 是否脱敏
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private boolean shouldMaskField(String fieldName) {
+        if (!StringUtils.hasText(fieldName)) {
+            return false;
+        }
+        return fieldName.trim().toLowerCase().contains("password");
+    }
+
+    /**
+     * 规范化字符串。
+     *
+     * @param value 输入
+     * @return 规范化结果
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String normalize(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    /**
+     * 判断资源是否为通用类型。
+     *
+     * @param resource 资源
+     * @return 是否通用资源
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private boolean isGenericResource(String resource) {
+        if (!StringUtils.hasText(resource)) {
+            return false;
+        }
+        String normalized = resource.trim().toUpperCase();
+        return "USER".equals(normalized)
+                || "ROLE".equals(normalized)
+                || "TENANT".equals(normalized)
+                || "MODEL".equals(normalized);
+    }
+
+    /**
+     * 解析动作摘要。
+     *
+     * @param action 动作
+     * @return 摘要文本
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String resolveActionSummary(String action) {
+        if (!StringUtils.hasText(action)) {
+            return "管理操作";
+        }
+        String normalized = action.trim().toUpperCase();
+        return switch (normalized) {
+            case "USER_CREATE" -> "创建用户";
+            case "USER_UPDATE" -> "更新用户";
+            case "USER_PASSWORD_RESET" -> "重置用户密码";
+            case "ROLE_CREATE" -> "创建角色";
+            case "ROLE_UPDATE" -> "更新角色";
+            case "TENANT_CREATE" -> "创建租户";
+            case "TENANT_UPDATE" -> "更新租户";
+            case "TENANT_DELETE" -> "删除租户";
+            case "MODEL_CREATE" -> "创建模型配置";
+            case "MODEL_UPDATE" -> "更新模型配置";
+            case "MODEL_DELETE" -> "删除模型配置";
+            case "TENANT_PERMISSION_UPDATE" -> "更新租户权限池";
+            default -> "执行操作(" + normalized + ")";
+        };
     }
 }

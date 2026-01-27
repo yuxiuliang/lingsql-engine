@@ -193,5 +193,6 @@ public class SmartSqlExecutor {
         logCommand.setModelProvider(traceInfo.getProviderName());
         logCommand.setModelName(traceInfo.getModelName());
         logCommand.setModelVersion(traceInfo.getModelVersion());
+        logCommand.setTokenCount(traceInfo.getTokenCount());
     }
 }

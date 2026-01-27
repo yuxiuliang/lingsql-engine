@@ -122,6 +122,15 @@ public class SqlExecuteLog {
     private String modelVersion;
 
     /**
+     * Token 数量。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    @Column(name = "token_count")
+    private Integer tokenCount;
+
+    /**
      * 执行耗时(毫秒)。
      *
      * @author 余炘洋
@@ -138,6 +147,24 @@ public class SqlExecuteLog {
      */
     @Column(name = "result_rows")
     private Integer resultRows;
+
+    /**
+     * 评分。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    @Column(name = "rating")
+    private Integer rating;
+
+    /**
+     * 评价内容。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    @Column(name = "comment", columnDefinition = "TEXT")
+    private String comment;
 
     /**
      * 请求来源。

@@ -42,4 +42,12 @@ public class LlmTraceInfo {
      * @date 2026-01-26
      */
     private Long costMs;
+
+    /**
+     * Token 数量。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private Integer tokenCount;
 }

@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.sql.Connection;
@@ -73,13 +74,14 @@ public class AdminConfigController {
      * 新增租户配置。
      *
      * @param request 租户配置
+     * @param http    请求
      * @return 新增结果
      * @author 余炘洋
      * @date 2026-01-23
      */
     @PostMapping("/tenant")
     @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
-    public ApiResponse<TenantDbConfig> createTenant(@RequestBody TenantDbConfig request) {
+    public ApiResponse<TenantDbConfig> createTenant(@RequestBody TenantDbConfig request, HttpServletRequest http) {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
@@ -87,10 +89,10 @@ public class AdminConfigController {
         request.setTenantId(normalizeTenantId(request.getTenantId()));
         try {
             TenantDbConfig saved = tenantDbConfigRepository.save(request);
-            recordAudit("TENANT_CREATE", "TENANT", request, true, null);
+            recordAudit("TENANT_CREATE", "TENANT", request, true, null, http);
             return ApiResponse.success(saved);
         } catch (Exception ex) {
-            recordAudit("TENANT_CREATE", "TENANT", request, false, ex.getMessage());
+            recordAudit("TENANT_CREATE", "TENANT", request, false, ex.getMessage(), http);
             return ApiResponse.error(ex.getMessage());
         }
     }
@@ -129,13 +131,14 @@ public class AdminConfigController {
      *
      * @param id      配置ID
      * @param request 租户配置
+     * @param http    请求
      * @return 更新结果
      * @author 余炘洋
      * @date 2026-01-23
      */
     @PutMapping("/tenant/{id}")
     @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
-    public ApiResponse<TenantDbConfig> updateTenant(@PathVariable Long id, @RequestBody TenantDbConfig request) {
+    public ApiResponse<TenantDbConfig> updateTenant(@PathVariable Long id, @RequestBody TenantDbConfig request, HttpServletRequest http) {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
@@ -154,10 +157,10 @@ public class AdminConfigController {
         config.setStatus(request.getStatus());
         try {
             TenantDbConfig saved = tenantDbConfigRepository.save(config);
-            recordAudit("TENANT_UPDATE", "TENANT", request, true, null);
+            recordAudit("TENANT_UPDATE", "TENANT", request, true, null, http);
             return ApiResponse.success(saved);
         } catch (Exception ex) {
-            recordAudit("TENANT_UPDATE", "TENANT", request, false, ex.getMessage());
+            recordAudit("TENANT_UPDATE", "TENANT", request, false, ex.getMessage(), http);
             return ApiResponse.error(ex.getMessage());
         }
     }
@@ -166,22 +169,23 @@ public class AdminConfigController {
      * 删除租户配置。
      *
      * @param id 配置ID
+     * @param http 请求
      * @return 删除结果
      * @author 余炘洋
      * @date 2026-01-23
      */
     @DeleteMapping("/tenant/{id}")
     @PreAuthorize("hasAuthority('ADMIN:TENANT:DELETE')")
-    public ApiResponse<String> deleteTenant(@PathVariable Long id) {
+    public ApiResponse<String> deleteTenant(@PathVariable Long id, HttpServletRequest http) {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
         try {
             tenantDbConfigRepository.deleteById(id);
-            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, true, null);
+            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, true, null, http);
             return ApiResponse.success("租户配置已删除");
         } catch (Exception ex) {
-            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, false, ex.getMessage());
+            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, false, ex.getMessage(), http);
             return ApiResponse.error(ex.getMessage());
         }
     }
@@ -206,23 +210,24 @@ public class AdminConfigController {
      * 新增模型配置。
      *
      * @param request 模型配置
+     * @param http    请求
      * @return 新增结果
      * @author 余炘洋
      * @date 2026-01-23
      */
     @PostMapping("/model")
     @PreAuthorize("hasAuthority('ADMIN:MODEL:WRITE')")
-    public ApiResponse<AiModelConfig> createModel(@RequestBody AiModelConfig request) {
+    public ApiResponse<AiModelConfig> createModel(@RequestBody AiModelConfig request, HttpServletRequest http) {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
         request.setId(null);
         try {
             AiModelConfig saved = aiModelConfigRepository.save(request);
-            recordAudit("MODEL_CREATE", "MODEL", request, true, null);
+            recordAudit("MODEL_CREATE", "MODEL", request, true, null, http);
             return ApiResponse.success(saved);
         } catch (Exception ex) {
-            recordAudit("MODEL_CREATE", "MODEL", request, false, ex.getMessage());
+            recordAudit("MODEL_CREATE", "MODEL", request, false, ex.getMessage(), http);
             return ApiResponse.error(ex.getMessage());
         }
     }
@@ -232,13 +237,14 @@ public class AdminConfigController {
      *
      * @param id      模型ID
      * @param request 模型配置
+     * @param http    请求
      * @return 更新结果
      * @author 余炘洋
      * @date 2026-01-23
      */
     @PutMapping("/model/{id}")
     @PreAuthorize("hasAuthority('ADMIN:MODEL:WRITE')")
-    public ApiResponse<AiModelConfig> updateModel(@PathVariable Long id, @RequestBody AiModelConfig request) {
+    public ApiResponse<AiModelConfig> updateModel(@PathVariable Long id, @RequestBody AiModelConfig request, HttpServletRequest http) {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
@@ -256,10 +262,10 @@ public class AdminConfigController {
         config.setCooldownSeconds(request.getCooldownSeconds());
         try {
             AiModelConfig saved = aiModelConfigRepository.save(config);
-            recordAudit("MODEL_UPDATE", "MODEL", request, true, null);
+            recordAudit("MODEL_UPDATE", "MODEL", request, true, null, http);
             return ApiResponse.success(saved);
         } catch (Exception ex) {
-            recordAudit("MODEL_UPDATE", "MODEL", request, false, ex.getMessage());
+            recordAudit("MODEL_UPDATE", "MODEL", request, false, ex.getMessage(), http);
             return ApiResponse.error(ex.getMessage());
         }
     }
@@ -268,22 +274,23 @@ public class AdminConfigController {
      * 删除模型配置。
      *
      * @param id 模型ID
+     * @param http 请求
      * @return 删除结果
      * @author 余炘洋
      * @date 2026-01-23
      */
     @DeleteMapping("/model/{id}")
     @PreAuthorize("hasAuthority('ADMIN:MODEL:DELETE')")
-    public ApiResponse<String> deleteModel(@PathVariable Long id) {
+    public ApiResponse<String> deleteModel(@PathVariable Long id, HttpServletRequest http) {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
         try {
             aiModelConfigRepository.deleteById(id);
-            recordAudit("MODEL_DELETE", "MODEL", "id=" + id, true, null);
+            recordAudit("MODEL_DELETE", "MODEL", "id=" + id, true, null, http);
             return ApiResponse.success("模型配置已删除");
         } catch (Exception ex) {
-            recordAudit("MODEL_DELETE", "MODEL", "id=" + id, false, ex.getMessage());
+            recordAudit("MODEL_DELETE", "MODEL", "id=" + id, false, ex.getMessage(), http);
             return ApiResponse.error(ex.getMessage());
         }
     }
@@ -296,10 +303,11 @@ public class AdminConfigController {
      * @param request  请求体
      * @param success  是否成功
      * @param error    错误信息
+     * @param http     请求
      * @author 余炘洋
      * @date 2026-01-26
      */
-    private void recordAudit(String action, String resource, Object request, boolean success, String error) {
+    private void recordAudit(String action, String resource, Object request, boolean success, String error, HttpServletRequest http) {
         RbacUserSession session = RbacSecurityUtils.currentSession();
         if (session == null) {
             return;
@@ -307,12 +315,15 @@ public class AdminConfigController {
         AuditLogCommand command = new AuditLogCommand();
         command.setTenantId(session.getTenantId());
         command.setUserId(session.getUserId());
+        command.setRealUserId(session.getUserId());
         command.setUsername(session.getUsername());
         command.setAction(action);
         command.setResource(resource);
         command.setDetail(serialize(request));
         command.setSuccess(success);
         command.setErrorMessage(error);
+        command.setRequestIp(resolveIp(http));
+        command.setUserAgent(resolveUserAgent(http));
         auditLogService.record(command);
     }
 
@@ -333,6 +344,36 @@ public class AdminConfigController {
         } catch (Exception ex) {
             return null;
         }
+    }
+
+    /**
+     * 解析 IP。
+     *
+     * @param http 请求
+     * @return IP
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String resolveIp(HttpServletRequest http) {
+        if (http == null) {
+            return null;
+        }
+        return http.getRemoteAddr();
+    }
+
+    /**
+     * 解析 User-Agent。
+     *
+     * @param http 请求
+     * @return User-Agent
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String resolveUserAgent(HttpServletRequest http) {
+        if (http == null) {
+            return null;
+        }
+        return http.getHeader("User-Agent");
     }
 
     /**

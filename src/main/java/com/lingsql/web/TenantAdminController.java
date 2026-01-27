@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 
 /**
@@ -58,22 +59,23 @@ public class TenantAdminController {
      * 创建租户。
      *
      * @param request 创建请求
+     * @param http    请求
      * @return 创建结果
      * @author 余炘洋
      * @date 2026-01-26
      */
     @PostMapping
     @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
-    public ApiResponse<TenantView> createTenant(@RequestBody TenantCreateRequest request) {
+    public ApiResponse<TenantView> createTenant(@RequestBody TenantCreateRequest request, HttpServletRequest http) {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
         try {
             TenantView view = tenantAdminService.createTenant(request);
-            recordAudit("TENANT_CREATE", "TENANT", request, true, null);
+            recordAudit("TENANT_CREATE", "TENANT", request, true, null, http);
             return ApiResponse.success(view);
         } catch (Exception ex) {
-            recordAudit("TENANT_CREATE", "TENANT", request, false, ex.getMessage());
+            recordAudit("TENANT_CREATE", "TENANT", request, false, ex.getMessage(), http);
             return ApiResponse.error(ex.getMessage());
         }
     }
@@ -83,22 +85,23 @@ public class TenantAdminController {
      *
      * @param id      租户ID
      * @param request 更新请求
+     * @param http    请求
      * @return 更新结果
      * @author 余炘洋
      * @date 2026-01-26
      */
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
-    public ApiResponse<TenantView> updateTenant(@PathVariable Long id, @RequestBody TenantUpdateRequest request) {
+    public ApiResponse<TenantView> updateTenant(@PathVariable Long id, @RequestBody TenantUpdateRequest request, HttpServletRequest http) {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
         try {
             TenantView view = tenantAdminService.updateTenant(id, request);
-            recordAudit("TENANT_UPDATE", "TENANT", request, true, null);
+            recordAudit("TENANT_UPDATE", "TENANT", request, true, null, http);
             return ApiResponse.success(view);
         } catch (Exception ex) {
-            recordAudit("TENANT_UPDATE", "TENANT", request, false, ex.getMessage());
+            recordAudit("TENANT_UPDATE", "TENANT", request, false, ex.getMessage(), http);
             return ApiResponse.error(ex.getMessage());
         }
     }
@@ -107,22 +110,23 @@ public class TenantAdminController {
      * 删除租户。
      *
      * @param id 租户ID
+     * @param http 请求
      * @return 删除结果
      * @author 余炘洋
      * @date 2026-01-26
      */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('ADMIN:TENANT:DELETE')")
-    public ApiResponse<String> deleteTenant(@PathVariable Long id) {
+    public ApiResponse<String> deleteTenant(@PathVariable Long id, HttpServletRequest http) {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
         try {
             tenantAdminService.deleteTenant(id);
-            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, true, null);
+            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, true, null, http);
             return ApiResponse.success("租户已删除");
         } catch (Exception ex) {
-            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, false, ex.getMessage());
+            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, false, ex.getMessage(), http);
             return ApiResponse.error(ex.getMessage());
         }
     }
@@ -135,10 +139,11 @@ public class TenantAdminController {
      * @param request  请求体
      * @param success  是否成功
      * @param error    错误信息
+     * @param http     请求
      * @author 余炘洋
      * @date 2026-01-26
      */
-    private void recordAudit(String action, String resource, Object request, boolean success, String error) {
+    private void recordAudit(String action, String resource, Object request, boolean success, String error, HttpServletRequest http) {
         RbacUserSession session = RbacSecurityUtils.currentSession();
         if (session == null) {
             return;
@@ -146,12 +151,15 @@ public class TenantAdminController {
         AuditLogCommand command = new AuditLogCommand();
         command.setTenantId(session.getTenantId());
         command.setUserId(session.getUserId());
+        command.setRealUserId(session.getUserId());
         command.setUsername(session.getUsername());
         command.setAction(action);
         command.setResource(resource);
         command.setDetail(serialize(request));
         command.setSuccess(success);
         command.setErrorMessage(error);
+        command.setRequestIp(resolveIp(http));
+        command.setUserAgent(resolveUserAgent(http));
         auditLogService.record(command);
     }
 
@@ -172,6 +180,36 @@ public class TenantAdminController {
         } catch (Exception ex) {
             return null;
         }
+    }
+
+    /**
+     * 解析 IP。
+     *
+     * @param http 请求
+     * @return IP
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String resolveIp(HttpServletRequest http) {
+        if (http == null) {
+            return null;
+        }
+        return http.getRemoteAddr();
+    }
+
+    /**
+     * 解析 User-Agent。
+     *
+     * @param http 请求
+     * @return User-Agent
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String resolveUserAgent(HttpServletRequest http) {
+        if (http == null) {
+            return null;
+        }
+        return http.getHeader("User-Agent");
     }
 
     /**

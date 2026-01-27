@@ -92,6 +92,14 @@ public class SqlExecuteLogCommand {
     private String modelVersion;
 
     /**
+     * Token 数量。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private Integer tokenCount;
+
+    /**
      * 执行耗时(毫秒)。
      *
      * @author 余炘洋
@@ -114,4 +122,20 @@ public class SqlExecuteLogCommand {
      * @date 2026-01-26
      */
     private String requestSource;
+
+    /**
+     * 评分。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private Integer rating;
+
+    /**
+     * 评价内容。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String comment;
 }

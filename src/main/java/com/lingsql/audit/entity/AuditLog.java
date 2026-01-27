@@ -50,6 +50,15 @@ public class AuditLog {
     private Long userId;
 
     /**
+     * 真实操作人ID。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    @Column(name = "real_user_id")
+    private Long realUserId;
+
+    /**
      * 操作人账号。
      *
      * @author 余炘洋
@@ -86,6 +95,15 @@ public class AuditLog {
     private String detail;
 
     /**
+     * 人类可读摘要。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    @Column(name = "summary", length = 255)
+    private String summary;
+
+    /**
      * 是否成功。
      *
      * @author 余炘洋
@@ -111,6 +129,15 @@ public class AuditLog {
      */
     @Column(name = "request_ip")
     private String requestIp;
+
+    /**
+     * 浏览器 User-Agent。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    @Column(name = "user_agent", length = 512)
+    private String userAgent;
 
     /**
      * 创建时间。

@@ -28,6 +28,14 @@ public class AuditLogCommand {
     private Long userId;
 
     /**
+     * 真实操作人ID。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private Long realUserId;
+
+    /**
      * 用户账号。
      *
      * @author 余炘洋
@@ -60,6 +68,14 @@ public class AuditLogCommand {
     private String detail;
 
     /**
+     * 人类可读摘要。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String summary;
+
+    /**
      * 是否成功。
      *
      * @author 余炘洋
@@ -82,4 +98,12 @@ public class AuditLogCommand {
      * @date 2026-01-26
      */
     private String requestIp;
+
+    /**
+     * 浏览器 User-Agent。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String userAgent;
 }

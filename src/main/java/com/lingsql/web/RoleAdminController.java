@@ -141,6 +141,7 @@ public class RoleAdminController {
         AuditLogCommand command = new AuditLogCommand();
         command.setTenantId(session.getTenantId());
         command.setUserId(session.getUserId());
+        command.setRealUserId(session.getUserId());
         command.setUsername(session.getUsername());
         command.setAction(action);
         command.setResource(resource);
@@ -148,6 +149,7 @@ public class RoleAdminController {
         command.setSuccess(success);
         command.setErrorMessage(error);
         command.setRequestIp(resolveIp(http));
+        command.setUserAgent(resolveUserAgent(http));
         auditLogService.record(command);
     }
 
@@ -183,6 +185,21 @@ public class RoleAdminController {
             return null;
         }
         return http.getRemoteAddr();
+    }
+
+    /**
+     * 解析 User-Agent。
+     *
+     * @param http 请求
+     * @return User-Agent
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String resolveUserAgent(HttpServletRequest http) {
+        if (http == null) {
+            return null;
+        }
+        return http.getHeader("User-Agent");
     }
 
     /**

@@ -28,6 +28,14 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class SqlExecuteLogService {
 
+    /**
+     * 慢查询阈值(毫秒)。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private static final long SLOW_EXECUTE_THRESHOLD_MS = 1000L;
+
     private final SqlExecuteLogRepository repository;
 
     /**
@@ -53,11 +61,15 @@ public class SqlExecuteLogService {
             logEntity.setModelProvider(command.getModelProvider());
             logEntity.setModelName(command.getModelName());
             logEntity.setModelVersion(command.getModelVersion());
+            logEntity.setTokenCount(command.getTokenCount());
             logEntity.setExecuteCostMs(command.getExecuteCostMs());
             logEntity.setResultRows(command.getResultRows());
             logEntity.setRequestSource(command.getRequestSource());
+            logEntity.setRating(command.getRating());
+            logEntity.setComment(command.getComment());
             logEntity.setCreateTime(LocalDateTime.now());
             repository.save(logEntity);
+            triggerSlowExecuteAlert(logEntity);
         } catch (Exception ex) {
             log.warn("写入 SQL 执行日志失败: {}", ex.getMessage());
         }
@@ -125,10 +137,44 @@ public class SqlExecuteLogService {
         view.setModelProvider(logEntity.getModelProvider());
         view.setModelName(logEntity.getModelName());
         view.setModelVersion(logEntity.getModelVersion());
+        view.setTokenCount(logEntity.getTokenCount());
         view.setExecuteCostMs(logEntity.getExecuteCostMs());
         view.setResultRows(logEntity.getResultRows());
         view.setRequestSource(logEntity.getRequestSource());
+        view.setRating(logEntity.getRating());
+        view.setComment(logEntity.getComment());
+        view.setSlow(isSlow(logEntity.getExecuteCostMs()));
         view.setCreateTime(logEntity.getCreateTime());
         return view;
+    }
+
+    /**
+     * 判断是否慢查询。
+     *
+     * @param executeCostMs 执行耗时
+     * @return 是否慢查询
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private boolean isSlow(Long executeCostMs) {
+        return executeCostMs != null && executeCostMs > SLOW_EXECUTE_THRESHOLD_MS;
+    }
+
+    /**
+     * 触发慢查询告警。
+     *
+     * @param logEntity 日志实体
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private void triggerSlowExecuteAlert(SqlExecuteLog logEntity) {
+        if (logEntity == null || !isSlow(logEntity.getExecuteCostMs())) {
+            return;
+        }
+        log.warn("SQL 执行耗时超过阈值: id={}, tenantId={}, userId={}, costMs={}",
+                logEntity.getId(),
+                logEntity.getTenantId(),
+                logEntity.getUserId(),
+                logEntity.getExecuteCostMs());
     }
 }

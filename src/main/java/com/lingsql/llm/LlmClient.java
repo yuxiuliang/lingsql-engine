@@ -121,7 +121,8 @@ public class LlmClient {
         HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
         String url = resolveChatUrl(modelConfig.getBaseUrl());
         String response = restTemplate.postForObject(url, entity, String.class);
-        String content = extractContent(response);
+        ParsedLlmResponse parsedResponse = parseResponse(response);
+        String content = parsedResponse.content();
         if (content == null || content.isBlank()) {
             throw new RuntimeException("模型返回为空");
         }
@@ -138,33 +139,56 @@ public class LlmClient {
         traceInfo.setModelName(modelConfig.getModelName());
         traceInfo.setModelVersion(modelConfig.getModelVersion());
         traceInfo.setCostMs(costMs);
+        traceInfo.setTokenCount(parsedResponse.tokenCount());
         LlmTraceContext.set(traceInfo);
         return content;
     }
 
     /**
-     * 解析模型响应内容。
+     * 解析模型响应内容与 Token 信息。
      *
      * @param response 原始响应
-     * @return 模型输出
+     * @return 解析结果
      * @author 余炘洋
-     * @date 2026-01-22
+     * @date 2026-01-27
      */
-    private String extractContent(String response) {
+    private ParsedLlmResponse parseResponse(String response) {
         if (response == null || response.isBlank()) {
-            return "";
+            return new ParsedLlmResponse("", null);
         }
         try {
             JsonNode root = objectMapper.readTree(response);
+            String content = "";
             JsonNode choices = root.path("choices");
             if (choices.isArray() && !choices.isEmpty()) {
-                return choices.get(0).path("message").path("content").asText("");
+                content = choices.get(0).path("message").path("content").asText("");
+            } else {
+                content = root.path("content").asText("");
             }
-            return root.path("content").asText("");
+            Integer tokenCount = null;
+            JsonNode usage = root.path("usage");
+            if (usage.isObject()) {
+                long totalTokens = usage.path("total_tokens").asLong(-1);
+                if (totalTokens >= 0) {
+                    tokenCount = (int) totalTokens;
+                }
+            }
+            return new ParsedLlmResponse(content, tokenCount);
         } catch (Exception e) {
             log.error("解析 LLM 返回失败: {}", response, e);
-            return response;
+            return new ParsedLlmResponse(response, null);
         }
+    }
+
+    /**
+     * 模型响应解析结果。
+     *
+     * @param content    模型输出
+     * @param tokenCount Token 数量
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private record ParsedLlmResponse(String content, Integer tokenCount) {
     }
 
     /**
