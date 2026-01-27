@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref, reactive} from 'vue';
+import {reactive, ref} from 'vue';
 import {ElMessage, ElMessageBox} from 'element-plus';
 import {AiModelConfig, createModelConfig, deleteModelConfig, fetchModelConfigs, updateModelConfig} from '@/api/config';
 import {disableModel, enableModel, fetchModelHealth, ModelHealthView} from '@/api/admin';
@@ -315,7 +315,7 @@ loadModelHealth();
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog v-model="dialogVisible" title="模型配置" width="560px">
+    <el-dialog v-model="dialogVisible" title="模型配置" width="560px" :close-on-click-modal="false">
       <el-form label-width="110px">
         <el-form-item label="供应商">
           <el-input v-model="form.providerName" placeholder="例如：Qwen"/>

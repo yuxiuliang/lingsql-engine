@@ -2,10 +2,10 @@
 import {computed, nextTick, reactive, ref, watch} from 'vue';
 import {ElMessage, ElMessageBox} from 'element-plus';
 import {
-  TenantDbConfig,
   createTenantConfig,
   deleteTenantConfig,
   fetchTenantConfigs,
+  TenantDbConfig,
   testTenantConnection,
   updateTenantConfig
 } from '@/api/config';
@@ -499,7 +499,7 @@ loadTenants();
         </el-table-column>
       </el-table>
 
-      <el-dialog v-model="dialogVisible" title="数据源配置" width="620px">
+      <el-dialog v-model="dialogVisible" title="数据源配置" width="620px" :close-on-click-modal="false">
         <el-form label-width="120px">
           <el-form-item label="所属租户">
             <el-tag :type="form.tenantId ? 'success' : 'info'">{{ formTenantLabel }}</el-tag>
@@ -560,7 +560,7 @@ loadTenants();
         </template>
       </el-dialog>
     </template>
-    <el-dialog v-model="tableSelectVisible" title="选择表白名单" width="520px">
+    <el-dialog v-model="tableSelectVisible" title="选择表白名单" width="520px" :close-on-click-modal="false">
       <el-tree
         ref="tableTreeRef"
         :data="tableTreeData"
@@ -574,7 +574,7 @@ loadTenants();
         <el-button type="primary" @click="handleTableSelectConfirm">确定</el-button>
       </template>
     </el-dialog>
-    <el-dialog v-model="columnSelectVisible" title="选择字段" width="560px">
+    <el-dialog v-model="columnSelectVisible" title="选择字段" width="560px" :close-on-click-modal="false">
       <el-tree
         ref="columnTreeRef"
         :data="columnTreeData"

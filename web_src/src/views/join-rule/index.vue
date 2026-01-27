@@ -327,7 +327,7 @@ loadJoinRules();
         </el-table-column>
       </el-table>
 
-      <el-dialog v-model="dialogVisible" title="Join 规则" width="560px">
+      <el-dialog v-model="dialogVisible" title="Join 规则" width="560px" :close-on-click-modal="false">
         <el-form label-width="120px">
           <el-form-item label="所属租户">
             <el-tag :type="form.tenantId ? 'success' : 'info'">{{ formTenantLabel }}</el-tag>

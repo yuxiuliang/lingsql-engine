@@ -385,7 +385,7 @@ loadUsers();
       </div>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" title="用户信息" width="520px">
+    <el-dialog v-model="dialogVisible" title="用户信息" width="520px" :close-on-click-modal="false">
       <el-form label-width="100px">
         <el-form-item label="当前租户" v-if="isSysAdmin">
           <el-tag type="success">{{ activeTenantName || activeTenantId || '未选择' }}</el-tag>
@@ -423,7 +423,7 @@ loadUsers();
       </template>
     </el-dialog>
 
-    <el-dialog v-model="passwordVisible" title="重置密码" width="420px">
+    <el-dialog v-model="passwordVisible" title="重置密码" width="420px" :close-on-click-modal="false">
       <el-form label-width="90px">
         <el-form-item label="新密码">
           <el-input v-model="resetForm.newPassword" show-password placeholder="请输入新密码"/>

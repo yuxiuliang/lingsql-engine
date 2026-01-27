@@ -244,7 +244,7 @@ loadPermissions();
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" title="角色信息" width="560px">
+    <el-dialog v-model="dialogVisible" title="角色信息" width="560px" :close-on-click-modal="false">
       <el-form label-width="110px">
         <el-form-item label="当前租户" v-if="isSysAdmin">
           <el-tag type="success">{{ activeTenantName || activeTenantId || '未选择' }}</el-tag>

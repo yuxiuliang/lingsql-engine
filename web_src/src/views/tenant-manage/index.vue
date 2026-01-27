@@ -318,7 +318,7 @@ loadTenants();
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑租户' : '新增租户'" width="640px">
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑租户' : '新增租户'" width="640px" :close-on-click-modal="false">
       <el-form label-width="120px">
         <el-form-item label="租户ID">
           <el-tag v-if="editingId" type="info">{{ form.tenantId || '未生成' }}</el-tag>
