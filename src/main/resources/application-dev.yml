@@ -96,3 +96,10 @@ lingsql:
     jwt-secret: "lingsql-dev-secret-key-32chars-2026!"
     jwt-issuer: "lingsql-engine"
     jwt-ttl: 24h
+  admin:
+    enabled: true
+    tenant-id: "100c7934500b6efdc34be8278d989e97"
+    tenant-name: "系统租户"
+    username: "admin"
+    password: "***REDACTED-SECRET***"
+    nickname: "超级管理员"
