@@ -495,6 +495,8 @@ watch(activeTenantId, () => {
 .schema-tree {
   background: transparent;
   color: #334155;
+  height: 78vh;
+  overflow-y: auto;
 }
 
 .schema-tree :deep(.el-tree-node__content) {
@@ -522,7 +524,10 @@ watch(activeTenantId, () => {
   font-weight: 600;
   color: #1f2937;
 }
-
+.metadata-table {
+  height: 83vh;
+  overflow-y: auto;
+}
 .metadata-table :deep(.el-table__header th) {
   background: #f1f5f9;
   color: #334155;
