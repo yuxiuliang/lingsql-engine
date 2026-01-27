@@ -103,3 +103,4 @@ lingsql:
     username: "admin"
     password: "***REDACTED-SECRET***"
     nickname: "超级管理员"
+    seed-resource: "classpath:rbac-seed.json"

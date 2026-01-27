@@ -356,6 +356,14 @@ public class LingSqlProperties {
          * @date 2026-01-27
          */
         private String nickname = "超级管理员";
+
+        /**
+         * 初始化数据资源路径。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String seedResource = "classpath:rbac-seed.json";
     }
 
     /**
