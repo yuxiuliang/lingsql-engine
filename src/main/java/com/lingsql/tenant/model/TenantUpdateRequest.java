@@ -91,4 +91,12 @@ public class TenantUpdateRequest {
      */
     private String serviceLevel;
 
+    /**
+     * 租户类型。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String tenantType;
+
 }

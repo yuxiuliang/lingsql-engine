@@ -110,6 +110,14 @@ public class TenantView {
     private String serviceLevel;
 
     /**
+     * 租户类型。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String tenantType;
+
+    /**
      * 创建时间。
      *
      * @author 余炘洋

@@ -47,6 +47,7 @@ CREATE TABLE `t_lingsql_engine_tenant`
     `plan_name`     varchar(128) DEFAULT NULL COMMENT '套餐名称',
     `quota_balance` bigint       DEFAULT 0 COMMENT '余额',
     `service_level` varchar(32)  DEFAULT NULL COMMENT '服务等级',
+    `tenant_type`   varchar(32)  DEFAULT NULL COMMENT '租户类型',
     `is_deleted`    tinyint      DEFAULT '0' COMMENT '删除标记: 1-删除, 0-正常',
     `create_time`   datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time`   datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -55,6 +56,45 @@ CREATE TABLE `t_lingsql_engine_tenant`
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='租户信息表';
+
+-- 计费策略版本表
+CREATE TABLE `t_lingsql_engine_billing_policy_version`
+(
+    `id`                      bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `version_code`            varchar(64)  NOT NULL COMMENT '版本号',
+    `status`                  tinyint      DEFAULT '1' COMMENT '状态: 1-生效, 0-停用',
+    `effective_time`          datetime     DEFAULT NULL COMMENT '生效时间',
+    `model_unit_cost`         text         DEFAULT NULL COMMENT '模型单价配置(JSON)',
+    `service_level_limit`     text         DEFAULT NULL COMMENT '服务等级限额(JSON)',
+    `tenant_type_weight`      text         DEFAULT NULL COMMENT '租户类型权重(JSON)',
+    `default_unit_cost`       bigint       DEFAULT 1 COMMENT '默认单价(点/Token)',
+    `default_daily_limit`     int          DEFAULT 100 COMMENT '默认每日调用上限',
+    `default_daily_token_limit` bigint     DEFAULT 0 COMMENT '默认每日Token上限',
+    `default_tenant_weight`   decimal(10,4) DEFAULT 1.0000 COMMENT '默认租户权重',
+    `description`             varchar(255) DEFAULT NULL COMMENT '说明',
+    `create_time`             datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`             datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_billing_version` (`version_code`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='计费策略版本表';
+
+-- 租户计费覆盖表
+CREATE TABLE `t_lingsql_engine_billing_tenant_override`
+(
+    `id`               bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`        varchar(64)  NOT NULL COMMENT '租户ID',
+    `price_multiplier` decimal(10,4) DEFAULT NULL COMMENT '加价倍率',
+    `status`           tinyint      DEFAULT '1' COMMENT '状态: 1-生效, 0-停用',
+    `remark`           varchar(255) DEFAULT NULL COMMENT '备注',
+    `create_time`      datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`      datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_billing_override` (`tenant_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='租户计费覆盖表';
 
 
 
@@ -326,6 +366,7 @@ CREATE TABLE `t_lingsql_engine_sql_execute_log`
     `model_version`  varchar(64)  DEFAULT NULL COMMENT '模型版本',
     `token_count`    int          DEFAULT NULL COMMENT 'Token 数量',
     `cost_amount`    bigint       DEFAULT NULL COMMENT '成本金额',
+    `billing_version` varchar(64) DEFAULT NULL COMMENT '计费版本',
     `execute_cost_ms` bigint      DEFAULT NULL COMMENT '执行耗时(毫秒)',
     `result_rows`    int          DEFAULT NULL COMMENT '返回行数',
     `rating`         tinyint      DEFAULT NULL COMMENT '评分',

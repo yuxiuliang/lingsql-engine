@@ -63,6 +63,7 @@ public class SqlExecuteLogService {
             logEntity.setModelVersion(command.getModelVersion());
             logEntity.setTokenCount(command.getTokenCount());
             logEntity.setCostAmount(command.getCostAmount());
+            logEntity.setBillingVersion(command.getBillingVersion());
             logEntity.setExecuteCostMs(command.getExecuteCostMs());
             logEntity.setResultRows(command.getResultRows());
             logEntity.setRequestSource(command.getRequestSource());
@@ -140,6 +141,7 @@ public class SqlExecuteLogService {
         view.setModelVersion(logEntity.getModelVersion());
         view.setTokenCount(logEntity.getTokenCount());
         view.setCostAmount(logEntity.getCostAmount());
+        view.setBillingVersion(logEntity.getBillingVersion());
         view.setExecuteCostMs(logEntity.getExecuteCostMs());
         view.setResultRows(logEntity.getResultRows());
         view.setRequestSource(logEntity.getRequestSource());

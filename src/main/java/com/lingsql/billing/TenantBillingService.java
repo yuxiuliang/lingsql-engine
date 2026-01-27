@@ -2,6 +2,11 @@ package com.lingsql.billing;
 
 import com.lingsql.audit.model.SqlExecuteLogCommand;
 import com.lingsql.audit.repository.SqlExecuteLogRepository;
+import com.lingsql.billing.entity.TenantBillingOverride;
+import com.lingsql.billing.model.BillingLimit;
+import com.lingsql.billing.model.BillingPolicySnapshot;
+import com.lingsql.billing.model.BillingQuote;
+import com.lingsql.billing.repository.TenantBillingOverrideRepository;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,10 +31,15 @@ public class TenantBillingService {
 
     private static final Integer NOT_DELETED = 0;
     private static final Integer ACTIVE_STATUS = 1;
+    private static final Integer OVERRIDE_ACTIVE_STATUS = 1;
+    private static final String MESSAGE_UPGRADE = "请升级套餐";
+    private static final String MESSAGE_DAILY_LIMIT_REACHED = "今日调用次数已达上限";
+    private static final String MESSAGE_DAILY_TOKEN_LIMIT_REACHED = "今日Token已达上限";
 
     private final TenantRepository tenantRepository;
     private final SqlExecuteLogRepository sqlExecuteLogRepository;
     private final BillingPolicy billingPolicy;
+    private final TenantBillingOverrideRepository tenantBillingOverrideRepository;
 
     /**
      * 校验租户是否允许继续调用。
@@ -45,20 +55,29 @@ public class TenantBillingService {
         }
         TenantInfo tenant = tenantRepository.findByTenantIdAndIsDeleted(tenantId, NOT_DELETED).orElse(null);
         if (tenant == null || !ACTIVE_STATUS.equals(tenant.getStatus())) {
-            return BillingCheckResult.deny("请升级套餐");
+            return BillingCheckResult.deny(MESSAGE_UPGRADE);
         }
         long balance = resolveBalance(tenant.getQuotaBalance());
         if (balance <= 0) {
-            return BillingCheckResult.deny("请升级套餐");
+            return BillingCheckResult.deny(MESSAGE_UPGRADE);
         }
-        int dailyLimit = billingPolicy.resolveDailyLimit(tenant.getServiceLevel());
-        if (dailyLimit > 0) {
+        BillingPolicySnapshot snapshot = billingPolicy.currentSnapshot();
+        BillingLimit limit = snapshot.resolveLimit(tenant.getServiceLevel());
+        if (limit.getDailyCallLimit() > 0 || limit.getDailyTokenLimit() > 0) {
             LocalDate today = LocalDate.now();
             LocalDateTime start = today.atStartOfDay();
             LocalDateTime end = today.plusDays(1).atStartOfDay().minusNanos(1);
-            long used = sqlExecuteLogRepository.countByTenantIdAndCreateTimeBetween(tenantId, start, end);
-            if (used >= dailyLimit) {
-                return BillingCheckResult.deny("请升级套餐");
+            if (limit.getDailyCallLimit() > 0) {
+                long used = sqlExecuteLogRepository.countByTenantIdAndCreateTimeBetween(tenantId, start, end);
+                if (used >= limit.getDailyCallLimit()) {
+                    return BillingCheckResult.deny(MESSAGE_DAILY_LIMIT_REACHED);
+                }
+            }
+            if (limit.getDailyTokenLimit() > 0) {
+                long usedTokens = sqlExecuteLogRepository.sumTokenCountByTenantIdAndCreateTimeBetween(tenantId, start, end);
+                if (usedTokens >= limit.getDailyTokenLimit()) {
+                    return BillingCheckResult.deny(MESSAGE_DAILY_TOKEN_LIMIT_REACHED);
+                }
             }
         }
         return BillingCheckResult.allow();
@@ -82,8 +101,18 @@ public class TenantBillingService {
         if (tenant == null) {
             return BillingChargeResult.skip();
         }
-        long costAmount = billingPolicy.calculateCost(command.getModelName(), command.getTokenCount());
+        TenantBillingOverride override = tenantBillingOverrideRepository
+                .findByTenantIdAndStatus(tenantId, OVERRIDE_ACTIVE_STATUS)
+                .orElse(null);
+        BillingQuote quote = billingPolicy.quote(
+                command.getModelName(),
+                command.getTokenCount(),
+                tenant.getTenantType(),
+                override == null ? null : override.getPriceMultiplier()
+        );
+        long costAmount = quote.costAmount();
         command.setCostAmount(costAmount);
+        command.setBillingVersion(quote.policyVersion());
         long balance = resolveBalance(tenant.getQuotaBalance());
         long newBalance = balance - costAmount;
         if (newBalance < 0) {

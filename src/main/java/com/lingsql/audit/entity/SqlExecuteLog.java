@@ -140,6 +140,15 @@ public class SqlExecuteLog {
     private Long costAmount;
 
     /**
+     * 计费版本。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    @Column(name = "billing_version")
+    private String billingVersion;
+
+    /**
      * 执行耗时(毫秒)。
      *
      * @author 余炘洋

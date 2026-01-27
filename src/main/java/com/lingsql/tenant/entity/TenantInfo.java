@@ -131,6 +131,15 @@ public class TenantInfo {
     private String serviceLevel;
 
     /**
+     * 租户类型。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    @Column(name = "tenant_type")
+    private String tenantType;
+
+    /**
      * 是否删除: 1-已删除, 0-正常。
      *
      * @author 余炘洋

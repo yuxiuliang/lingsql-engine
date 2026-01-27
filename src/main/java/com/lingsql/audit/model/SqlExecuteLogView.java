@@ -118,6 +118,14 @@ public class SqlExecuteLogView {
     private Long costAmount;
 
     /**
+     * 计费版本。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String billingVersion;
+
+    /**
      * 执行耗时(毫秒)。
      *
      * @author 余炘洋

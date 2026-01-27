@@ -30,6 +30,28 @@ public interface SqlExecuteLogRepository extends JpaRepository<SqlExecuteLog, Lo
     long countByTenantIdAndCreateTimeBetween(String tenantId, LocalDateTime start, LocalDateTime end);
 
     /**
+     * 统计租户在时间范围内的 Token 消耗。
+     *
+     * @param tenantId 租户ID
+     * @param start    开始时间
+     * @param end      结束时间
+     * @return Token 总数
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    @Query(value = """
+            SELECT IFNULL(SUM(IFNULL(token_count, 0)), 0)
+            FROM t_lingsql_engine_sql_execute_log
+            WHERE tenant_id = :tenantId
+              AND create_time BETWEEN :start AND :end
+            """, nativeQuery = true)
+    long sumTokenCountByTenantIdAndCreateTimeBetween(
+            @Param("tenantId") String tenantId,
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end
+    );
+
+    /**
      * 统计算力消耗最高的问题。
      *
      * @param start 开始时间

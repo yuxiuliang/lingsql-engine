@@ -112,6 +112,7 @@ public class TenantAdminService {
         tenant.setPlanName(request.getPlanName());
         tenant.setQuotaBalance(resolveQuotaBalance(request.getQuotaBalance()));
         tenant.setServiceLevel(resolveServiceLevel(request.getServiceLevel()));
+        tenant.setTenantType(resolveTenantType(request.getTenantType()));
         tenant.setIsDeleted(NOT_DELETED);
         tenant.setCreateTime(LocalDateTime.now());
         tenant.setUpdateTime(LocalDateTime.now());
@@ -195,6 +196,9 @@ public class TenantAdminService {
         }
         if (StringUtils.hasText(request.getServiceLevel())) {
             tenant.setServiceLevel(resolveServiceLevel(request.getServiceLevel()));
+        }
+        if (StringUtils.hasText(request.getTenantType())) {
+            tenant.setTenantType(resolveTenantType(request.getTenantType()));
         }
         tenant.setUpdateTime(LocalDateTime.now());
         TenantInfo saved = tenantRepository.save(tenant);
@@ -434,6 +438,7 @@ public class TenantAdminService {
         view.setPlanName(tenant.getPlanName());
         view.setQuotaBalance(tenant.getQuotaBalance());
         view.setServiceLevel(tenant.getServiceLevel());
+        view.setTenantType(tenant.getTenantType());
         view.setCreateTime(tenant.getCreateTime());
         view.setUpdateTime(tenant.getUpdateTime());
         return view;
@@ -467,6 +472,21 @@ public class TenantAdminService {
             return "FREE";
         }
         return serviceLevel.trim().toUpperCase();
+    }
+
+    /**
+     * 解析租户类型。
+     *
+     * @param tenantType 租户类型
+     * @return 规范类型
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String resolveTenantType(String tenantType) {
+        if (!StringUtils.hasText(tenantType)) {
+            return null;
+        }
+        return tenantType.trim().toUpperCase();
     }
 
     /**

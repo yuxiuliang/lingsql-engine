@@ -66,6 +66,8 @@ VALUES
 ('ADMIN:USER:RESET', '接口-用户重置密码', 'API', 1),
 ('ADMIN:ROLE:READ', '接口-角色读取', 'API', 1),
 ('ADMIN:ROLE:WRITE', '接口-角色维护', 'API', 1),
+('ADMIN:BILLING:READ', '接口-计费读取', 'API', 1),
+('ADMIN:BILLING:WRITE', '接口-计费维护', 'API', 1),
 ('ADMIN:PERM:READ', '接口-权限读取', 'API', 1),
 ('ADMIN:TENANT:POOL', '接口-租户权限池维护', 'API', 1),
 ('ADMIN:AUDIT:READ', '接口-审计日志读取', 'API', 1),
