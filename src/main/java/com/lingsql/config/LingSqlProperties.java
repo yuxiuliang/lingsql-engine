@@ -302,6 +302,63 @@ public class LingSqlProperties {
     }
 
     /**
+     * 超级管理员初始化配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    @Data
+    public static class Admin {
+        /**
+         * 是否启用初始化。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private boolean enabled = true;
+
+        /**
+         * 默认租户ID。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String tenantId = "1";
+
+        /**
+         * 默认租户名称。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String tenantName = "系统租户";
+
+        /**
+         * 管理员账号。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String username = "admin";
+
+        /**
+         * 管理员密码。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String password = "Admin123456";
+
+        /**
+         * 管理员昵称。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String nickname = "超级管理员";
+    }
+
+    /**
      * 安全配置。
      *
      * @author 余炘洋
@@ -371,4 +428,12 @@ public class LingSqlProperties {
      * @date 2026-01-26
      */
     private Auth auth = new Auth();
+
+    /**
+     * 超级管理员初始化配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private Admin admin = new Admin();
 }
