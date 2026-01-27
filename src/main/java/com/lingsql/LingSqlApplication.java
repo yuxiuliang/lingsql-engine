@@ -33,6 +33,6 @@ public class LingSqlApplication {
         // 开启虚拟线程支持 (Java 21)
         System.setProperty("jdk.virtualThreadScheduler.parallelism", "10");
         SpringApplication.run(LingSqlApplication.class, args);
-        System.out.println("🚀 LingSQL 语数引擎启动成功！请通过 /api/v1/admin/sync-schema 初始化租户。");
+        System.out.println("🚀 LingSQL 语数引擎启动成功！");
     }
 }
