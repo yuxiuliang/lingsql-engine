@@ -147,7 +147,7 @@ const resolveIconType = (icon?: string): string => {
     return 'default';
   }
   const normalized = icon.trim().toLowerCase();
-  if (['chat', 'tenant', 'metadata', 'lexicon', 'join', 'model', 'user', 'role', 'permission', 'audit', 'sql'].includes(normalized)) {
+  if (['chat', 'tenant', 'metadata', 'lexicon', 'join', 'model', 'user', 'role', 'permission', 'audit', 'sql', 'dashboard', 'billing', 'plan'].includes(normalized)) {
     return normalized;
   }
   if (['history'].includes(normalized)) {
@@ -170,6 +170,15 @@ const resolveIconType = (icon?: string): string => {
   }
   if (['sql-log', 'sqls'].includes(normalized)) {
     return 'sql';
+  }
+  if (['dashboard', 'overview', 'console'].includes(normalized)) {
+    return 'dashboard';
+  }
+  if (['billing', 'bill', 'pricing', 'charge'].includes(normalized)) {
+    return 'billing';
+  }
+  if (['plan', 'package', 'tier'].includes(normalized)) {
+    return 'plan';
   }
   if (['table', 'notebook'].includes(normalized)) {
     return 'metadata';
@@ -282,6 +291,15 @@ onMounted(loadTenants);
                 <svg v-else-if="resolveIconType(menu.icon) === 'sql'" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 2c-4.4 0-8 1.3-8 3v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 .9 6 1s-2.1 1-6 1-6-.9-6-1 2.1-1 6-1zm0 4c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2V7c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2v-3c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v2c0 1.1-2.1 2-6 2s-6-.9-6-2v-2c0 .1 2.1 1 6 1z"/>
                 </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'dashboard'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 13h4v7H4v-7zm6-6h4v13h-4V7zm6 3h4v10h-4V10z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'billing'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 2h12a2 2 0 0 1 2 2v18l-4-2-4 2-4-2-4 2V4a2 2 0 0 1 2-2zm2 5h8v2H8V7zm0 4h8v2H8v-2z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(menu.icon) === 'plan'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 4h16v4H4V4zm0 6h16v4H4v-4zm0 6h16v4H4v-4z"/>
+                </svg>
                 <svg v-else viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
                 </svg>
@@ -330,6 +348,15 @@ onMounted(loadTenants);
                 <svg v-else-if="resolveIconType(child.icon) === 'sql'" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 2c-4.4 0-8 1.3-8 3v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 .9 6 1s-2.1 1-6 1-6-.9-6-1 2.1-1 6-1zm0 4c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2V7c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2v-3c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v2c0 1.1-2.1 2-6 2s-6-.9-6-2v-2c0 .1 2.1 1 6 1z"/>
                 </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'dashboard'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 13h4v7H4v-7zm6-6h4v13h-4V7zm6 3h4v10h-4V10z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'billing'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 2h12a2 2 0 0 1 2 2v18l-4-2-4 2-4-2-4 2V4a2 2 0 0 1 2-2zm2 5h8v2H8V7zm0 4h8v2H8v-2z"/>
+                </svg>
+                <svg v-else-if="resolveIconType(child.icon) === 'plan'" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 4h16v4H4V4zm0 6h16v4H4v-4zm0 6h16v4H4v-4z"/>
+                </svg>
                 <svg v-else viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
                 </svg>
@@ -373,6 +400,15 @@ onMounted(loadTenants);
               </svg>
               <svg v-else-if="resolveIconType(menu.icon) === 'sql'" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 2c-4.4 0-8 1.3-8 3v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 .9 6 1s-2.1 1-6 1-6-.9-6-1 2.1-1 6-1zm0 4c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2V7c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2v-3c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v2c0 1.1-2.1 2-6 2s-6-.9-6-2v-2c0 .1 2.1 1 6 1z"/>
+              </svg>
+              <svg v-else-if="resolveIconType(menu.icon) === 'dashboard'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 13h4v7H4v-7zm6-6h4v13h-4V7zm6 3h4v10h-4V10z"/>
+              </svg>
+              <svg v-else-if="resolveIconType(menu.icon) === 'billing'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 2h12a2 2 0 0 1 2 2v18l-4-2-4 2-4-2-4 2V4a2 2 0 0 1 2-2zm2 5h8v2H8V7zm0 4h8v2H8v-2z"/>
+              </svg>
+              <svg v-else-if="resolveIconType(menu.icon) === 'plan'" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 4h16v4H4V4zm0 6h16v4H4v-4zm0 6h16v4H4v-4z"/>
               </svg>
               <svg v-else viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>

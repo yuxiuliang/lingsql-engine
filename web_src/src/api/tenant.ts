@@ -17,6 +17,9 @@ export interface TenantView {
   contactEmail?: string;
   expireTime?: string;
   planName?: string;
+  quotaBalance?: number;
+  serviceLevel?: string;
+  tenantType?: string;
   createTime?: string;
   updateTime?: string;
 }

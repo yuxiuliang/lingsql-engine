@@ -100,6 +100,10 @@ public class SqlExecuteLogService {
             if (StringUtils.hasText(safeQuery.getRequestSource())) {
                 predicate = criteriaBuilder.and(predicate, criteriaBuilder.equal(root.get("requestSource"), safeQuery.getRequestSource()));
             }
+            if (StringUtils.hasText(safeQuery.getQuestion())) {
+                String keyword = "%" + safeQuery.getQuestion().trim() + "%";
+                predicate = criteriaBuilder.and(predicate, criteriaBuilder.like(root.get("question"), keyword));
+            }
             if (safeQuery.getStartTime() != null) {
                 predicate = criteriaBuilder.and(predicate, criteriaBuilder.greaterThanOrEqualTo(root.get("createTime"), safeQuery.getStartTime()));
             }

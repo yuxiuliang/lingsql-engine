@@ -78,6 +78,7 @@ public class AuditLogController {
      *
      * @param tenantId     租户ID
      * @param userId       用户ID
+     * @param question     问题关键词
      * @param requestSource 请求来源
      * @param startTime    开始时间
      * @param endTime      结束时间
@@ -92,6 +93,7 @@ public class AuditLogController {
     public ApiResponse<PageResult<SqlExecuteLogView>> listSqlLogs(
             @RequestParam(required = false) String tenantId,
             @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) String question,
             @RequestParam(required = false) String requestSource,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
@@ -103,6 +105,7 @@ public class AuditLogController {
         SqlExecuteLogQuery query = new SqlExecuteLogQuery();
         query.setTenantId(sysAdmin ? tenantId : session.getTenantId());
         query.setUserId(userId);
+        query.setQuestion(question);
         query.setRequestSource(requestSource);
         query.setStartTime(startTime);
         query.setEndTime(endTime);
@@ -114,6 +117,7 @@ public class AuditLogController {
      *
      * @param tenantId     租户ID
      * @param userId       用户ID
+     * @param question     问题关键词
      * @param requestSource 请求来源
      * @param startTime    开始时间
      * @param endTime      结束时间
@@ -126,6 +130,7 @@ public class AuditLogController {
     public ApiResponse<List<SqlExecuteLogView>> exportSqlLogs(
             @RequestParam(required = false) String tenantId,
             @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) String question,
             @RequestParam(required = false) String requestSource,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime
@@ -137,6 +142,7 @@ public class AuditLogController {
         SqlExecuteLogQuery query = new SqlExecuteLogQuery();
         query.setTenantId(tenantId);
         query.setUserId(userId);
+        query.setQuestion(question);
         query.setRequestSource(requestSource);
         query.setStartTime(startTime);
         query.setEndTime(endTime);

@@ -30,6 +30,12 @@ const routes: Array<RouteRecordRaw> = [
                 meta: {title: '问答历史', icon: 'ChatLineRound'}
             },
             {
+                path: '/dashboard',
+                name: 'Dashboard',
+                component: () => import('@/views/dashboard/index.vue'),
+                meta: {title: '仪表盘', icon: 'Dashboard'}
+            },
+            {
                 path: '/model',
                 name: 'Model',
                 component: () => import('@/views/model/index.vue'),
@@ -40,6 +46,18 @@ const routes: Array<RouteRecordRaw> = [
                 name: 'Tenant',
                 component: () => import('@/views/tenant-manage/index.vue'),
                 meta: {title: '租户管理', icon: 'OfficeBuilding'}
+            },
+            {
+                path: '/plan',
+                name: 'PlanManage',
+                component: () => import('@/views/plan/index.vue'),
+                meta: {title: '套餐管理', icon: 'Tickets'}
+            },
+            {
+                path: '/billing',
+                name: 'BillingManage',
+                component: () => import('@/views/billing/index.vue'),
+                meta: {title: '计费规则', icon: 'CreditCard'}
             },
             {
                 path: '/datasource',

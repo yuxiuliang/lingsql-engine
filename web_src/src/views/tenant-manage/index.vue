@@ -18,6 +18,15 @@ const loading = ref(false);
 const dialogVisible = ref(false);
 const editingId = ref<number | null>(null);
 const initConfig = ref(false);
+const planOptions = computed(() => {
+  const options = new Set<string>();
+  tenants.value.forEach((tenant) => {
+    if (tenant.planName && tenant.planName.trim()) {
+      options.add(tenant.planName.trim());
+    }
+  });
+  return Array.from(options);
+});
 
 /**
  * 租户表单定义。
@@ -345,7 +354,10 @@ loadTenants();
           />
         </el-form-item>
         <el-form-item label="套餐">
-          <el-input v-model="form.planName" placeholder="例如：标准版"/>
+          <el-select v-model="form.planName" placeholder="请选择套餐" filterable clearable style="width: 100%">
+            <el-option v-for="plan in planOptions" :key="plan" :label="plan" :value="plan"/>
+          </el-select>
+          <div class="form-tip">套餐来源于“套餐管理”页现有租户配置。</div>
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="form.status" style="width: 100%">
@@ -428,5 +440,11 @@ loadTenants();
 .toolbar-tip {
   color: #94a3b8;
   font-size: 13px;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 6px;
 }
 </style>

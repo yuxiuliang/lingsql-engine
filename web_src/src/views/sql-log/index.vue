@@ -3,8 +3,10 @@ import {computed, reactive, ref, watch} from 'vue';
 import {ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
 import {PageResult, SqlExecuteLogView, exportSqlLogs, fetchSqlLogs} from '@/api/audit';
+import {useRoute} from 'vue-router';
 
 const authStore = useAuthStore();
+const route = useRoute();
 const logs = ref<SqlExecuteLogView[]>([]);
 const loading = ref(false);
 const exporting = ref(false);
@@ -14,6 +16,7 @@ const size = ref(10);
 
 const searchForm = reactive({
   userId: '',
+  question: '',
   requestSource: '',
   dateRange: [] as [Date, Date] | []
 });
@@ -103,6 +106,7 @@ const loadLogs = async () => {
     const result: PageResult<SqlExecuteLogView> = await fetchSqlLogs({
       tenantId: isSysAdmin.value ? activeTenantId.value || undefined : undefined,
       userId: searchForm.userId ? Number(searchForm.userId) : undefined,
+      question: searchForm.question || undefined,
       requestSource: searchForm.requestSource || undefined,
       startTime,
       endTime,
@@ -135,6 +139,7 @@ const handleExport = async () => {
     const list = await exportSqlLogs({
       tenantId: activeTenantId.value || undefined,
       userId: searchForm.userId ? Number(searchForm.userId) : undefined,
+      question: searchForm.question || undefined,
       requestSource: searchForm.requestSource || undefined,
       startTime,
       endTime
@@ -189,12 +194,34 @@ const handleSearch = () => {
   loadLogs();
 };
 
+/**
+ * 同步 URL 查询条件。
+ *
+ * @author 余炘洋
+ * @date 2026-01-27
+ */
+const applyRouteQuestion = () => {
+  const question = route.query.question;
+  if (typeof question === 'string' && question.trim()) {
+    searchForm.question = question.trim();
+  }
+};
+
 watch(activeTenantId, () => {
   if (isSysAdmin.value) {
     handleSearch();
   }
 });
 
+watch(
+  () => route.query.question,
+  () => {
+    applyRouteQuestion();
+    handleSearch();
+  }
+);
+
+applyRouteQuestion();
 loadLogs();
 </script>
 
@@ -211,6 +238,7 @@ loadLogs();
             <el-tag size="small" :type="activeTenantId ? 'success' : 'info'">{{ tenantScopeLabel }}</el-tag>
           </div>
           <el-input v-model="searchForm.userId" placeholder="用户ID" style="width: 120px"/>
+          <el-input v-model="searchForm.question" placeholder="问题关键词" style="width: 200px"/>
           <el-select v-model="searchForm.requestSource" placeholder="来源" style="width: 140px" clearable>
             <el-option label="WEB" value="WEB"/>
             <el-option label="API" value="API"/>

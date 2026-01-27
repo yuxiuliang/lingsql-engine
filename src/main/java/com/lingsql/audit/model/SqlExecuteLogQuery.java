@@ -38,6 +38,14 @@ public class SqlExecuteLogQuery {
     private String requestSource;
 
     /**
+     * 问题关键词。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String question;
+
+    /**
      * 开始时间。
      *
      * @author 余炘洋

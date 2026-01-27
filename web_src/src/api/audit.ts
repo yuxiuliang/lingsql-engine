@@ -107,6 +107,7 @@ export const fetchAuditLogs = async (params: {
 export const fetchSqlLogs = async (params: {
   tenantId?: string;
   userId?: number;
+  question?: string;
   requestSource?: string;
   startTime?: string;
   endTime?: string;
@@ -122,6 +123,9 @@ export const fetchSqlLogs = async (params: {
   }
   if (params.userId !== undefined && params.userId !== null) {
     query.set('userId', String(params.userId));
+  }
+  if (params.question) {
+    query.set('question', params.question);
   }
   if (params.requestSource) {
     query.set('requestSource', params.requestSource);
@@ -146,6 +150,7 @@ export const fetchSqlLogs = async (params: {
 export const exportSqlLogs = async (params: {
   tenantId?: string;
   userId?: number;
+  question?: string;
   requestSource?: string;
   startTime?: string;
   endTime?: string;
@@ -156,6 +161,9 @@ export const exportSqlLogs = async (params: {
   }
   if (params.userId !== undefined && params.userId !== null) {
     query.set('userId', String(params.userId));
+  }
+  if (params.question) {
+    query.set('question', params.question);
   }
   if (params.requestSource) {
     query.set('requestSource', params.requestSource);

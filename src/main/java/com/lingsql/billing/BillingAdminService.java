@@ -35,6 +35,7 @@ public class BillingAdminService {
 
     private final BillingPolicyVersionRepository policyRepository;
     private final TenantBillingOverrideRepository overrideRepository;
+    private final BillingOverrideService billingOverrideService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -169,31 +170,7 @@ public class BillingAdminService {
      * @date 2026-01-27
      */
     public TenantBillingOverride upsertOverride(String tenantId, TenantBillingOverrideRequest request) {
-        if (!StringUtils.hasText(tenantId)) {
-            throw new RuntimeException("租户ID不能为空");
-        }
-        if (request == null) {
-            throw new RuntimeException("计费覆盖不能为空");
-        }
-        TenantBillingOverride override = overrideRepository.findByTenantId(tenantId)
-                .orElseGet(() -> {
-                    TenantBillingOverride created = new TenantBillingOverride();
-                    created.setTenantId(tenantId);
-                    created.setStatus(ACTIVE_STATUS);
-                    created.setCreateTime(LocalDateTime.now());
-                    return created;
-                });
-        if (request.getPriceMultiplier() != null) {
-            override.setPriceMultiplier(request.getPriceMultiplier());
-        }
-        if (request.getStatus() != null) {
-            override.setStatus(request.getStatus());
-        }
-        if (request.getRemark() != null) {
-            override.setRemark(request.getRemark());
-        }
-        override.setUpdateTime(LocalDateTime.now());
-        return overrideRepository.save(override);
+        return billingOverrideService.saveTenantOverride(tenantId, request);
     }
 
     private void applyPolicyRequest(BillingPolicyVersion entity, BillingPolicyVersionRequest request, boolean isCreate) {
