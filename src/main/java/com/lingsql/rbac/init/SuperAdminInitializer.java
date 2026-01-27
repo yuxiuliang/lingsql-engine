@@ -57,6 +57,13 @@ public class SuperAdminInitializer implements ApplicationRunner {
     private static final String SUPER_ADMIN_ROLE_NAME = "超级管理员";
     private static final int ACTIVE_STATUS = 1;
     private static final int NOT_DELETED = 0;
+    private static final Set<String> FORBIDDEN_PASSWORDS = Set.of(
+            "Admin123456",
+            "admin123456",
+            "admin",
+            "12345678",
+            "password"
+    );
 
     private final LingSqlProperties properties;
     private final TenantRepository tenantRepository;
@@ -90,6 +97,10 @@ public class SuperAdminInitializer implements ApplicationRunner {
         }
         if (!validatePassword(password)) {
             log.warn("超级管理员初始化失败: 密码强度不足(需8-32位且包含字母与数字)");
+            return;
+        }
+        if (isUnsafePassword(password, username)) {
+            log.warn("超级管理员初始化失败: 禁止使用默认/弱口令");
             return;
         }
         RbacSeedData seedData = loadSeedData(admin.getSeedResource());
@@ -359,6 +370,20 @@ public class SuperAdminInitializer implements ApplicationRunner {
         boolean hasLetter = trimmed.chars().anyMatch(Character::isLetter);
         boolean hasDigit = trimmed.chars().anyMatch(Character::isDigit);
         return hasLetter && hasDigit;
+    }
+
+    private boolean isUnsafePassword(String password, String username) {
+        if (!StringUtils.hasText(password)) {
+            return true;
+        }
+        String trimmed = password.trim();
+        if (FORBIDDEN_PASSWORDS.contains(trimmed)) {
+            return true;
+        }
+        if (StringUtils.hasText(username) && trimmed.equalsIgnoreCase(username.trim())) {
+            return true;
+        }
+        return false;
     }
 
     private String normalize(String value) {

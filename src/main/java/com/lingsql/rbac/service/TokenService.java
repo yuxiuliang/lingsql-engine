@@ -3,20 +3,25 @@ package com.lingsql.rbac.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.config.LingSqlProperties;
+import com.lingsql.rbac.security.RbacSecurityConstants;
 import com.lingsql.rbac.security.RbacUserSession;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Token 会话管理服务（JWT 无状态）。
@@ -29,9 +34,12 @@ import java.util.Map;
 public class TokenService {
 
     private static final String SESSION_CLAIM = "session";
+    private static final String REVOKED_JTI_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "revoked:jti:";
+    private static final String REVOKED_HASH_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "revoked:hash:";
 
     private final LingSqlProperties properties;
     private final ObjectMapper objectMapper;
+    private final StringRedisTemplate redisTemplate;
     private volatile SecretKey signingKey;
 
     /**
@@ -53,6 +61,7 @@ public class TokenService {
         return Jwts.builder()
                 .issuer(resolveIssuer())
                 .subject(String.valueOf(session.getUserId()))
+                .id(UUID.randomUUID().toString())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiresAt))
                 .claim(SESSION_CLAIM, sessionMap)
@@ -73,11 +82,10 @@ public class TokenService {
             return null;
         }
         try {
-            Claims claims = Jwts.parser()
-                    .verifyWith(resolveSigningKey())
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload();
+            Claims claims = parseClaims(token);
+            if (isRevoked(token, claims)) {
+                return null;
+            }
             Object sessionObj = claims.get(SESSION_CLAIM);
             if (sessionObj == null) {
                 return null;
@@ -108,7 +116,29 @@ public class TokenService {
      * @date 2026-01-26
      */
     public void revokeToken(String token) {
-        // JWT 无状态模式下无需吊销
+        if (!StringUtils.hasText(token)) {
+            return;
+        }
+        Claims claims;
+        try {
+            claims = parseClaims(token);
+        } catch (Exception ex) {
+            return;
+        }
+        Instant now = Instant.now();
+        Instant expiresAt = claims.getExpiration() == null ? now.plus(resolveTtl()) : claims.getExpiration().toInstant();
+        Duration ttl = Duration.between(now, expiresAt);
+        if (ttl.isZero() || ttl.isNegative()) {
+            return;
+        }
+        String jti = claims.getId();
+        if (StringUtils.hasText(jti)) {
+            redisTemplate.opsForValue().set(buildRevokedJtiKey(jti), "1", ttl);
+        }
+        String tokenHash = hashToken(token);
+        if (StringUtils.hasText(tokenHash)) {
+            redisTemplate.opsForValue().set(buildRevokedHashKey(tokenHash), "1", ttl);
+        }
     }
 
     /**
@@ -179,5 +209,51 @@ public class TokenService {
             signingKey = Keys.hmacShaKeyFor(keyBytes);
             return signingKey;
         }
+    }
+
+    private Claims parseClaims(String token) {
+        return Jwts.parser()
+                .verifyWith(resolveSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+    }
+
+    private boolean isRevoked(String token, Claims claims) {
+        String jti = claims == null ? null : claims.getId();
+        if (StringUtils.hasText(jti) && Boolean.TRUE.equals(redisTemplate.hasKey(buildRevokedJtiKey(jti)))) {
+            return true;
+        }
+        String tokenHash = hashToken(token);
+        return StringUtils.hasText(tokenHash) && Boolean.TRUE.equals(redisTemplate.hasKey(buildRevokedHashKey(tokenHash)));
+    }
+
+    private String hashToken(String token) {
+        if (!StringUtils.hasText(token)) {
+            return null;
+        }
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashed = digest.digest(token.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(hashed.length * 2);
+            for (byte value : hashed) {
+                String hex = Integer.toHexString(value & 0xff);
+                if (hex.length() == 1) {
+                    builder.append('0');
+                }
+                builder.append(hex);
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException ex) {
+            return null;
+        }
+    }
+
+    private String buildRevokedJtiKey(String jti) {
+        return REVOKED_JTI_PREFIX + jti;
+    }
+
+    private String buildRevokedHashKey(String hash) {
+        return REVOKED_HASH_PREFIX + hash;
     }
 }

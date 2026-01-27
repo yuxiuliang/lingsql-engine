@@ -2,9 +2,11 @@ package com.lingsql.rbac.security;
 
 import com.lingsql.context.SessionInfo;
 import com.lingsql.context.TenantContext;
+import com.lingsql.config.LingSqlProperties;
 import com.lingsql.rbac.service.TokenService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +32,7 @@ import java.util.List;
 public class TokenAuthenticationFilter extends OncePerRequestFilter {
 
     private final TokenService tokenService;
+    private final LingSqlProperties properties;
 
     /**
      * 过滤请求并注入认证信息。
@@ -82,12 +85,34 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
      */
     private String resolveToken(HttpServletRequest request) {
         String auth = request.getHeader(RbacSecurityConstants.AUTH_HEADER);
-        if (!StringUtils.hasText(auth)) {
+        if (StringUtils.hasText(auth)) {
+            if (auth.startsWith(RbacSecurityConstants.BEARER_PREFIX)) {
+                return auth.substring(RbacSecurityConstants.BEARER_PREFIX.length()).trim();
+            }
+            return auth.trim();
+        }
+        return resolveTokenFromCookie(request);
+    }
+
+    private String resolveTokenFromCookie(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null || cookies.length == 0) {
             return null;
         }
-        if (auth.startsWith(RbacSecurityConstants.BEARER_PREFIX)) {
-            return auth.substring(RbacSecurityConstants.BEARER_PREFIX.length()).trim();
+        String cookieName = resolveCookieName();
+        for (Cookie cookie : cookies) {
+            if (cookieName.equals(cookie.getName())) {
+                return cookie.getValue();
+            }
         }
-        return auth.trim();
+        return null;
+    }
+
+    private String resolveCookieName() {
+        LingSqlProperties.Auth auth = properties.getAuth();
+        if (auth == null || !StringUtils.hasText(auth.getCookieName())) {
+            return "LINGSQL_TOKEN";
+        }
+        return auth.getCookieName().trim();
     }
 }

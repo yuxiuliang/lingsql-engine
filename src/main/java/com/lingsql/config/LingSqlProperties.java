@@ -282,7 +282,7 @@ public class LingSqlProperties {
          * @author 余炘洋
          * @date 2026-01-26
          */
-        private String jwtSecret = "change-me-to-a-secure-secret-key-32";
+        private String jwtSecret;
 
         /**
          * JWT 签发方。
@@ -299,6 +299,46 @@ public class LingSqlProperties {
          * @date 2026-01-26
          */
         private Duration jwtTtl = Duration.ofHours(24);
+
+        /**
+         * 登录 Cookie 名称。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String cookieName = "LINGSQL_TOKEN";
+
+        /**
+         * Cookie 域名(可选)。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String cookieDomain;
+
+        /**
+         * Cookie Path。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String cookiePath = "/";
+
+        /**
+         * Cookie SameSite 策略(Lax/Strict/None)。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String cookieSameSite = "Lax";
+
+        /**
+         * Cookie Secure 标记(为空时根据请求协议自动判断)。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private Boolean cookieSecure;
     }
 
     /**
@@ -315,7 +355,7 @@ public class LingSqlProperties {
          * @author 余炘洋
          * @date 2026-01-27
          */
-        private boolean enabled = true;
+        private boolean enabled = false;
 
         /**
          * 默认租户ID。
@@ -323,7 +363,7 @@ public class LingSqlProperties {
          * @author 余炘洋
          * @date 2026-01-27
          */
-        private String tenantId = "1";
+        private String tenantId;
 
         /**
          * 默认租户名称。
@@ -331,7 +371,7 @@ public class LingSqlProperties {
          * @author 余炘洋
          * @date 2026-01-27
          */
-        private String tenantName = "系统租户";
+        private String tenantName;
 
         /**
          * 管理员账号。
@@ -339,7 +379,7 @@ public class LingSqlProperties {
          * @author 余炘洋
          * @date 2026-01-27
          */
-        private String username = "admin";
+        private String username;
 
         /**
          * 管理员密码。
@@ -347,7 +387,7 @@ public class LingSqlProperties {
          * @author 余炘洋
          * @date 2026-01-27
          */
-        private String password = "Admin123456";
+        private String password;
 
         /**
          * 管理员昵称。
@@ -355,7 +395,7 @@ public class LingSqlProperties {
          * @author 余炘洋
          * @date 2026-01-27
          */
-        private String nickname = "超级管理员";
+        private String nickname;
 
         /**
          * 初始化数据资源路径。
