@@ -110,6 +110,14 @@ public class SqlExecuteLogView {
     private Integer tokenCount;
 
     /**
+     * 成本金额。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private Long costAmount;
+
+    /**
      * 执行耗时(毫秒)。
      *
      * @author 余炘洋

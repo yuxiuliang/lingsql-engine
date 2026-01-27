@@ -113,6 +113,24 @@ public class TenantInfo {
     private String planName;
 
     /**
+     * 余额。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    @Column(name = "quota_balance")
+    private Long quotaBalance;
+
+    /**
+     * 服务等级。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    @Column(name = "service_level")
+    private String serviceLevel;
+
+    /**
      * 是否删除: 1-已删除, 0-正常。
      *
      * @author 余炘洋

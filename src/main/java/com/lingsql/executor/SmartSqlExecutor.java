@@ -10,6 +10,7 @@ import com.lingsql.llm.LlmTraceContext;
 import com.lingsql.llm.LlmTraceInfo;
 import com.lingsql.security.SqlRewriter;
 import com.lingsql.security.SqlSecurityChecker;
+import com.lingsql.billing.TenantBillingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -36,6 +37,7 @@ public class SmartSqlExecutor {
     private final TenantDbConfigRepository tenantDbConfigRepository;
     private final SqlExecuteLogService sqlExecuteLogService;
     private final SqlTaskTracker sqlTaskTracker;
+    private final TenantBillingService tenantBillingService;
 
     @Qualifier("businessJdbcTemplate")
     private final JdbcTemplate jdbcTemplate;
@@ -133,6 +135,7 @@ public class SmartSqlExecutor {
         }
         logCommand.setAiSql(rawSql);
         applyModelTrace(logCommand);
+        tenantBillingService.charge(tenantId, logCommand);
 
         String rewrittenSql = rewriter.rewrite(rawSql, config, tenantId);
         try {

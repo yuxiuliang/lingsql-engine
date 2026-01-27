@@ -110,6 +110,8 @@ public class TenantAdminService {
         tenant.setContactEmail(request.getContactEmail());
         tenant.setExpireTime(parseDateTime(request.getExpireTime()));
         tenant.setPlanName(request.getPlanName());
+        tenant.setQuotaBalance(resolveQuotaBalance(request.getQuotaBalance()));
+        tenant.setServiceLevel(resolveServiceLevel(request.getServiceLevel()));
         tenant.setIsDeleted(NOT_DELETED);
         tenant.setCreateTime(LocalDateTime.now());
         tenant.setUpdateTime(LocalDateTime.now());
@@ -188,6 +190,12 @@ public class TenantAdminService {
         tenant.setContactEmail(request.getContactEmail());
         tenant.setExpireTime(parseDateTime(request.getExpireTime()));
         tenant.setPlanName(request.getPlanName());
+        if (request.getQuotaBalance() != null) {
+            tenant.setQuotaBalance(resolveQuotaBalance(request.getQuotaBalance()));
+        }
+        if (StringUtils.hasText(request.getServiceLevel())) {
+            tenant.setServiceLevel(resolveServiceLevel(request.getServiceLevel()));
+        }
         tenant.setUpdateTime(LocalDateTime.now());
         TenantInfo saved = tenantRepository.save(tenant);
         return toView(saved);
@@ -424,9 +432,41 @@ public class TenantAdminService {
         view.setContactEmail(tenant.getContactEmail());
         view.setExpireTime(tenant.getExpireTime());
         view.setPlanName(tenant.getPlanName());
+        view.setQuotaBalance(tenant.getQuotaBalance());
+        view.setServiceLevel(tenant.getServiceLevel());
         view.setCreateTime(tenant.getCreateTime());
         view.setUpdateTime(tenant.getUpdateTime());
         return view;
+    }
+
+    /**
+     * 解析余额。
+     *
+     * @param quotaBalance 余额
+     * @return 规范余额
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private Long resolveQuotaBalance(Long quotaBalance) {
+        if (quotaBalance == null || quotaBalance < 0) {
+            return 0L;
+        }
+        return quotaBalance;
+    }
+
+    /**
+     * 解析服务等级。
+     *
+     * @param serviceLevel 服务等级
+     * @return 规范等级
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String resolveServiceLevel(String serviceLevel) {
+        if (!StringUtils.hasText(serviceLevel)) {
+            return "FREE";
+        }
+        return serviceLevel.trim().toUpperCase();
     }
 
     /**

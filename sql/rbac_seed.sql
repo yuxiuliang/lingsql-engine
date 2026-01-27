@@ -10,12 +10,14 @@ SET @experience_username = '测试';
 SET @password_hash = '{BCryptHashHere}';
 
 -- 租户初始化
-INSERT INTO t_lingsql_engine_tenant (tenant_id, tenant_name, status, is_deleted)
-VALUES (@tenant_id, '默认租户', 1, 0)
+INSERT INTO t_lingsql_engine_tenant (tenant_id, tenant_name, status, is_deleted, quota_balance, service_level)
+VALUES (@tenant_id, '默认租户', 1, 0, 0, 'FREE')
 ON DUPLICATE KEY UPDATE
     tenant_name = VALUES(tenant_name),
     status = VALUES(status),
-    is_deleted = VALUES(is_deleted);
+    is_deleted = VALUES(is_deleted),
+    quota_balance = VALUES(quota_balance),
+    service_level = VALUES(service_level);
 
 -- 权限初始化
 INSERT INTO t_lingsql_engine_permission (perm_code, perm_name, perm_type, status)

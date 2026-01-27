@@ -1,6 +1,7 @@
 package com.lingsql.config;
 
 import com.lingsql.context.TenantInterceptor;
+import com.lingsql.billing.PaymentWallInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -18,6 +19,7 @@ import java.util.List;
 public class WebMvcConfig implements WebMvcConfigurer {
 
     private final TenantInterceptor tenantInterceptor;
+    private final PaymentWallInterceptor paymentWallInterceptor;
     private final LingSqlProperties properties;
 
     /**
@@ -27,8 +29,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
      * @author 余炘洋
      * @date 2026-01-22
      */
-    public WebMvcConfig(TenantInterceptor tenantInterceptor, LingSqlProperties properties) {
+    public WebMvcConfig(TenantInterceptor tenantInterceptor, PaymentWallInterceptor paymentWallInterceptor, LingSqlProperties properties) {
         this.tenantInterceptor = tenantInterceptor;
+        this.paymentWallInterceptor = paymentWallInterceptor;
         this.properties = properties;
     }
 
@@ -42,6 +45,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(tenantInterceptor).addPathPatterns("/api/**");
+        registry.addInterceptor(paymentWallInterceptor).addPathPatterns("/api/v1/chat/ask");
     }
 
     /**

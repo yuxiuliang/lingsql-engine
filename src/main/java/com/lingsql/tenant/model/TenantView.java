@@ -94,6 +94,22 @@ public class TenantView {
     private String planName;
 
     /**
+     * 余额。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private Long quotaBalance;
+
+    /**
+     * 服务等级。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String serviceLevel;
+
+    /**
      * 创建时间。
      *
      * @author 余炘洋
