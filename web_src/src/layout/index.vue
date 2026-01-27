@@ -2,7 +2,7 @@
 import {computed, onMounted, ref} from 'vue';
 import {useRouter} from 'vue-router';
 import {useAuthStore} from '@/store/auth';
-import {fetchMenus, logout as logoutApi} from '@/api/auth';
+import {fetchMenus, fetchProfile, logout as logoutApi} from '@/api/auth';
 import {fetchTenants, TenantView} from '@/api/tenant';
 
 /**
@@ -86,6 +86,22 @@ const sortMenus = (menus: MenuNode[]): MenuNode[] => {
 
 const menuTree = computed<MenuNode[]>(() => sortMenus(authStore.menus || []));
 
+const ensureSession = async (): Promise<boolean> => {
+  if (authStore.sessionReady) {
+    return authStore.isAuthenticated;
+  }
+  try {
+    const profile = await fetchProfile();
+    authStore.applyProfile(profile);
+    authStore.sessionReady = true;
+    return authStore.isAuthenticated;
+  } catch {
+    authStore.logout();
+    await router.push('/login');
+    return false;
+  }
+};
+
 /**
  * 加载菜单数据。
  *
@@ -93,7 +109,8 @@ const menuTree = computed<MenuNode[]>(() => sortMenus(authStore.menus || []));
  * @date 2026-01-23
  */
 const loadMenus = async () => {
-  if (!authStore.token) {
+  const authenticated = await ensureSession();
+  if (!authenticated) {
     return;
   }
   if (authStore.menus && authStore.menus.length > 0) {
@@ -115,7 +132,8 @@ const loadMenus = async () => {
  * @date 2026-01-26
  */
 const loadTenants = async () => {
-  if (!authStore.token || !isSysAdmin.value) {
+  const authenticated = await ensureSession();
+  if (!authenticated || !isSysAdmin.value) {
     return;
   }
   tenantLoading.value = true;

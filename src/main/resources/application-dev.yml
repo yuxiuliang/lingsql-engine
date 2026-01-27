@@ -97,10 +97,10 @@ lingsql:
     jwt-issuer: "lingsql-engine"
     jwt-ttl: 24h
   admin:
-    enabled: ${LINGSQL_ADMIN_ENABLED:true}
-    tenant-id: ${LINGSQL_ADMIN_TENANT_ID:100c7934500b6efdc34be8278d989e97}
-    tenant-name: ${LINGSQL_ADMIN_TENANT_NAME:系统租户}
-    username: ${LINGSQL_ADMIN_USERNAME:admin}
-    password: ${LINGSQL_ADMIN_PASSWORD:***REDACTED-SECRET***}
-    nickname: ${LINGSQL_ADMIN_NICKNAME:超级管理员}
+    enabled: ${LINGSQL_ADMIN_ENABLED:false}
+    tenant-id: ${LINGSQL_ADMIN_TENANT_ID:}
+    tenant-name: ${LINGSQL_ADMIN_TENANT_NAME:}
+    username: ${LINGSQL_ADMIN_USERNAME:}
+    password: ${LINGSQL_ADMIN_PASSWORD:}
+    nickname: ${LINGSQL_ADMIN_NICKNAME:}
     seed-resource: ${LINGSQL_ADMIN_SEED_RESOURCE:classpath:rbac-seed.json}

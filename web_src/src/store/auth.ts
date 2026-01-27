@@ -1,5 +1,5 @@
 import {defineStore} from 'pinia';
-import type {MenuView} from '@/api/auth';
+import type {MenuView, UserProfileView} from '@/api/auth';
 
 /**
  * 读取本地数组缓存。
@@ -30,15 +30,18 @@ const readArray = (key: string): string[] => {
  */
 export interface AuthState {
   token: string;
+  userId: number;
   tenantId: string;
   tenantName: string;
   activeTenantId: string;
   activeTenantName: string;
   username: string;
   nickname: string;
+  experience: boolean;
   roles: string[];
   permissions: string[];
   menus: MenuView[];
+  sessionReady: boolean;
 }
 
 /**
@@ -49,16 +52,19 @@ export interface AuthState {
  */
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
-    token: localStorage.getItem('token') || '',
+    token: '',
+    userId: Number(localStorage.getItem('userId') || 0),
     tenantId: localStorage.getItem('tenantId') || '',
     tenantName: localStorage.getItem('tenantName') || '',
     activeTenantId: localStorage.getItem('activeTenantId') || '',
     activeTenantName: localStorage.getItem('activeTenantName') || '',
     username: localStorage.getItem('username') || '',
     nickname: localStorage.getItem('nickname') || '',
+    experience: localStorage.getItem('experience') === '1',
     roles: readArray('roles'),
     permissions: readArray('permissions'),
-    menus: []
+    menus: [],
+    sessionReady: false
   }),
   getters: {
     /**
@@ -69,6 +75,15 @@ export const useAuthStore = defineStore('auth', {
      */
     isSysAdmin: (state): boolean => {
       return (state.roles || []).some((role) => ['SYS_ADMIN', 'SUPER_ADMIN'].includes(role));
+    },
+    /**
+     * 判断是否已完成会话鉴权。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    isAuthenticated: (state): boolean => {
+      return state.sessionReady && !!state.userId;
     }
   },
   actions: {
@@ -76,6 +91,7 @@ export const useAuthStore = defineStore('auth', {
      * 更新登录状态。
      *
      * @param token 登录令牌
+     * @param userId 用户ID
      * @param tenantId 租户标识
      * @param username 用户名称
      * @author 余炘洋
@@ -83,20 +99,25 @@ export const useAuthStore = defineStore('auth', {
      */
     login(
       token: string,
+      userId: number,
       tenantId: string,
       username: string,
       nickname = '',
+      experience = false,
       roles: string[] = [],
       permissions: string[] = [],
       tenantName = ''
     ) {
-      this.token = token;
+      this.token = '';
+      this.userId = userId || 0;
       this.tenantId = tenantId;
       this.tenantName = tenantName || '';
       this.username = username;
       this.nickname = nickname;
+      this.experience = experience;
       this.roles = roles;
       this.permissions = permissions;
+      this.sessionReady = true;
       if (this.isSysAdmin) {
         this.activeTenantId = '';
         this.activeTenantName = '';
@@ -104,11 +125,12 @@ export const useAuthStore = defineStore('auth', {
         this.activeTenantId = tenantId;
         this.activeTenantName = tenantName || tenantId;
       }
-      localStorage.setItem('token', token);
+      localStorage.setItem('userId', String(this.userId || 0));
       localStorage.setItem('tenantId', tenantId);
       localStorage.setItem('tenantName', tenantName || '');
       localStorage.setItem('username', username);
       localStorage.setItem('nickname', nickname || '');
+      localStorage.setItem('experience', this.experience ? '1' : '0');
       localStorage.setItem('roles', JSON.stringify(roles || []));
       localStorage.setItem('permissions', JSON.stringify(permissions || []));
       localStorage.setItem('activeTenantId', this.activeTenantId || '');
@@ -132,24 +154,68 @@ export const useAuthStore = defineStore('auth', {
      */
     logout() {
       this.token = '';
+      this.userId = 0;
       this.tenantId = '';
       this.tenantName = '';
       this.activeTenantId = '';
       this.activeTenantName = '';
       this.username = '';
       this.nickname = '';
+      this.experience = false;
       this.roles = [];
       this.permissions = [];
       this.menus = [];
-      localStorage.removeItem('token');
+      this.sessionReady = false;
+      localStorage.removeItem('userId');
       localStorage.removeItem('tenantId');
       localStorage.removeItem('tenantName');
       localStorage.removeItem('activeTenantId');
       localStorage.removeItem('activeTenantName');
       localStorage.removeItem('username');
       localStorage.removeItem('nickname');
+      localStorage.removeItem('experience');
       localStorage.removeItem('roles');
       localStorage.removeItem('permissions');
+    },
+    /**
+     * 用后端会话信息刷新状态。
+     *
+     * @param profile 会话信息
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    applyProfile(profile: UserProfileView) {
+      if (!profile || !profile.userId) {
+        return;
+      }
+      this.userId = profile.userId || 0;
+      this.tenantId = profile.tenantId || '';
+      this.username = profile.username || '';
+      this.nickname = profile.nickname || '';
+      this.experience = !!profile.experience;
+      this.roles = profile.roles || [];
+      this.permissions = profile.permissions || [];
+      if (this.isSysAdmin) {
+        if (!this.activeTenantId) {
+          this.activeTenantId = '';
+          this.activeTenantName = '';
+        }
+      } else {
+        this.activeTenantId = this.tenantId;
+        if (!this.tenantName) {
+          this.tenantName = this.tenantId;
+        }
+        this.activeTenantName = this.tenantName;
+      }
+      localStorage.setItem('userId', String(this.userId || 0));
+      localStorage.setItem('tenantId', this.tenantId || '');
+      localStorage.setItem('username', this.username || '');
+      localStorage.setItem('nickname', this.nickname || '');
+      localStorage.setItem('experience', this.experience ? '1' : '0');
+      localStorage.setItem('roles', JSON.stringify(this.roles || []));
+      localStorage.setItem('permissions', JSON.stringify(this.permissions || []));
+      localStorage.setItem('activeTenantId', this.activeTenantId || '');
+      localStorage.setItem('activeTenantName', this.activeTenantName || '');
     },
     /**
      * 更新租户标识。

@@ -36,6 +36,7 @@ public class TokenService {
     private static final String SESSION_CLAIM = "session";
     private static final String REVOKED_JTI_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "revoked:jti:";
     private static final String REVOKED_HASH_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "revoked:hash:";
+    private static final String REVOKED_USER_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "revoked:user:";
 
     private final LingSqlProperties properties;
     private final ObjectMapper objectMapper;
@@ -142,6 +143,24 @@ public class TokenService {
     }
 
     /**
+     * 吊销指定用户的全部 Token。
+     *
+     * @param userId 用户ID
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    public void revokeUserTokens(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        Duration ttl = resolveTtl();
+        if (ttl == null || ttl.isZero() || ttl.isNegative()) {
+            ttl = Duration.ofHours(24);
+        }
+        redisTemplate.opsForValue().set(buildRevokedUserKey(userId), String.valueOf(Instant.now().toEpochMilli()), ttl);
+    }
+
+    /**
      * 获取默认过期秒数。
      *
      * @return 过期秒数
@@ -220,12 +239,41 @@ public class TokenService {
     }
 
     private boolean isRevoked(String token, Claims claims) {
+        if (isUserRevoked(claims)) {
+            return true;
+        }
         String jti = claims == null ? null : claims.getId();
         if (StringUtils.hasText(jti) && Boolean.TRUE.equals(redisTemplate.hasKey(buildRevokedJtiKey(jti)))) {
             return true;
         }
         String tokenHash = hashToken(token);
         return StringUtils.hasText(tokenHash) && Boolean.TRUE.equals(redisTemplate.hasKey(buildRevokedHashKey(tokenHash)));
+    }
+
+    private boolean isUserRevoked(Claims claims) {
+        if (claims == null || claims.getIssuedAt() == null) {
+            return false;
+        }
+        String subject = claims.getSubject();
+        if (!StringUtils.hasText(subject)) {
+            return false;
+        }
+        Long userId;
+        try {
+            userId = Long.parseLong(subject);
+        } catch (NumberFormatException ex) {
+            return false;
+        }
+        String revokedAt = redisTemplate.opsForValue().get(buildRevokedUserKey(userId));
+        if (!StringUtils.hasText(revokedAt)) {
+            return false;
+        }
+        try {
+            long revokedMillis = Long.parseLong(revokedAt);
+            return claims.getIssuedAt().toInstant().toEpochMilli() < revokedMillis;
+        } catch (NumberFormatException ex) {
+            return false;
+        }
     }
 
     private String hashToken(String token) {
@@ -255,5 +303,9 @@ public class TokenService {
 
     private String buildRevokedHashKey(String hash) {
         return REVOKED_HASH_PREFIX + hash;
+    }
+
+    private String buildRevokedUserKey(Long userId) {
+        return REVOKED_USER_PREFIX + userId;
     }
 }

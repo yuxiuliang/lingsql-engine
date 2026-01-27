@@ -42,6 +42,7 @@ public class UserAdminService {
     private final RbacUserRoleRepository userRoleRepository;
     private final RbacRoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final TokenService tokenService;
 
     /**
      * 查询用户列表。
@@ -125,6 +126,9 @@ public class UserAdminService {
         RbacUser user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("用户不存在"));
         validateTenantAccess(user.getTenantId(), tenantId, sysAdmin);
+        Integer originalStatus = user.getStatus();
+        Integer originalExperience = user.getIsExperience();
+        boolean rolesUpdated = request != null && request.getRoleIds() != null;
         if (request != null) {
             if (request.getNickname() != null) {
                 user.setNickname(normalize(request.getNickname()));
@@ -142,6 +146,14 @@ public class UserAdminService {
             applyUserRoles(user, request.getRoleIds(), sysAdmin);
         } else if (request != null && request.getIsExperience() != null && request.getIsExperience() == 1) {
             applyUserRoles(user, List.of(), sysAdmin);
+        }
+        if (request != null) {
+            boolean statusDisabled = request.getStatus() != null && request.getStatus() == 0;
+            boolean experienceChanged = request.getIsExperience() != null && !request.getIsExperience().equals(originalExperience);
+            boolean statusChanged = request.getStatus() != null && !request.getStatus().equals(originalStatus);
+            if (statusDisabled || rolesUpdated || experienceChanged || statusChanged) {
+                tokenService.revokeUserTokens(user.getId());
+            }
         }
         return toView(user);
     }
@@ -170,6 +182,7 @@ public class UserAdminService {
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         user.setUpdateTime(LocalDateTime.now());
         userRepository.save(user);
+        tokenService.revokeUserTokens(user.getId());
     }
 
     /**

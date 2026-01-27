@@ -1,4 +1,7 @@
 import {createRouter, createWebHistory, RouteRecordRaw} from 'vue-router';
+import {useAuthStore} from '@/store/auth';
+import {pinia} from '@/store';
+import {fetchProfile} from '@/api/auth';
 // 1. 定义路由记录
 const routes: Array<RouteRecordRaw> = [
     {
@@ -140,19 +143,30 @@ const router = createRouter({
  * @author 余炘洋
  * @date 2026-01-23
  */
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to) => {
     // 设置页面标题
     if (to.meta.title) {
         document.title = `${to.meta.title} - 语数`;
     }
 
-    // 如果没有登录，跳转到相应页面
-    const token = localStorage.getItem('token');
-    if (!token && to.path !== '/login') {
-        next('/login');
-        return;
+    if (to.path === '/login') {
+        return true;
     }
-    next();
+    const authStore = useAuthStore(pinia);
+    if (!authStore.sessionReady) {
+        try {
+            const profile = await fetchProfile();
+            authStore.applyProfile(profile);
+            authStore.sessionReady = true;
+        } catch {
+            authStore.logout();
+            return '/login';
+        }
+    }
+    if (!authStore.isAuthenticated) {
+        return '/login';
+    }
+    return true;
 });
 
 export default router;

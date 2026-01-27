@@ -54,9 +54,11 @@ const handleLogin = async () => {
     });
     authStore.login(
       response.token,
+      response.userId,
       response.tenantId,
       response.username,
       response.nickname || '',
+      response.experience || false,
       response.roles || [],
       response.permissions || [],
       response.tenantName || ''
