@@ -1,6 +1,5 @@
 package com.lingsql.rbac.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.rbac.security.RbacSecurityConstants;
@@ -20,7 +19,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -37,6 +35,8 @@ public class TokenService {
     private static final String REVOKED_JTI_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "revoked:jti:";
     private static final String REVOKED_HASH_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "revoked:hash:";
     private static final String REVOKED_USER_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "revoked:user:";
+    private static final String SESSION_CACHE_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "session:";
+    private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
 
     private final LingSqlProperties properties;
     private final ObjectMapper objectMapper;
@@ -56,18 +56,24 @@ public class TokenService {
             throw new RuntimeException("会话数据不能为空");
         }
         Instant now = Instant.now();
-        Instant expiresAt = now.plus(resolveTtl());
-        Map<String, Object> sessionMap = objectMapper.convertValue(session, new TypeReference<>() {
-        });
-        return Jwts.builder()
+        Duration ttl = resolveTtl(session);
+        Instant expiresAt = now.plus(ttl);
+        String jti = UUID.randomUUID().toString();
+        String token = Jwts.builder()
+                .header().type("JWT").and()
                 .issuer(resolveIssuer())
                 .subject(String.valueOf(session.getUserId()))
-                .id(UUID.randomUUID().toString())
+                .audience().add(resolveAudience()).and()
+                .id(jti)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiresAt))
-                .claim(SESSION_CLAIM, sessionMap)
                 .signWith(resolveSigningKey())
                 .compact();
+        if (token.getBytes(StandardCharsets.UTF_8).length > 800) {
+            throw new RuntimeException("Token 长度超过限制");
+        }
+        cacheSession(jti, session, ttl);
+        return token;
     }
 
     /**
@@ -86,6 +92,11 @@ public class TokenService {
             Claims claims = parseClaims(token);
             if (isRevoked(token, claims)) {
                 return null;
+            }
+            String jti = claims.getId();
+            RbacUserSession cached = loadSession(jti);
+            if (cached != null) {
+                return cached;
             }
             Object sessionObj = claims.get(SESSION_CLAIM);
             if (sessionObj == null) {
@@ -135,6 +146,7 @@ public class TokenService {
         String jti = claims.getId();
         if (StringUtils.hasText(jti)) {
             redisTemplate.opsForValue().set(buildRevokedJtiKey(jti), "1", ttl);
+            redisTemplate.delete(buildSessionKey(jti));
         }
         String tokenHash = hashToken(token);
         if (StringUtils.hasText(tokenHash)) {
@@ -172,6 +184,18 @@ public class TokenService {
     }
 
     /**
+     * 获取指定会话的过期秒数。
+     *
+     * @param session 会话
+     * @return 过期秒数
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    public long getExpireSeconds(RbacUserSession session) {
+        return resolveTtl(session).getSeconds();
+    }
+
+    /**
      * 解析 JWT 签发方。
      *
      * @return 签发方
@@ -199,6 +223,17 @@ public class TokenService {
             return Duration.ofHours(24);
         }
         return auth.getJwtTtl();
+    }
+
+    private Duration resolveTtl(RbacUserSession session) {
+        if (session != null && session.getRoles() != null && session.getRoles().contains(SUPER_ADMIN_ROLE)) {
+            LingSqlProperties.Auth auth = properties.getAuth();
+            if (auth != null && auth.getSuperAdminJwtTtl() != null) {
+                return auth.getSuperAdminJwtTtl();
+            }
+            return Duration.ofHours(2);
+        }
+        return resolveTtl();
     }
 
     /**
@@ -231,9 +266,13 @@ public class TokenService {
     }
 
     private Claims parseClaims(String token) {
-        return Jwts.parser()
-                .verifyWith(resolveSigningKey())
-                .build()
+        var parser = Jwts.parser()
+                .verifyWith(resolveSigningKey());
+        String audience = resolveAudience();
+        if (StringUtils.hasText(audience)) {
+            parser = parser.requireAudience(audience);
+        }
+        return parser.build()
                 .parseSignedClaims(token)
                 .getPayload();
     }
@@ -297,6 +336,33 @@ public class TokenService {
         }
     }
 
+    private void cacheSession(String jti, RbacUserSession session, Duration ttl) {
+        if (!StringUtils.hasText(jti) || session == null || ttl == null) {
+            return;
+        }
+        try {
+            String json = objectMapper.writeValueAsString(session);
+            redisTemplate.opsForValue().set(buildSessionKey(jti), json, ttl);
+        } catch (Exception ex) {
+            // 忽略缓存失败，仍可依赖 Token
+        }
+    }
+
+    private RbacUserSession loadSession(String jti) {
+        if (!StringUtils.hasText(jti)) {
+            return null;
+        }
+        String json = redisTemplate.opsForValue().get(buildSessionKey(jti));
+        if (!StringUtils.hasText(json)) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, RbacUserSession.class);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
     private String buildRevokedJtiKey(String jti) {
         return REVOKED_JTI_PREFIX + jti;
     }
@@ -307,5 +373,17 @@ public class TokenService {
 
     private String buildRevokedUserKey(Long userId) {
         return REVOKED_USER_PREFIX + userId;
+    }
+
+    private String buildSessionKey(String jti) {
+        return SESSION_CACHE_PREFIX + jti;
+    }
+
+    private String resolveAudience() {
+        LingSqlProperties.Auth auth = properties.getAuth();
+        if (auth == null || !StringUtils.hasText(auth.getJwtAudience())) {
+            return "lingsql-engine";
+        }
+        return auth.getJwtAudience().trim();
     }
 }

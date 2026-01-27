@@ -17,7 +17,7 @@ public class DataScopeRule {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private String scopeType;
+    private String scopeType = "TENANT";
 
     /**
      * SELF 默认字段名。
@@ -25,7 +25,7 @@ public class DataScopeRule {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private String scopeColumn;
+    private String scopeColumn = "";
 
     /**
      * CUSTOM SQL 条件。
@@ -33,5 +33,5 @@ public class DataScopeRule {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private String scopeRule;
+    private String scopeRule = "";
 }

@@ -39,7 +39,8 @@ public class TenantInterceptor implements HandlerInterceptor {
      */
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        if ("/api/v1/auth/login".equalsIgnoreCase(request.getRequestURI())) {
+        if ("/api/v1/auth/login".equalsIgnoreCase(request.getRequestURI())
+                || "/api/v1/auth/refresh".equalsIgnoreCase(request.getRequestURI())) {
             return true;
         }
         String tenantId = decodeTenantId(request.getHeader("X-Tenant-Id"));

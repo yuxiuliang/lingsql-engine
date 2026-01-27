@@ -21,6 +21,7 @@ import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.repository.TenantRepository;
+import com.lingsql.config.LingSqlProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -48,6 +49,7 @@ public class AuthService {
 
     private static final int MAX_LOGIN_FAILURES = 5;
     private static final Duration LOCK_DURATION = Duration.ofMinutes(30);
+    private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
 
     private final RbacUserRepository userRepository;
     private final RbacUserRoleRepository userRoleRepository;
@@ -58,7 +60,9 @@ public class AuthService {
     private final RbacUserDataScopeRepository userDataScopeRepository;
     private final RbacUserExperiencePolicyRepository experiencePolicyRepository;
     private final TokenService tokenService;
+    private final RefreshTokenService refreshTokenService;
     private final TenantRepository tenantRepository;
+    private final LingSqlProperties properties;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
 
@@ -97,32 +101,56 @@ public class AuthService {
             userRepository.save(user);
             throw new RuntimeException("账号或密码错误");
         }
-
-        List<Long> roleIds = userRoleRepository.findRoleIdsByUserId(user.getId());
-        List<RbacRole> roles = roleIds.isEmpty() ? List.of() : roleRepository.findByIdIn(roleIds);
-        List<String> roleCodes = roles.stream()
-                .filter(role -> role.getStatus() == null || role.getStatus() == 1)
-                .map(RbacRole::getRoleCode)
-                .toList();
-
-        List<String> permCodes = resolvePermissions(roleIds);
-        DataScopeRule dataScope = resolveDataScope(user.getId(), roleIds);
-        List<String> menuWhitelist = new ArrayList<>();
-
-        boolean experience = user.getIsExperience() != null && user.getIsExperience() == 1;
-        if (experience) {
-            applyExperiencePolicy(user.getId(), dataScope, menuWhitelist);
-        }
-
-        RbacUserSession session = buildSession(user, roleCodes, permCodes, dataScope, menuWhitelist);
+        RbacUserSession session = buildSessionForUser(user);
         String token = tokenService.createToken(session);
+        String refreshToken = null;
+        long refreshExpiresIn = 0;
+        if (isSuperAdmin(session)) {
+            Duration refreshTtl = resolveRefreshTtl();
+            refreshToken = refreshTokenService.issueRefreshToken(session, refreshTtl);
+            refreshExpiresIn = refreshTtl.getSeconds();
+        }
 
         user.setLastLoginTime(now);
         user.setFailedLoginCount(0);
         user.setLockUntil(null);
         userRepository.save(user);
 
-        return buildLoginResponse(session, token, tokenService.getExpireSeconds());
+        return buildLoginResponse(session, token, tokenService.getExpireSeconds(session), refreshToken, refreshExpiresIn);
+    }
+
+    /**
+     * 刷新 Token。
+     *
+     * @param refreshToken Refresh Token
+     * @return 登录响应
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    public LoginResponse refresh(String refreshToken) {
+        Duration refreshTtl = resolveRefreshTtl();
+        RefreshTokenService.RefreshTokenResult result = refreshTokenService.rotateRefreshToken(refreshToken, refreshTtl);
+        if (result == null || result.payload() == null) {
+            throw new RuntimeException("Refresh Token 无效");
+        }
+        Long userId = result.payload().userId();
+        if (userId == null) {
+            throw new RuntimeException("Refresh Token 无效");
+        }
+        RbacUser user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("账号不存在"));
+        if (user.getStatus() != null && user.getStatus() == 0) {
+            throw new RuntimeException("账号已停用");
+        }
+        if (StringUtils.hasText(result.payload().tenantId())
+                && StringUtils.hasText(user.getTenantId())
+                && !result.payload().tenantId().equalsIgnoreCase(user.getTenantId())) {
+            throw new RuntimeException("账号不存在");
+        }
+        RbacUserSession session = buildSessionForUser(user);
+        String token = tokenService.createToken(session);
+        long expiresIn = tokenService.getExpireSeconds(session);
+        return buildLoginResponse(session, token, expiresIn, result.refreshToken(), refreshTtl.getSeconds());
     }
 
     /**
@@ -159,7 +187,7 @@ public class AuthService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private LoginResponse buildLoginResponse(RbacUserSession session, String token, long expiresIn) {
+    private LoginResponse buildLoginResponse(RbacUserSession session, String token, long expiresIn, String refreshToken, long refreshExpiresIn) {
         LoginResponse response = new LoginResponse();
         response.setToken(token);
         response.setExpiresIn(expiresIn);
@@ -171,6 +199,8 @@ public class AuthService {
         response.setExperience(session.isExperience());
         response.setRoles(session.getRoles());
         response.setPermissions(session.getPermissions());
+        response.setRefreshToken(refreshToken);
+        response.setRefreshExpiresIn(refreshExpiresIn);
         return response;
     }
 
@@ -218,9 +248,28 @@ public class AuthService {
         session.setExperience(user.getIsExperience() != null && user.getIsExperience() == 1);
         session.setRoles(roles == null ? List.of() : roles);
         session.setPermissions(permissions == null ? List.of() : permissions);
-        session.setDataScope(dataScope);
+        session.setDataScope(sanitizeDataScope(dataScope));
         session.setMenuWhitelist(menuWhitelist == null ? List.of() : menuWhitelist);
         return session;
+    }
+
+    private RbacUserSession buildSessionForUser(RbacUser user) {
+        List<Long> roleIds = userRoleRepository.findRoleIdsByUserId(user.getId());
+        List<RbacRole> roles = roleIds.isEmpty() ? List.of() : roleRepository.findByIdIn(roleIds);
+        List<String> roleCodes = roles.stream()
+                .filter(role -> role.getStatus() == null || role.getStatus() == 1)
+                .map(RbacRole::getRoleCode)
+                .toList();
+
+        List<String> permCodes = resolvePermissions(roleIds);
+        DataScopeRule dataScope = resolveDataScope(user.getId(), roleIds);
+        List<String> menuWhitelist = new ArrayList<>();
+
+        boolean experience = user.getIsExperience() != null && user.getIsExperience() == 1;
+        if (experience) {
+            applyExperiencePolicy(user.getId(), dataScope, menuWhitelist);
+        }
+        return buildSession(user, roleCodes, permCodes, dataScope, menuWhitelist);
     }
 
     /**
@@ -348,6 +397,7 @@ public class AuthService {
                 // 忽略解析失败
             }
         }
+        sanitizeDataScope(dataScope);
     }
 
     /**
@@ -363,9 +413,39 @@ public class AuthService {
     private DataScopeRule toRule(String scopeType, String scopeColumn, String scopeRule) {
         DataScopeRule rule = new DataScopeRule();
         rule.setScopeType(StringUtils.hasText(scopeType) ? scopeType.toUpperCase() : RbacDataScopeType.TENANT);
-        rule.setScopeColumn(scopeColumn);
-        rule.setScopeRule(scopeRule);
+        rule.setScopeColumn(StringUtils.hasText(scopeColumn) ? scopeColumn : "");
+        rule.setScopeRule(StringUtils.hasText(scopeRule) ? scopeRule : "");
         return rule;
+    }
+
+    private DataScopeRule sanitizeDataScope(DataScopeRule rule) {
+        if (rule == null) {
+            return new DataScopeRule();
+        }
+        if (!StringUtils.hasText(rule.getScopeType())) {
+            rule.setScopeType(RbacDataScopeType.TENANT);
+        } else {
+            rule.setScopeType(rule.getScopeType().toUpperCase());
+        }
+        if (!StringUtils.hasText(rule.getScopeColumn())) {
+            rule.setScopeColumn("");
+        }
+        if (!StringUtils.hasText(rule.getScopeRule())) {
+            rule.setScopeRule("");
+        }
+        return rule;
+    }
+
+    private boolean isSuperAdmin(RbacUserSession session) {
+        return session != null && session.getRoles() != null && session.getRoles().contains(SUPER_ADMIN_ROLE);
+    }
+
+    private Duration resolveRefreshTtl() {
+        LingSqlProperties.Auth auth = properties.getAuth();
+        if (auth != null && auth.getRefreshTtl() != null) {
+            return auth.getRefreshTtl();
+        }
+        return Duration.ofDays(7);
     }
 
     /**

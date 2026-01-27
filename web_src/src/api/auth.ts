@@ -27,6 +27,8 @@ export interface LoginRequest {
 export interface LoginResponse {
   token: string;
   expiresIn: number;
+  refreshToken?: string;
+  refreshExpiresIn?: number;
   userId: number;
   tenantId: string;
   tenantName?: string;

@@ -43,6 +43,7 @@ public class UserAdminService {
     private final RbacRoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
+    private final RefreshTokenService refreshTokenService;
 
     /**
      * 查询用户列表。
@@ -153,6 +154,7 @@ public class UserAdminService {
             boolean statusChanged = request.getStatus() != null && !request.getStatus().equals(originalStatus);
             if (statusDisabled || rolesUpdated || experienceChanged || statusChanged) {
                 tokenService.revokeUserTokens(user.getId());
+                refreshTokenService.revokeByUserId(user.getId());
             }
         }
         return toView(user);
@@ -183,6 +185,7 @@ public class UserAdminService {
         user.setUpdateTime(LocalDateTime.now());
         userRepository.save(user);
         tokenService.revokeUserTokens(user.getId());
+        refreshTokenService.revokeByUserId(user.getId());
     }
 
     /**

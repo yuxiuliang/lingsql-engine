@@ -390,12 +390,36 @@ public class LingSqlProperties {
         private String jwtIssuer = "lingsql-engine";
 
         /**
+         * JWT 受众。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String jwtAudience = "lingsql-engine";
+
+        /**
          * JWT 有效期。
          *
          * @author 余炘洋
          * @date 2026-01-26
          */
         private Duration jwtTtl = Duration.ofHours(24);
+
+        /**
+         * 超级管理员 JWT 有效期。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private Duration superAdminJwtTtl = Duration.ofHours(2);
+
+        /**
+         * Refresh Token 有效期。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private Duration refreshTtl = Duration.ofDays(7);
 
         /**
          * 登录 Cookie 名称。
@@ -436,6 +460,14 @@ public class LingSqlProperties {
          * @date 2026-01-27
          */
         private Boolean cookieSecure;
+
+        /**
+         * Refresh Token Cookie 名称。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String refreshCookieName = "LINGSQL_REFRESH";
     }
 
     /**

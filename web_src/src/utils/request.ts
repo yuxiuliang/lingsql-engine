@@ -13,6 +13,21 @@ export interface ApiResponse<T> {
   data: T;
 }
 
+interface RefreshLoginResponse {
+  token: string;
+  expiresIn: number;
+  refreshToken?: string;
+  refreshExpiresIn?: number;
+  userId: number;
+  tenantId: string;
+  tenantName?: string;
+  username: string;
+  nickname?: string;
+  experience?: boolean;
+  roles?: string[];
+  permissions?: string[];
+}
+
 /**
  * 构建请求基础地址。
  *
@@ -36,7 +51,9 @@ const BASE_URL = resolveBaseUrl();
  * @author 余炘洋
  * @date 2026-01-23
  */
-export const request = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
+let refreshPromise: Promise<boolean> | null = null;
+
+export const request = async <T>(path: string, options: RequestInit = {}, retry = true): Promise<T> => {
   const authStore = useAuthStore(pinia);
   const tenantId = authStore.isSysAdmin ? (authStore.activeTenantId || '') : (authStore.activeTenantId || authStore.tenantId || '');
   const headers = new Headers(options.headers || {});
@@ -53,6 +70,10 @@ export const request = async <T>(path: string, options: RequestInit = {}): Promi
   });
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
+      const refreshed = retry ? await tryRefresh(path) : false;
+      if (refreshed) {
+        return request<T>(path, options, false);
+      }
       authStore.logout();
       redirectToLogin();
       throw new Error('未登录或无权限');
@@ -61,6 +82,10 @@ export const request = async <T>(path: string, options: RequestInit = {}): Promi
   }
   const payload = (await response.json()) as ApiResponse<T>;
   if (payload.code === 401 || payload.code === 403) {
+    const refreshed = retry ? await tryRefresh(path) : false;
+    if (refreshed) {
+      return request<T>(path, options, false);
+    }
     authStore.logout();
     redirectToLogin();
     throw new Error(payload.message || '未登录或无权限');
@@ -77,5 +102,51 @@ const redirectToLogin = () => {
   }
   if (window.location.pathname !== '/login') {
     window.location.assign('/login');
+  }
+};
+
+const tryRefresh = async (path: string): Promise<boolean> => {
+  if (path.startsWith('/api/v1/auth/login') || path.startsWith('/api/v1/auth/refresh')) {
+    return false;
+  }
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+  refreshPromise = doRefresh();
+  const result = await refreshPromise;
+  refreshPromise = null;
+  return result;
+};
+
+const doRefresh = async (): Promise<boolean> => {
+  const authStore = useAuthStore(pinia);
+  try {
+    const response = await fetch(`${BASE_URL}/api/v1/auth/refresh`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'include'
+    });
+    if (!response.ok) {
+      return false;
+    }
+    const payload = (await response.json()) as ApiResponse<RefreshLoginResponse>;
+    if (payload.code !== 200 || !payload.data) {
+      return false;
+    }
+    const data = payload.data;
+    authStore.login(
+      data.token,
+      data.userId,
+      data.tenantId,
+      data.username,
+      data.nickname || '',
+      data.experience || false,
+      data.roles || [],
+      data.permissions || [],
+      data.tenantName || ''
+    );
+    return true;
+  } catch {
+    return false;
   }
 };

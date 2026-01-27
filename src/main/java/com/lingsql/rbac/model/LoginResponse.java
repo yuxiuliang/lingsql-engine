@@ -30,6 +30,22 @@ public class LoginResponse {
     private long expiresIn;
 
     /**
+     * Refresh Token。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private String refreshToken;
+
+    /**
+     * Refresh Token 过期时间(秒)。
+     *
+     * @author 余炘洋
+     * @date 2026-01-27
+     */
+    private long refreshExpiresIn;
+
+    /**
      * 用户ID。
      *
      * @author 余炘洋
