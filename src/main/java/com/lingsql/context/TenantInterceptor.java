@@ -6,6 +6,7 @@ import com.lingsql.rbac.security.SecureTenantResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -23,6 +24,8 @@ import java.nio.charset.StandardCharsets;
 @Slf4j
 @Component
 public class TenantInterceptor implements HandlerInterceptor {
+    private static final String MDC_TENANT_ID = "tenantId";
+    private static final String MDC_USER_ID = "userId";
 
     /**
      * 请求进入时写入租户上下文。
@@ -60,6 +63,10 @@ public class TenantInterceptor implements HandlerInterceptor {
         }
         if (StringUtils.hasText(tenantId)) {
             TenantContext.setSessionInfo(new SessionInfo(tenantId, session.getUserId()));
+            MDC.put(MDC_TENANT_ID, tenantId);
+            if (session.getUserId() != null) {
+                MDC.put(MDC_USER_ID, String.valueOf(session.getUserId()));
+            }
         }
         return true;
     }

@@ -10,6 +10,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.MDC;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -33,6 +34,8 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
 
     private final TokenService tokenService;
     private final LingSqlProperties properties;
+    private static final String MDC_TENANT_ID = "tenantId";
+    private static final String MDC_USER_ID = "userId";
 
     /**
      * 过滤请求并注入认证信息。
@@ -69,6 +72,12 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                             new UsernamePasswordAuthenticationToken(session, token, authorities);
                     SecurityContextHolder.getContext().setAuthentication(authenticationToken);
                     TenantContext.setSessionInfo(new SessionInfo(session.getTenantId(), session.getUserId()));
+                    if (StringUtils.hasText(session.getTenantId())) {
+                        MDC.put(MDC_TENANT_ID, session.getTenantId());
+                    }
+                    if (session.getUserId() != null) {
+                        MDC.put(MDC_USER_ID, String.valueOf(session.getUserId()));
+                    }
                 }
             }
         }

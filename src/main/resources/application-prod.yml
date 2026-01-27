@@ -1,0 +1,78 @@
+spring:
+  application:
+    name: lingsql-engine
+  datasource:
+    url: ${LINGSQL_DB_URL:}
+    username: ${LINGSQL_DB_USERNAME:}
+    password: ${LINGSQL_DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+    open-in-view: false
+  data:
+    redis:
+      host: ${LINGSQL_REDIS_HOST:localhost}
+      port: ${LINGSQL_REDIS_PORT:6379}
+      password: ${LINGSQL_REDIS_PASSWORD:}
+
+logging:
+  level:
+    com.lingsql: info
+    org.springframework.ai: info
+    org.hibernate.orm.connections.pooling: warn
+
+server:
+  port: ${SERVER_PORT:8000}
+
+lingsql:
+  security:
+    default-limit: 100
+    prompt-injection-keywords:
+      - "忽略规则"
+      - "绕过"
+      - "system prompt"
+      - "prompt injection"
+      - "无视限制"
+  cache:
+    schema-ttl: 24h
+    comment-ttl: 168h
+    semantic-ttl: 6h
+    chat-history-ttl: 30m
+  chat:
+    max-question-length: 4000
+  ai:
+    memory:
+      limit: 10
+      ttl: 30m
+  hikari:
+    maximum-pool-size: 20
+    minimum-idle: 5
+    idle-timeout: 10m
+    connection-timeout: 30s
+  model:
+    cooldown: 10m
+  cors:
+    enabled: ${LINGSQL_CORS_ENABLED:false}
+    allowed-origins: ${LINGSQL_CORS_ALLOWED_ORIGINS:}
+    allowed-methods: ${LINGSQL_CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS}
+    allowed-headers: ${LINGSQL_CORS_ALLOWED_HEADERS:Authorization,Content-Type,X-Tenant-Id,X-Request-Id,X-Trace-Id}
+    exposed-headers: ${LINGSQL_CORS_EXPOSED_HEADERS:X-Request-Id,X-Trace-Id}
+    allow-credentials: ${LINGSQL_CORS_ALLOW_CREDENTIALS:true}
+    max-age: ${LINGSQL_CORS_MAX_AGE:3600}
+  auth:
+    jwt-secret: ${LINGSQL_JWT_SECRET:}
+    jwt-issuer: ${LINGSQL_JWT_ISSUER:lingsql-engine}
+    jwt-ttl: ${LINGSQL_JWT_TTL:24h}
+  admin:
+    enabled: ${LINGSQL_ADMIN_ENABLED:false}
+    tenant-id: ${LINGSQL_ADMIN_TENANT_ID:}
+    tenant-name: ${LINGSQL_ADMIN_TENANT_NAME:}
+    username: ${LINGSQL_ADMIN_USERNAME:}
+    password: ${LINGSQL_ADMIN_PASSWORD:}
+    nickname: ${LINGSQL_ADMIN_NICKNAME:}
+    seed-resource: ${LINGSQL_ADMIN_SEED_RESOURCE:classpath:rbac-seed.json}

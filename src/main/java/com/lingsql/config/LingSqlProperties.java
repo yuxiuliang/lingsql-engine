@@ -43,6 +43,103 @@ public class LingSqlProperties {
          * @date 2026-01-22
          */
         private List<String> promptInjectionKeywords = new ArrayList<>();
+
+        /**
+         * 是否启用安全响应头。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private boolean securityHeadersEnabled = true;
+
+        /**
+         * Content-Security-Policy 策略。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private String contentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+
+        /**
+         * HSTS 最大有效期。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private Duration hstsMaxAge = Duration.ofDays(365);
+
+        /**
+         * HSTS 是否包含子域名。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private boolean hstsIncludeSubDomains = true;
+
+        /**
+         * HSTS 是否允许预加载。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private boolean hstsPreload = false;
+
+        /**
+         * 是否在非 HTTPS 场景也返回 HSTS。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private boolean hstsAlways = false;
+
+        /**
+         * 登录限流配置。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        @Data
+        public static class RateLimit {
+            /**
+             * 是否启用登录限流。
+             *
+             * @author 余炘洋
+             * @date 2026-01-27
+             */
+            private boolean enabled = true;
+
+            /**
+             * 单窗口最大请求数。
+             *
+             * @author 余炘洋
+             * @date 2026-01-27
+             */
+            private int loginMaxRequests = 20;
+
+            /**
+             * 登录限流窗口。
+             *
+             * @author 余炘洋
+             * @date 2026-01-27
+             */
+            private Duration loginWindow = Duration.ofMinutes(1);
+
+            /**
+             * 触发限流后的封禁时间。
+             *
+             * @author 余炘洋
+             * @date 2026-01-27
+             */
+            private Duration loginBlock = Duration.ofMinutes(10);
+        }
+
+        /**
+         * 登录限流配置。
+         *
+         * @author 余炘洋
+         * @date 2026-01-27
+         */
+        private RateLimit rateLimit = new RateLimit();
     }
 
     /**
@@ -241,7 +338,7 @@ public class LingSqlProperties {
          * @author 余炘洋
          * @date 2026-01-23
          */
-        private List<String> allowedHeaders = List.of("Authorization", "Content-Type", "X-Tenant-Id");
+        private List<String> allowedHeaders = List.of("Authorization", "Content-Type", "X-Tenant-Id", "X-Request-Id", "X-Trace-Id");
 
         /**
          * 暴露给前端的响应头列表。
@@ -249,7 +346,7 @@ public class LingSqlProperties {
          * @author 余炘洋
          * @date 2026-01-23
          */
-        private List<String> exposedHeaders = new ArrayList<>();
+        private List<String> exposedHeaders = new ArrayList<>(List.of("X-Request-Id", "X-Trace-Id"));
 
         /**
          * 是否允许携带凭证。

@@ -1,6 +1,7 @@
 package com.lingsql.common.exception;
 
 import com.lingsql.common.result.ApiResponse;
+import com.lingsql.common.trace.RequestTraceContext;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
@@ -34,7 +35,7 @@ public class GlobalExceptionHandler {
         String message = Optional.ofNullable(ex.getBindingResult().getFieldError())
                 .map(DefaultMessageSourceResolvable::getDefaultMessage)
                 .orElse("参数校验失败");
-        return ApiResponse.invalid(message);
+        return attachRequestId(ApiResponse.invalid(message));
     }
 
     /**
@@ -50,7 +51,7 @@ public class GlobalExceptionHandler {
         String message = Optional.ofNullable(ex.getFieldError())
                 .map(DefaultMessageSourceResolvable::getDefaultMessage)
                 .orElse("参数校验失败");
-        return ApiResponse.invalid(message);
+        return attachRequestId(ApiResponse.invalid(message));
     }
 
     /**
@@ -69,7 +70,7 @@ public class GlobalExceptionHandler {
                 .filter(msg -> msg != null && !msg.isBlank())
                 .findFirst()
                 .orElse("参数校验失败");
-        return ApiResponse.invalid(message);
+        return attachRequestId(ApiResponse.invalid(message));
     }
 
     /**
@@ -82,7 +83,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(AuthenticationException.class)
     public ApiResponse<Void> handleAuthenticationException(AuthenticationException ex) {
-        return ApiResponse.unauthorized("未登录或登录已过期");
+        return attachRequestId(ApiResponse.unauthorized("未登录或登录已过期"));
     }
 
     /**
@@ -95,6 +96,14 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(AccessDeniedException.class)
     public ApiResponse<Void> handleAccessDeniedException(AccessDeniedException ex) {
-        return ApiResponse.forbidden("无权限访问");
+        return attachRequestId(ApiResponse.forbidden("无权限访问"));
+    }
+
+    private <T> ApiResponse<T> attachRequestId(ApiResponse<T> response) {
+        if (response == null) {
+            return null;
+        }
+        response.setRequestId(RequestTraceContext.resolveRequestId());
+        return response;
     }
 }

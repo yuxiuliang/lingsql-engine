@@ -89,7 +89,11 @@ lingsql:
       - "Authorization"
       - "Content-Type"
       - "X-Tenant-Id"
-    exposed-headers: [ ]
+      - "X-Request-Id"
+      - "X-Trace-Id"
+    exposed-headers:
+      - "X-Request-Id"
+      - "X-Trace-Id"
     allow-credentials: true
     max-age: 3600
   auth:

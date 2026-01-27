@@ -2,6 +2,7 @@ package com.lingsql.config;
 
 import com.lingsql.context.TenantInterceptor;
 import com.lingsql.billing.PaymentWallInterceptor;
+import com.lingsql.rbac.security.LoginRateLimitInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -21,6 +22,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
     private final TenantInterceptor tenantInterceptor;
     private final PaymentWallInterceptor paymentWallInterceptor;
     private final LingSqlProperties properties;
+    private final LoginRateLimitInterceptor loginRateLimitInterceptor;
 
     /**
      * 构造函数注入。
@@ -29,10 +31,16 @@ public class WebMvcConfig implements WebMvcConfigurer {
      * @author 余炘洋
      * @date 2026-01-22
      */
-    public WebMvcConfig(TenantInterceptor tenantInterceptor, PaymentWallInterceptor paymentWallInterceptor, LingSqlProperties properties) {
+    public WebMvcConfig(
+            TenantInterceptor tenantInterceptor,
+            PaymentWallInterceptor paymentWallInterceptor,
+            LingSqlProperties properties,
+            LoginRateLimitInterceptor loginRateLimitInterceptor
+    ) {
         this.tenantInterceptor = tenantInterceptor;
         this.paymentWallInterceptor = paymentWallInterceptor;
         this.properties = properties;
+        this.loginRateLimitInterceptor = loginRateLimitInterceptor;
     }
 
     /**
@@ -46,6 +54,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(tenantInterceptor).addPathPatterns("/api/**");
         registry.addInterceptor(paymentWallInterceptor).addPathPatterns("/api/v1/chat/ask");
+        registry.addInterceptor(loginRateLimitInterceptor).addPathPatterns("/api/v1/auth/login");
     }
 
     /**
