@@ -51,6 +51,15 @@ lingsql:
     comment-ttl: 168h
     semantic-ttl: 6h
     chat-history-ttl: 30m
+  web:
+    max-page-size: ${LINGSQL_WEB_MAX_PAGE_SIZE:100}
+    export-max-rows: ${LINGSQL_WEB_EXPORT_MAX_ROWS:10000}
+  audit:
+    retry-enabled: ${LINGSQL_AUDIT_RETRY_ENABLED:true}
+    retry-max-queue: ${LINGSQL_AUDIT_RETRY_MAX_QUEUE:1000}
+    retry-batch-size: ${LINGSQL_AUDIT_RETRY_BATCH_SIZE:100}
+    retry-max-attempts: ${LINGSQL_AUDIT_RETRY_MAX_ATTEMPTS:3}
+    retry-delay-ms: ${LINGSQL_AUDIT_RETRY_DELAY_MS:60000}
   chat:
     max-question-length: 4000
   ai:
@@ -62,6 +71,9 @@ lingsql:
     minimum-idle: 5
     idle-timeout: 10m
     connection-timeout: 30s
+    tenant-cache-ttl: ${LINGSQL_TENANT_CACHE_TTL:30m}
+    max-tenant-pools: ${LINGSQL_MAX_TENANT_POOLS:200}
+    tenant-cache-clean-interval-ms: ${LINGSQL_TENANT_CACHE_CLEAN_INTERVAL_MS:300000}
   model:
     cooldown: 10m
   cors:

@@ -187,7 +187,7 @@ public class AuthService {
         passwordEncoder.matches(password, DUMMY_PASSWORD_HASH);
     }
 
-    private RuntimeException loginFailure() {
+    private BadCredentialsException loginFailure() {
         return new BadCredentialsException(LOGIN_ERROR_MESSAGE);
     }
 

@@ -6,6 +6,7 @@ import com.lingsql.audit.model.SqlExecuteLogQuery;
 import com.lingsql.audit.model.SqlExecuteLogView;
 import com.lingsql.audit.service.AuditLogService;
 import com.lingsql.audit.service.SqlExecuteLogService;
+import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.common.result.PageResult;
 import com.lingsql.rbac.security.RbacSecurityUtils;
@@ -36,6 +37,7 @@ public class AuditLogController {
 
     private final AuditLogService auditLogService;
     private final SqlExecuteLogService sqlExecuteLogService;
+    private final PageParamResolver pageParamResolver;
 
     /**
      * 查询管理操作日志。
@@ -146,7 +148,8 @@ public class AuditLogController {
         query.setRequestSource(requestSource);
         query.setStartTime(startTime);
         query.setEndTime(endTime);
-        PageResult<SqlExecuteLogView> pageResult = sqlExecuteLogService.query(query, 1, 10000);
+        int exportSize = pageParamResolver.resolveExportSize();
+        PageResult<SqlExecuteLogView> pageResult = sqlExecuteLogService.queryForExport(query, 1, exportSize);
         return ApiResponse.success(pageResult.getList());
     }
 

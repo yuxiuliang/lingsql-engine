@@ -6,8 +6,12 @@ import com.lingsql.chat.entity.ChatHistory;
 import com.lingsql.chat.model.ChatHistoryDetailView;
 import com.lingsql.chat.model.ChatHistoryView;
 import com.lingsql.chat.repository.ChatHistoryRepository;
-import com.lingsql.config.LingSqlProperties;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.common.pagination.PageParam;
+import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.common.result.PageResult;
+import com.lingsql.config.LingSqlProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -37,6 +41,7 @@ public class ChatHistoryService {
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final LingSqlProperties properties;
+    private final PageParamResolver pageParamResolver;
 
     /**
      * 保存历史记录。
@@ -75,8 +80,9 @@ public class ChatHistoryService {
      * @date 2026-01-23
      */
     public PageResult<ChatHistoryView> listHistory(String tenantId, Long userId, String keyword, int page, int size) {
-        int safePage = Math.max(page, 1);
-        int safeSize = Math.max(1, Math.min(size, 50));
+        PageParam param = pageParamResolver.resolve(page, size);
+        int safePage = param.page();
+        int safeSize = param.size();
         String cacheKey = buildListKey(tenantId, userId, safePage, safeSize, keyword);
         String cached = stringRedisTemplate.opsForValue().get(cacheKey);
         if (cached != null && !cached.isBlank()) {
@@ -125,7 +131,7 @@ public class ChatHistoryService {
             }
         }
         ChatHistory history = chatHistoryRepository.findByIdAndTenantIdAndUserId(id, tenantId, userId)
-                .orElseThrow(() -> new RuntimeException("历史记录不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "历史记录不存在"));
         ChatHistoryDetailView view = toDetailView(history);
         cacheDetail(tenantId, userId, history);
         return view;
@@ -143,10 +149,10 @@ public class ChatHistoryService {
      */
     public ChatHistoryView renameHistory(String tenantId, Long userId, Long id, String question) {
         if (question == null || question.isBlank()) {
-            throw new RuntimeException("标题不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "标题不能为空");
         }
         ChatHistory history = chatHistoryRepository.findByIdAndTenantIdAndUserId(id, tenantId, userId)
-                .orElseThrow(() -> new RuntimeException("历史记录不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "历史记录不存在"));
         history.setQuestion(question.trim());
         ChatHistory saved = chatHistoryRepository.save(history);
         evictListCache(tenantId, userId);

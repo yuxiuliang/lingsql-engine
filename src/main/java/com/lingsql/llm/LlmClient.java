@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.agent.ModelHealthService;
 import com.lingsql.agent.ModelRouter;
 import com.lingsql.agent.model.AiModelConfig;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.web.client.RestTemplateBuilder;
@@ -77,7 +79,7 @@ public class LlmClient {
             }
         } catch (Exception ex) {
             log.error("模型切换失败: {}", ex.getMessage(), ex);
-            throw new RuntimeException("模型调用失败: " + ex.getMessage(), ex);
+            throw new BizException(ErrorCode.MODEL_UNAVAILABLE, "模型调用失败: " + ex.getMessage(), ex);
         }
     }
 
@@ -124,7 +126,7 @@ public class LlmClient {
         ParsedLlmResponse parsedResponse = parseResponse(response);
         String content = parsedResponse.content();
         if (content == null || content.isBlank()) {
-            throw new RuntimeException("模型返回为空");
+            throw new BizException(ErrorCode.MODEL_UNAVAILABLE, "模型返回为空");
         }
 
         long costMs = System.currentTimeMillis() - startTime;
@@ -216,7 +218,7 @@ public class LlmClient {
      */
     private String resolveChatUrl(String baseUrl) {
         if (baseUrl == null || baseUrl.isBlank()) {
-            throw new RuntimeException("模型基础地址不能为空");
+            throw new BizException(ErrorCode.CONFIG_INVALID, "模型基础地址不能为空");
         }
         String trimmed = baseUrl.trim();
         if (trimmed.endsWith(DEFAULT_CHAT_PATH)) {

@@ -69,6 +69,15 @@ lingsql:
     comment-ttl: 168h
     semantic-ttl: 6h
     chat-history-ttl: 30m
+  web:
+    max-page-size: 100
+    export-max-rows: 10000
+  audit:
+    retry-enabled: true
+    retry-max-queue: 1000
+    retry-batch-size: 100
+    retry-max-attempts: 3
+    retry-delay-ms: 60000
   chat:
     max-question-length: 4000
   ai:
@@ -80,6 +89,9 @@ lingsql:
     minimum-idle: 5
     idle-timeout: 10m
     connection-timeout: 30s
+    tenant-cache-ttl: 30m
+    max-tenant-pools: 200
+    tenant-cache-clean-interval-ms: 300000
   model:
     cooldown: 10m
   cors:

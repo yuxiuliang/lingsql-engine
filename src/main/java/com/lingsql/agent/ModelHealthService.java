@@ -2,6 +2,8 @@ package com.lingsql.agent;
 
 import com.lingsql.agent.model.AiModelConfig;
 import com.lingsql.agent.repository.AiModelConfigRepository;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -161,7 +163,7 @@ public class ModelHealthService {
     @Transactional
     public void enableModel(Long modelId) {
         AiModelConfig config = repository.findById(modelId)
-                .orElseThrow(() -> new RuntimeException("模型不存在: " + modelId));
+                .orElseThrow(() -> new BizException(ErrorCode.MODEL_NOT_FOUND, "模型不存在"));
         config.setIsActive(1);
         config.setFuseTime(null);
         config.setFuseReason(null);
@@ -179,7 +181,7 @@ public class ModelHealthService {
     @Transactional
     public void disableModel(Long modelId) {
         AiModelConfig config = repository.findById(modelId)
-                .orElseThrow(() -> new RuntimeException("模型不存在: " + modelId));
+                .orElseThrow(() -> new BizException(ErrorCode.MODEL_NOT_FOUND, "模型不存在"));
         config.setIsActive(0);
         config.setFuseTime(null);
         config.setFuseReason("人工禁用");

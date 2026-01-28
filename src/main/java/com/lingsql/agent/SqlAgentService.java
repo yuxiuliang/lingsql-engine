@@ -2,6 +2,8 @@ package com.lingsql.agent;
 
 import com.lingsql.agent.prompt.SqlPromptTemplate;
 import com.lingsql.chat.service.ChatMemoryService;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.datasource.DataSourceManager;
 import com.lingsql.datasource.model.TenantDbConfig;
@@ -79,12 +81,12 @@ public class SqlAgentService {
      */
     private String generateSqlInternal(String tenantId, String userInput, String reason) {
         if (!StringUtils.hasText(tenantId)) {
-            throw new RuntimeException("租户ID不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户ID不能为空");
         }
         validatePrompt(userInput);
 
         TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId)
-                .orElseThrow(() -> new RuntimeException("租户不存在: " + tenantId));
+                .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
 
         List<TableInfo> tables = metadataCacheService.getCachedSchema(tenantId);
         if (tables == null || tables.isEmpty()) {
@@ -157,12 +159,12 @@ public class SqlAgentService {
      */
     private void validatePrompt(String userInput) {
         if (!StringUtils.hasText(userInput)) {
-            throw new RuntimeException("用户问题不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "用户问题不能为空");
         }
         String lowerInput = userInput.toLowerCase();
         for (String keyword : properties.getSecurity().getPromptInjectionKeywords()) {
             if (StringUtils.hasText(keyword) && lowerInput.contains(keyword.toLowerCase())) {
-                throw new RuntimeException("检测到疑似 Prompt 注入指令，请重新描述需求");
+                throw new BizException(ErrorCode.SECURITY_VIOLATION, "检测到疑似 Prompt 注入指令，请重新描述需求");
             }
         }
     }

@@ -320,6 +320,104 @@ public class LingSqlProperties {
          * @date 2026-01-22
          */
         private Duration connectionTimeout = Duration.ofSeconds(20);
+
+        /**
+         * 租户数据源缓存存活时间。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private Duration tenantCacheTtl = Duration.ofMinutes(30);
+
+        /**
+         * 租户连接池最大缓存数量。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private int maxTenantPools = 200;
+
+        /**
+         * 租户缓存清理间隔（毫秒）。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private long tenantCacheCleanIntervalMs = 300000L;
+    }
+
+    /**
+     * Web 层通用配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-28
+     */
+    @Data
+    public static class Web {
+        /**
+         * 列表最大分页大小。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private int maxPageSize = 100;
+
+        /**
+         * 导出最大行数。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private int exportMaxRows = 10000;
+    }
+
+    /**
+     * 审计日志重试配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-28
+     */
+    @Data
+    public static class Audit {
+        /**
+         * 是否启用审计写入重试。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private boolean retryEnabled = true;
+
+        /**
+         * 重试队列最大长度。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private int retryMaxQueue = 1000;
+
+        /**
+         * 每次重试批量大小。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private int retryBatchSize = 100;
+
+        /**
+         * 单条日志最大重试次数。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private int retryMaxAttempts = 3;
+
+        /**
+         * 重试间隔（毫秒）。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private long retryDelayMs = 60000;
     }
 
     /**
@@ -614,6 +712,22 @@ public class LingSqlProperties {
      * @date 2026-01-22
      */
     private Hikari hikari = new Hikari();
+
+    /**
+     * Web 配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-28
+     */
+    private Web web = new Web();
+
+    /**
+     * 审计配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-28
+     */
+    private Audit audit = new Audit();
 
     /**
      * 模型资源池配置。

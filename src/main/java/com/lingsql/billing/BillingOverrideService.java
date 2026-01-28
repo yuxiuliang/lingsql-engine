@@ -1,6 +1,8 @@
 package com.lingsql.billing;
 
 import com.lingsql.billing.entity.TenantBillingOverride;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.billing.model.TenantBillingOverrideRequest;
 import com.lingsql.billing.repository.TenantBillingOverrideRepository;
 import com.lingsql.tenant.repository.TenantRepository;
@@ -39,13 +41,13 @@ public class BillingOverrideService {
     @Transactional
     public TenantBillingOverride saveTenantOverride(String tenantId, TenantBillingOverrideRequest request) {
         if (!StringUtils.hasText(tenantId)) {
-            throw new RuntimeException("租户ID不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户ID不能为空");
         }
         if (request == null) {
-            throw new RuntimeException("计费覆盖不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "计费覆盖不能为空");
         }
         if (!tenantRepository.existsByTenantIdAndIsDeleted(tenantId, NOT_DELETED)) {
-            throw new RuntimeException("租户不存在");
+            throw new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在");
         }
         TenantBillingOverride override = overrideRepository.findByTenantId(tenantId)
                 .orElseGet(() -> {

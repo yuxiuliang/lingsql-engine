@@ -3,6 +3,9 @@ package com.lingsql.executor;
 import com.lingsql.agent.SqlAgentService;
 import com.lingsql.audit.model.SqlExecuteLogCommand;
 import com.lingsql.audit.service.SqlExecuteLogService;
+import com.lingsql.billing.TenantBillingService;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.context.TenantContext;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
@@ -10,7 +13,6 @@ import com.lingsql.llm.LlmTraceContext;
 import com.lingsql.llm.LlmTraceInfo;
 import com.lingsql.security.SqlRewriter;
 import com.lingsql.security.SqlSecurityChecker;
-import com.lingsql.billing.TenantBillingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -75,9 +77,9 @@ public class SmartSqlExecutor {
         sqlTaskTracker.start(tenantId);
         try {
             TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId)
-                    .orElseThrow(() -> new RuntimeException("租户不存在: " + tenantId));
+                    .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
             return executeWithRetry(config, tenantId, question, logCommand);
-        } catch (RuntimeException ex) {
+        } catch (Exception ex) {
             fillFailureLog(logCommand, null, ex.getMessage());
             throw ex;
         } finally {

@@ -1,5 +1,7 @@
 package com.lingsql.rbac.service;
 
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacTenantPermission;
 import com.lingsql.rbac.repository.RbacPermissionRepository;
@@ -69,7 +71,7 @@ public class TenantPermissionService {
      */
     public void updateTenantPermissions(String tenantId, List<Long> permIds) {
         if (!StringUtils.hasText(tenantId)) {
-            throw new RuntimeException("租户ID不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户ID不能为空");
         }
         String normalizedTenantId = tenantId.trim();
         tenantPermissionRepository.deleteByTenantId(normalizedTenantId);

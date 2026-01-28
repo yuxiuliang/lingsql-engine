@@ -2,6 +2,8 @@ package com.lingsql.agent;
 
 import com.lingsql.agent.model.AiModelConfig;
 import com.lingsql.agent.repository.AiModelConfigRepository;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -46,7 +48,7 @@ public class ModelRouter {
     public AiModelConfig selectModel(List<Long> excludeIds) {
         List<AiModelConfig> configs = repository.findByIsActive(1);
         if (configs.isEmpty()) {
-            throw new RuntimeException("没有可用的 AI 模型配置，请检查数据库。");
+            throw new BizException(ErrorCode.MODEL_UNAVAILABLE, "没有可用的 AI 模型配置，请检查数据库。");
         }
 
         List<Long> excludes = excludeIds == null ? List.of() : excludeIds;
@@ -57,7 +59,7 @@ public class ModelRouter {
                 .collect(Collectors.toList());
 
         if (available.isEmpty()) {
-            throw new RuntimeException("当前没有可用模型（可能已熔断或被排除）。");
+            throw new BizException(ErrorCode.MODEL_UNAVAILABLE, "当前没有可用模型（可能已熔断或被排除）。");
         }
 
         int minPriority = available.stream()

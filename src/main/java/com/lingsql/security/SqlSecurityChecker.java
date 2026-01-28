@@ -1,5 +1,7 @@
 package com.lingsql.security;
 
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.datasource.model.TenantDbConfig;
 import lombok.RequiredArgsConstructor;
@@ -45,21 +47,21 @@ public class SqlSecurityChecker {
         try {
             Statement statement = CCJSqlParserUtil.parse(sql);
             if (!(statement instanceof Select select)) {
-                throw new RuntimeException("安全警告：禁止执行非查询类 SQL 语句！");
+                throw new BizException(ErrorCode.SQL_INVALID, "安全警告：禁止执行非查询类 SQL 语句！");
             }
 
             PlainSelect plainSelect = select.getPlainSelect();
             if (plainSelect == null) {
-                throw new RuntimeException("安全警告：仅支持单条 SELECT 查询");
+                throw new BizException(ErrorCode.SQL_INVALID, "安全警告：仅支持单条 SELECT 查询");
             }
             validateLimit(plainSelect);
             validateTenantCondition(config, plainSelect.getWhere());
             validateTables(statement, config);
             validateColumns(plainSelect, config);
-        } catch (RuntimeException ex) {
+        } catch (BizException ex) {
             throw ex;
         } catch (Exception e) {
-            throw new RuntimeException("SQL 解析失败或包含非法指令: " + e.getMessage());
+            throw new BizException(ErrorCode.SQL_INVALID, "SQL 解析失败或包含非法指令: " + e.getMessage(), e);
         }
     }
 
@@ -72,15 +74,15 @@ public class SqlSecurityChecker {
      */
     private void validateLimit(PlainSelect plainSelect) {
         if (plainSelect.getLimit() == null || plainSelect.getLimit().getRowCount() == null) {
-            throw new RuntimeException("安全警告：SQL 必须包含 LIMIT " + properties.getSecurity().getDefaultLimit());
+            throw new BizException(ErrorCode.SQL_INVALID, "安全警告：SQL 必须包含 LIMIT " + properties.getSecurity().getDefaultLimit());
         }
         try {
             long limit = Long.parseLong(plainSelect.getLimit().getRowCount().toString());
             if (limit > properties.getSecurity().getDefaultLimit()) {
-                throw new RuntimeException("安全警告：LIMIT 超过允许范围");
+                throw new BizException(ErrorCode.SQL_INVALID, "安全警告：LIMIT 超过允许范围");
             }
         } catch (NumberFormatException ex) {
-            throw new RuntimeException("安全警告：LIMIT 格式非法");
+            throw new BizException(ErrorCode.SQL_INVALID, "安全警告：LIMIT 格式非法");
         }
     }
 
@@ -97,12 +99,12 @@ public class SqlSecurityChecker {
             return;
         }
         if (where == null) {
-            throw new RuntimeException("安全警告：逻辑隔离模式缺少 tenant 条件");
+            throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：逻辑隔离模式缺少 tenant 条件");
         }
         ColumnDetectVisitor visitor = new ColumnDetectVisitor(config.resolveLogicColumn());
         where.accept(visitor);
         if (!visitor.isFound()) {
-            throw new RuntimeException("安全警告：逻辑隔离模式缺少 tenant 条件");
+            throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：逻辑隔离模式缺少 tenant 条件");
         }
     }
 
@@ -123,7 +125,7 @@ public class SqlSecurityChecker {
         Set<String> tables = finder.getTables(statement);
         for (String table : tables) {
             if (!allowed.contains(table.toLowerCase())) {
-                throw new RuntimeException("安全警告：访问未授权表 " + table);
+                throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：访问未授权表 " + table);
             }
         }
     }
@@ -145,10 +147,10 @@ public class SqlSecurityChecker {
             Expression expression = item.getExpression();
             if (expression instanceof AllColumns || expression instanceof AllTableColumns) {
                 if (!sensitiveColumns.isEmpty()) {
-                    throw new RuntimeException("安全警告：禁止使用 * 查询敏感字段");
+                    throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：禁止使用 * 查询敏感字段");
                 }
                 if (!whiteColumns.isEmpty()) {
-                    throw new RuntimeException("安全警告：字段白名单开启时禁止使用 *");
+                    throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：字段白名单开启时禁止使用 *");
                 }
                 continue;
             }
@@ -177,10 +179,10 @@ public class SqlSecurityChecker {
 
         for (String column : collector.getColumns()) {
             if (!whiteColumns.isEmpty() && !whiteColumns.contains(column)) {
-                throw new RuntimeException("安全警告：字段未在白名单内 " + column);
+                throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：字段未在白名单内 " + column);
             }
             if (sensitiveColumns.contains(column)) {
-                throw new RuntimeException("安全警告：访问敏感字段 " + column);
+                throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：访问敏感字段 " + column);
             }
         }
     }

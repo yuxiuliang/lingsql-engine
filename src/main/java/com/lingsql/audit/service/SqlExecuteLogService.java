@@ -6,6 +6,8 @@ import com.lingsql.audit.model.SqlExecuteLogQuery;
 import com.lingsql.audit.model.SqlExecuteLogView;
 import com.lingsql.audit.repository.SqlExecuteLogRepository;
 import com.lingsql.common.result.PageResult;
+import com.lingsql.common.pagination.PageParam;
+import com.lingsql.common.pagination.PageParamResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -37,6 +39,7 @@ public class SqlExecuteLogService {
     private static final long SLOW_EXECUTE_THRESHOLD_MS = 1000L;
 
     private final SqlExecuteLogRepository repository;
+    private final PageParamResolver pageParamResolver;
 
     /**
      * 写入 SQL 执行日志。
@@ -88,6 +91,26 @@ public class SqlExecuteLogService {
      * @date 2026-01-26
      */
     public PageResult<SqlExecuteLogView> query(SqlExecuteLogQuery query, int page, int size) {
+        PageParam param = pageParamResolver.resolve(page, size);
+        return queryInternal(query, param);
+    }
+
+    /**
+     * 查询 SQL 执行日志（导出用途）。
+     *
+     * @param query 查询条件
+     * @param page  页码
+     * @param size  每页大小
+     * @return 分页结果
+     * @author 余炘洋
+     * @date 2026-01-28
+     */
+    public PageResult<SqlExecuteLogView> queryForExport(SqlExecuteLogQuery query, int page, int size) {
+        PageParam param = pageParamResolver.resolveExport(page, size);
+        return queryInternal(query, param);
+    }
+
+    private PageResult<SqlExecuteLogView> queryInternal(SqlExecuteLogQuery query, PageParam param) {
         SqlExecuteLogQuery safeQuery = query == null ? new SqlExecuteLogQuery() : query;
         Specification<SqlExecuteLog> specification = (root, criteriaQuery, criteriaBuilder) -> {
             var predicate = criteriaBuilder.conjunction();
@@ -112,13 +135,13 @@ public class SqlExecuteLogService {
             }
             return predicate;
         };
-        PageRequest pageable = PageRequest.of(Math.max(page - 1, 0), Math.max(size, 1), Sort.by(Sort.Direction.DESC, "createTime"));
+        PageRequest pageable = PageRequest.of(Math.max(param.page() - 1, 0), param.size(), Sort.by(Sort.Direction.DESC, "createTime"));
         Page<SqlExecuteLog> result = repository.findAll(specification, pageable);
         return new PageResult<>(
                 result.getContent().stream().map(this::toView).toList(),
                 result.getTotalElements(),
-                page,
-                size
+                param.page(),
+                param.size()
         );
     }
 

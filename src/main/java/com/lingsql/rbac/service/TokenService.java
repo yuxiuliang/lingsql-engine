@@ -1,6 +1,8 @@
 package com.lingsql.rbac.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.rbac.security.RbacSecurityConstants;
 import com.lingsql.rbac.security.RbacUserSession;
@@ -54,7 +56,7 @@ public class TokenService {
      */
     public String createToken(RbacUserSession session) {
         if (session == null || session.getUserId() == null) {
-            throw new RuntimeException("会话数据不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "会话数据不能为空");
         }
         Instant now = Instant.now();
         Duration ttl = resolveTtl(session);
@@ -71,7 +73,7 @@ public class TokenService {
                 .signWith(resolveSigningKey())
                 .compact();
         if (token.getBytes(StandardCharsets.UTF_8).length > 800) {
-            throw new RuntimeException("Token 长度超过限制");
+            throw new BizException(ErrorCode.TOKEN_INVALID, "Token 长度超过限制");
         }
         cacheSession(jti, session, ttl);
         return token;
@@ -253,11 +255,11 @@ public class TokenService {
             LingSqlProperties.Auth auth = properties.getAuth();
             String secret = auth == null ? null : auth.getJwtSecret();
             if (!StringUtils.hasText(secret)) {
-                throw new RuntimeException("JWT 密钥未配置");
+                throw new BizException(ErrorCode.CONFIG_INVALID, "JWT 密钥未配置");
             }
             byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
             if (keyBytes.length < 32) {
-                throw new RuntimeException("JWT 密钥长度不足 32 字符");
+                throw new BizException(ErrorCode.CONFIG_INVALID, "JWT 密钥长度不足 32 字符");
             }
             signingKey = Keys.hmacShaKeyFor(keyBytes);
             return signingKey;

@@ -2,11 +2,9 @@ package com.lingsql.rbac.security;
 
 import com.lingsql.context.SessionInfo;
 import com.lingsql.context.TenantContext;
-import com.lingsql.config.LingSqlProperties;
 import com.lingsql.rbac.service.TokenService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +31,6 @@ import java.util.List;
 public class TokenAuthenticationFilter extends OncePerRequestFilter {
 
     private final TokenService tokenService;
-    private final LingSqlProperties properties;
     private static final String MDC_TENANT_ID = "tenantId";
     private static final String MDC_USER_ID = "userId";
 
@@ -100,28 +97,6 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
             }
             return auth.trim();
         }
-        return resolveTokenFromCookie(request);
-    }
-
-    private String resolveTokenFromCookie(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null || cookies.length == 0) {
-            return null;
-        }
-        String cookieName = resolveCookieName();
-        for (Cookie cookie : cookies) {
-            if (cookieName.equals(cookie.getName())) {
-                return cookie.getValue();
-            }
-        }
         return null;
-    }
-
-    private String resolveCookieName() {
-        LingSqlProperties.Auth auth = properties.getAuth();
-        if (auth == null || !StringUtils.hasText(auth.getCookieName())) {
-            return "LINGSQL_TOKEN";
-        }
-        return auth.getCookieName().trim();
     }
 }

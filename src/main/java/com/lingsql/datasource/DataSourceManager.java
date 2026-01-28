@@ -1,5 +1,7 @@
 package com.lingsql.datasource;
 
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
@@ -8,8 +10,12 @@ import com.zaxxer.hikari.HikariDataSource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import javax.sql.DataSource;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -33,7 +39,7 @@ public class DataSourceManager {
      * @author 余炘洋
      * @date 2026-01-22
      */
-    private final Map<String, DataSource> dataSourceMap = new ConcurrentHashMap<>();
+    private final Map<String, CachedDataSource> dataSourceMap = new ConcurrentHashMap<>();
 
     /**
      * 获取指定租户的数据源，如果不存在则动态创建。
@@ -44,7 +50,23 @@ public class DataSourceManager {
      * @date 2026-01-22
      */
     public DataSource getDataSource(String tenantId) {
-        return dataSourceMap.computeIfAbsent(tenantId, this::createTenantDataSource);
+        if (!StringUtils.hasText(tenantId)) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户ID不能为空");
+        }
+        long now = System.currentTimeMillis();
+        CachedDataSource cached = dataSourceMap.compute(tenantId, (key, existing) -> {
+            if (existing != null && !isExpired(existing, now)) {
+                existing.touch(now);
+                return existing;
+            }
+            if (existing != null) {
+                closeDataSource(existing);
+            }
+            DataSource created = createTenantDataSource(key);
+            return new CachedDataSource(key, created, now);
+        });
+        enforceCapacity(now);
+        return cached.getDataSource();
     }
 
     /**
@@ -60,10 +82,10 @@ public class DataSourceManager {
 
         // 从配置库中读取连接信息
         TenantDbConfig config = repository.findByTenantId(tenantId)
-                .orElseThrow(() -> new RuntimeException("未找到租户配置: " + tenantId));
+                .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "未找到租户配置"));
 
         if (config.getStatus() != null && config.getStatus() == 0) {
-            throw new RuntimeException("租户配置已禁用: " + tenantId);
+            throw new BizException(ErrorCode.FORBIDDEN, "租户配置已禁用");
         }
 
         // 配置 HikariCP
@@ -92,9 +114,112 @@ public class DataSourceManager {
      * @date 2026-01-22
      */
     public void removeDataSource(String tenantId) {
-        DataSource ds = dataSourceMap.remove(tenantId);
+        CachedDataSource cached = dataSourceMap.remove(tenantId);
+        if (cached != null) {
+            closeDataSource(cached);
+        }
+    }
+
+    @org.springframework.scheduling.annotation.Scheduled(
+            fixedDelayString = "${lingsql.hikari.tenant-cache-clean-interval-ms:300000}")
+    public void evictExpiredSources() {
+        long now = System.currentTimeMillis();
+        long ttlMs = resolveTenantCacheTtlMs();
+        if (ttlMs <= 0) {
+            return;
+        }
+        for (Map.Entry<String, CachedDataSource> entry : dataSourceMap.entrySet()) {
+            CachedDataSource cached = entry.getValue();
+            if (cached != null && isExpired(cached, now)) {
+                if (dataSourceMap.remove(entry.getKey(), cached)) {
+                    closeDataSource(cached);
+                }
+            }
+        }
+    }
+
+    private void enforceCapacity(long now) {
+        int maxPools = resolveMaxTenantPools();
+        if (maxPools <= 0) {
+            return;
+        }
+        if (dataSourceMap.size() <= maxPools) {
+            return;
+        }
+        var entries = new ArrayList<>(dataSourceMap.entrySet());
+        entries.sort(Comparator.comparingLong(entry -> entry.getValue().getLastAccessMs()));
+        for (Map.Entry<String, CachedDataSource> entry : entries) {
+            if (dataSourceMap.size() <= maxPools) {
+                return;
+            }
+            if (dataSourceMap.remove(entry.getKey(), entry.getValue())) {
+                closeDataSource(entry.getValue());
+            }
+        }
+    }
+
+    private boolean isExpired(CachedDataSource cached, long now) {
+        long ttlMs = resolveTenantCacheTtlMs();
+        if (ttlMs <= 0) {
+            return false;
+        }
+        return now - cached.getLastAccessMs() >= ttlMs;
+    }
+
+    private long resolveTenantCacheTtlMs() {
+        LingSqlProperties.Hikari hikari = properties.getHikari();
+        if (hikari == null) {
+            return 0;
+        }
+        Duration ttl = hikari.getTenantCacheTtl();
+        if (ttl == null || ttl.isZero() || ttl.isNegative()) {
+            return 0;
+        }
+        return ttl.toMillis();
+    }
+
+    private int resolveMaxTenantPools() {
+        LingSqlProperties.Hikari hikari = properties.getHikari();
+        if (hikari == null) {
+            return 0;
+        }
+        return hikari.getMaxTenantPools();
+    }
+
+    private void closeDataSource(CachedDataSource cached) {
+        DataSource ds = cached == null ? null : cached.getDataSource();
         if (ds instanceof HikariDataSource hds) {
             hds.close();
+        }
+    }
+
+    /**
+     * 缓存租户数据源与访问时间。
+     *
+     * @author 余炘洋
+     * @date 2026-01-28
+     */
+    private static class CachedDataSource {
+        private final String tenantId;
+        private final DataSource dataSource;
+        private volatile long lastAccessMs;
+
+        private CachedDataSource(String tenantId, DataSource dataSource, long now) {
+            this.tenantId = tenantId;
+            this.dataSource = dataSource;
+            this.lastAccessMs = now;
+        }
+
+        public DataSource getDataSource() {
+            return dataSource;
+        }
+
+        public long getLastAccessMs() {
+            return lastAccessMs;
+        }
+
+        public void touch(long now) {
+            this.lastAccessMs = now;
         }
     }
 }

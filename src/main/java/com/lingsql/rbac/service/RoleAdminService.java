@@ -1,5 +1,7 @@
 package com.lingsql.rbac.service;
 
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRolePermission;
@@ -73,18 +75,18 @@ public class RoleAdminService {
      */
     public RoleView createRole(RoleCreateRequest request, String tenantId, boolean sysAdmin) {
         if (request == null) {
-            throw new RuntimeException("请求不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "请求不能为空");
         }
         String roleCode = normalize(request.getRoleCode());
         if (!StringUtils.hasText(roleCode)) {
-            throw new RuntimeException("角色编码不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "角色编码不能为空");
         }
         String resolvedTenantId = resolveTenantId(request.getTenantId(), tenantId, sysAdmin);
         boolean exists = resolvedTenantId == null
                 ? roleRepository.findByTenantIdIsNullAndRoleCode(roleCode).isPresent()
                 : roleRepository.findByTenantIdAndRoleCode(resolvedTenantId, roleCode).isPresent();
         if (exists) {
-            throw new RuntimeException("角色编码已存在");
+            throw new BizException(ErrorCode.CONFLICT, "角色编码已存在");
         }
         RbacRole role = new RbacRole();
         role.setTenantId(resolvedTenantId);
@@ -114,10 +116,10 @@ public class RoleAdminService {
      */
     public RoleView updateRole(Long roleId, RoleUpdateRequest request, String tenantId, boolean sysAdmin) {
         if (roleId == null) {
-            throw new RuntimeException("角色ID不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "角色ID不能为空");
         }
         RbacRole role = roleRepository.findById(roleId)
-                .orElseThrow(() -> new RuntimeException("角色不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.ROLE_NOT_FOUND, "角色不存在"));
         validateRoleAccess(role, tenantId, sysAdmin);
         Integer originalStatus = role.getStatus();
         if (request != null) {
@@ -156,10 +158,10 @@ public class RoleAdminService {
         }
         List<Long> resolvedPermIds = CollectionUtils.isEmpty(permIds) ? List.of() : permIds;
         if (!sysAdmin && role.getTenantId() == null) {
-            throw new RuntimeException("无权限修改全局角色");
+            throw new BizException(ErrorCode.FORBIDDEN, "无权限修改全局角色");
         }
         if (!sysAdmin && !tenantPermissionService.isWithinTenantPool(tenantId, resolvedPermIds)) {
-            throw new RuntimeException("权限超出租户授权范围");
+            throw new BizException(ErrorCode.FORBIDDEN, "权限超出租户授权范围");
         }
         if (!CollectionUtils.isEmpty(resolvedPermIds)) {
             List<RbacPermission> permissions = permissionRepository.findByIdIn(resolvedPermIds);
@@ -259,10 +261,10 @@ public class RoleAdminService {
             return;
         }
         if (!StringUtils.hasText(tenantId) || !StringUtils.hasText(role.getTenantId())) {
-            throw new RuntimeException("无权限访问");
+            throw new BizException(ErrorCode.FORBIDDEN, "无权限访问");
         }
         if (!tenantId.trim().equals(role.getTenantId().trim())) {
-            throw new RuntimeException("无权限访问");
+            throw new BizException(ErrorCode.FORBIDDEN, "无权限访问");
         }
     }
 
@@ -281,7 +283,7 @@ public class RoleAdminService {
             return StringUtils.hasText(requestTenant) ? requestTenant.trim() : sessionTenant;
         }
         if (!StringUtils.hasText(sessionTenant)) {
-            throw new RuntimeException("租户信息缺失");
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户信息缺失");
         }
         return sessionTenant.trim();
     }

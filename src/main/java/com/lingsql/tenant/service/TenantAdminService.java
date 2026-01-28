@@ -1,5 +1,7 @@
 package com.lingsql.tenant.service;
 
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.executor.SqlTaskTracker;
@@ -93,11 +95,11 @@ public class TenantAdminService {
     @Transactional
     public TenantView createTenant(TenantCreateRequest request) {
         if (request == null) {
-            throw new RuntimeException("租户信息不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户信息不能为空");
         }
         String tenantId = normalizeTenantId(request.getTenantId());
         if (!StringUtils.hasText(request.getTenantName())) {
-            throw new RuntimeException("租户名称不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户名称不能为空");
         }
         tenantId = resolveTenantIdForCreate(tenantId);
         TenantInfo tenant = new TenantInfo();
@@ -133,7 +135,7 @@ public class TenantAdminService {
         if (StringUtils.hasText(tenantId)) {
             if (tenantRepository.existsByTenantIdAndIsDeleted(tenantId, NOT_DELETED)
                     || tenantRepository.existsByTenantIdAndIsDeleted(tenantId, DELETED)) {
-                throw new RuntimeException("租户ID已存在");
+                throw new BizException(ErrorCode.CONFLICT, "租户ID已存在");
             }
             return tenantId;
         }
@@ -142,7 +144,7 @@ public class TenantAdminService {
         while (tenantRepository.existsByTenantIdAndIsDeleted(generated, NOT_DELETED)
                 || tenantRepository.existsByTenantIdAndIsDeleted(generated, DELETED)) {
             if (attempts++ >= 5) {
-                throw new RuntimeException("租户ID生成失败，请重试");
+                throw new BizException(ErrorCode.BUSINESS_ERROR, "租户ID生成失败，请重试");
             }
             generated = generateTenantId();
         }
@@ -175,10 +177,10 @@ public class TenantAdminService {
     @Transactional
     public TenantView updateTenant(Long id, TenantUpdateRequest request) {
         if (request == null) {
-            throw new RuntimeException("租户信息不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户信息不能为空");
         }
         TenantInfo tenant = tenantRepository.findByIdAndIsDeleted(id, NOT_DELETED)
-                .orElseThrow(() -> new RuntimeException("租户不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
         if (StringUtils.hasText(request.getTenantName())) {
             tenant.setTenantName(request.getTenantName().trim());
         }
@@ -215,13 +217,13 @@ public class TenantAdminService {
     @Transactional
     public void deleteTenant(Long id) {
         TenantInfo tenant = tenantRepository.findByIdAndIsDeleted(id, NOT_DELETED)
-                .orElseThrow(() -> new RuntimeException("租户不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
         String tenantId = tenant.getTenantId();
         if (userRepository.countByTenantIdAndStatus(tenantId, ACTIVE_STATUS) > 0) {
-            throw new RuntimeException("租户下存在活跃用户，无法删除");
+            throw new BizException(ErrorCode.CONFLICT, "租户下存在活跃用户，无法删除");
         }
         if (sqlTaskTracker.hasRunning(tenantId)) {
-            throw new RuntimeException("租户存在正在运行的 SQL 任务，无法删除");
+            throw new BizException(ErrorCode.CONFLICT, "租户存在正在运行的 SQL 任务，无法删除");
         }
         tenant.setIsDeleted(DELETED);
         tenant.setStatus(INACTIVE_STATUS);
@@ -366,7 +368,7 @@ public class TenantAdminService {
             return;
         }
         if ("LOGICAL".equalsIgnoreCase(isolationMode) && !StringUtils.hasText(jdbcUrl)) {
-            throw new RuntimeException("逻辑隔离模式需配置 JDBC 地址");
+            throw new BizException(ErrorCode.CONFIG_INVALID, "逻辑隔离模式需配置 JDBC 地址");
         }
         if (tenantDbConfigRepository.findByTenantId(tenantId).isPresent()) {
             return;

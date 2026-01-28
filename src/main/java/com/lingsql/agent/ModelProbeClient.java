@@ -1,6 +1,8 @@
 package com.lingsql.agent;
 
 import com.lingsql.agent.model.AiModelConfig;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.web.client.RestTemplateBuilder;
@@ -190,7 +192,7 @@ public class ModelProbeClient {
      */
     private String resolveChatUrl(String baseUrl) {
         if (baseUrl == null || baseUrl.isBlank()) {
-            throw new RuntimeException("模型基础地址不能为空");
+            throw new BizException(ErrorCode.CONFIG_INVALID, "模型基础地址不能为空");
         }
         String trimmed = baseUrl.trim();
         if (trimmed.endsWith(DEFAULT_CHAT_PATH)) {
@@ -212,7 +214,7 @@ public class ModelProbeClient {
      */
     private String resolveModelsUrl(String baseUrl) {
         if (baseUrl == null || baseUrl.isBlank()) {
-            throw new RuntimeException("模型基础地址不能为空");
+            throw new BizException(ErrorCode.CONFIG_INVALID, "模型基础地址不能为空");
         }
         String trimmed = baseUrl.trim();
         if (trimmed.endsWith(DEFAULT_MODELS_PATH)) {

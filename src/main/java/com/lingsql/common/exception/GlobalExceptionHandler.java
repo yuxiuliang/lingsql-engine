@@ -1,7 +1,10 @@
 package com.lingsql.common.exception;
 
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.common.trace.RequestTraceContext;
+import com.lingsql.executor.SqlExecutionException;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -41,12 +44,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ApiResponse<Void> handleMethodArgumentNotValidException(MethodArgumentNotValidException ex, HttpServletRequest request) {
         if (isLoginRequest(request)) {
-            return attachRequestId(ApiResponse.unauthorized(LOGIN_ERROR_MESSAGE));
+            return attachRequestId(ApiResponse.fail(ErrorCode.UNAUTHORIZED, LOGIN_ERROR_MESSAGE));
         }
         String message = Optional.ofNullable(ex.getBindingResult().getFieldError())
                 .map(DefaultMessageSourceResolvable::getDefaultMessage)
                 .orElse("参数校验失败");
-        return attachRequestId(ApiResponse.invalid(message));
+        return attachRequestId(ApiResponse.fail(ErrorCode.INVALID_PARAM, message));
     }
 
     /**
@@ -60,12 +63,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BindException.class)
     public ApiResponse<Void> handleBindException(BindException ex, HttpServletRequest request) {
         if (isLoginRequest(request)) {
-            return attachRequestId(ApiResponse.unauthorized(LOGIN_ERROR_MESSAGE));
+            return attachRequestId(ApiResponse.fail(ErrorCode.UNAUTHORIZED, LOGIN_ERROR_MESSAGE));
         }
         String message = Optional.ofNullable(ex.getFieldError())
                 .map(DefaultMessageSourceResolvable::getDefaultMessage)
                 .orElse("参数校验失败");
-        return attachRequestId(ApiResponse.invalid(message));
+        return attachRequestId(ApiResponse.fail(ErrorCode.INVALID_PARAM, message));
     }
 
     /**
@@ -79,7 +82,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ConstraintViolationException.class)
     public ApiResponse<Void> handleConstraintViolationException(ConstraintViolationException ex, HttpServletRequest request) {
         if (isLoginRequest(request)) {
-            return attachRequestId(ApiResponse.unauthorized(LOGIN_ERROR_MESSAGE));
+            return attachRequestId(ApiResponse.fail(ErrorCode.UNAUTHORIZED, LOGIN_ERROR_MESSAGE));
         }
         String message = ex.getConstraintViolations()
                 .stream()
@@ -87,7 +90,7 @@ public class GlobalExceptionHandler {
                 .filter(msg -> msg != null && !msg.isBlank())
                 .findFirst()
                 .orElse("参数校验失败");
-        return attachRequestId(ApiResponse.invalid(message));
+        return attachRequestId(ApiResponse.fail(ErrorCode.INVALID_PARAM, message));
     }
 
     /**
@@ -101,12 +104,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ApiResponse<Void> handleAuthenticationException(AuthenticationException ex, HttpServletRequest request) {
         if (isLoginRequest(request)) {
-            return attachRequestId(ApiResponse.unauthorized(LOGIN_ERROR_MESSAGE));
+            return attachRequestId(ApiResponse.fail(ErrorCode.UNAUTHORIZED, LOGIN_ERROR_MESSAGE));
         }
         if (isRefreshRequest(request) && StringUtils.hasText(ex.getMessage())) {
-            return attachRequestId(ApiResponse.unauthorized(ex.getMessage()));
+            return attachRequestId(ApiResponse.fail(ErrorCode.UNAUTHORIZED, ex.getMessage()));
         }
-        return attachRequestId(ApiResponse.unauthorized("未登录或登录已过期"));
+        return attachRequestId(ApiResponse.fail(ErrorCode.UNAUTHORIZED, "未登录或登录已过期"));
     }
 
     /**
@@ -119,7 +122,42 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(AccessDeniedException.class)
     public ApiResponse<Void> handleAccessDeniedException(AccessDeniedException ex) {
-        return attachRequestId(ApiResponse.forbidden("无权限访问"));
+        return attachRequestId(ApiResponse.fail(ErrorCode.FORBIDDEN, "无权限访问"));
+    }
+
+    /**
+     * 处理业务异常。
+     *
+     * @param ex 业务异常
+     * @return 统一响应
+     * @author 余炘洋
+     * @date 2026-01-28
+     */
+    @ExceptionHandler(BizException.class)
+    public ApiResponse<Void> handleBizException(BizException ex) {
+        ErrorCode errorCode = ex.getErrorCode();
+        if (errorCode == null) {
+            errorCode = ErrorCode.BUSINESS_ERROR;
+        }
+        if (errorCode == ErrorCode.SYSTEM_ERROR || errorCode.getCode() >= 500) {
+            log.error("业务异常: {}", ex.getMessage(), ex);
+        } else {
+            log.warn("业务异常: {}", ex.getMessage());
+        }
+        return attachRequestId(ApiResponse.fail(errorCode, ex.getMessage()));
+    }
+
+    /**
+     * 处理 SQL 执行异常。
+     *
+     * @param ex SQL 异常
+     * @return 统一响应
+     * @author 余炘洋
+     * @date 2026-01-28
+     */
+    @ExceptionHandler(SqlExecutionException.class)
+    public ApiResponse<Void> handleSqlExecutionException(SqlExecutionException ex) {
+        return attachRequestId(ApiResponse.fail(ErrorCode.SQL_INVALID, ex.getMessage()));
     }
 
     /**
@@ -133,7 +171,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ApiResponse<Void> handleUnexpectedException(Exception ex) {
         log.error("系统异常: {}", ex.getMessage(), ex);
-        return attachRequestId(ApiResponse.error("系统异常，请稍后再试"));
+        return attachRequestId(ApiResponse.fail(ErrorCode.SYSTEM_ERROR, "系统异常，请稍后再试"));
     }
 
     private <T> ApiResponse<T> attachRequestId(ApiResponse<T> response) {

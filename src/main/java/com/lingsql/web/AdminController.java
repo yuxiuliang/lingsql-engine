@@ -1,5 +1,7 @@
 package com.lingsql.web;
 
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.agent.ModelHealthService;
 import com.lingsql.agent.model.AiModelConfig;
@@ -56,7 +58,7 @@ public class AdminController extends BaseController {
     public ApiResponse<String> syncSchema(@PathVariable String tenantId) {
         String resolvedTenantId = resolveSecureTenantId(tenantId);
         TenantDbConfig config = repository.findByTenantId(resolvedTenantId)
-                .orElseThrow(() -> new RuntimeException("租户不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
 
         DataSource ds = dataSourceManager.getDataSource(resolvedTenantId);
         List<TableInfo> tables = schemaScanner.scanSchema(resolvedTenantId, ds, config.getWhiteListTables());

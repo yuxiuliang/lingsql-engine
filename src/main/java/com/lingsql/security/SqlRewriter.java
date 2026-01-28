@@ -1,5 +1,7 @@
 package com.lingsql.security;
 
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.metadata.service.MetadataExtService;
 import com.lingsql.datasource.model.TenantDbConfig;
@@ -247,7 +249,8 @@ public class SqlRewriter {
                     plainSelect.setWhere(new AndExpression(where, custom));
                 }
             } catch (Exception ex) {
-                log.warn("数据权限条件解析失败: {}", ex.getMessage());
+                log.warn("数据权限条件解析失败: {}", ex.getMessage(), ex);
+                throw new BizException(ErrorCode.DATA_SCOPE_INVALID, "数据权限规则配置错误", ex);
             }
         }
     }

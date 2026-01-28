@@ -3,6 +3,8 @@ package com.lingsql.web;
 import com.lingsql.agent.model.AiModelConfig;
 import com.lingsql.agent.repository.AiModelConfigRepository;
 import com.lingsql.audit.service.AuditOperationExecutor;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
@@ -139,7 +141,7 @@ public class AdminConfigController {
             return ApiResponse.forbidden("无权限访问");
         }
         TenantDbConfig config = tenantDbConfigRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("租户配置不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "租户配置不存在"));
         config.setTenantId(normalizeTenantId(request.getTenantId()));
         config.setJdbcUrl(request.getJdbcUrl());
         config.setUsername(request.getUsername());
@@ -243,7 +245,7 @@ public class AdminConfigController {
             return ApiResponse.forbidden("无权限访问");
         }
         AiModelConfig config = aiModelConfigRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("模型配置不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.MODEL_NOT_FOUND, "模型配置不存在"));
         config.setProviderName(request.getProviderName());
         config.setModelName(request.getModelName());
         config.setModelVersion(request.getModelVersion());
@@ -352,7 +354,7 @@ public class AdminConfigController {
     public ApiResponse<SemanticLexiconItem> updateSemantic(@PathVariable Long id, @RequestBody SemanticLexiconItem request) {
         validateSemanticMapping(request.getMapping());
         SemanticLexiconItem item = semanticLexiconRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("语义字典不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "语义字典不存在"));
         String resolvedTenantId = SecureTenantResolver.resolveSecureTenantId(request.getTenantId());
         if (!isSysAdmin()) {
             if (!StringUtils.hasText(item.getTenantId()) || !item.getTenantId().equalsIgnoreCase(resolvedTenantId)) {
@@ -380,7 +382,7 @@ public class AdminConfigController {
     @PreAuthorize("hasAuthority('ADMIN:SEMANTIC:DELETE')")
     public ApiResponse<String> deleteSemantic(@PathVariable Long id) {
         SemanticLexiconItem item = semanticLexiconRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("语义字典不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "语义字典不存在"));
         if (!isSysAdmin()) {
             String resolvedTenantId = SecureTenantResolver.resolveSecureTenantId(null);
             if (!StringUtils.hasText(item.getTenantId()) || !item.getTenantId().equalsIgnoreCase(resolvedTenantId)) {
@@ -441,7 +443,7 @@ public class AdminConfigController {
     @PreAuthorize("hasAuthority('ADMIN:JOIN:WRITE')")
     public ApiResponse<JoinRule> updateJoinRule(@PathVariable Long id, @RequestBody JoinRule request) {
         JoinRule item = joinRuleRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Join 规则不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "Join 规则不存在"));
         String resolvedTenantId = SecureTenantResolver.resolveSecureTenantId(request.getTenantId());
         if (!isSysAdmin()) {
             if (!StringUtils.hasText(item.getTenantId()) || !item.getTenantId().equalsIgnoreCase(resolvedTenantId)) {
@@ -470,7 +472,7 @@ public class AdminConfigController {
     @PreAuthorize("hasAuthority('ADMIN:JOIN:DELETE')")
     public ApiResponse<String> deleteJoinRule(@PathVariable Long id) {
         JoinRule item = joinRuleRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Join 规则不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "Join 规则不存在"));
         if (!isSysAdmin()) {
             String resolvedTenantId = SecureTenantResolver.resolveSecureTenantId(null);
             if (!StringUtils.hasText(item.getTenantId()) || !item.getTenantId().equalsIgnoreCase(resolvedTenantId)) {
@@ -505,12 +507,12 @@ public class AdminConfigController {
      */
     private void validateSemanticMapping(String mapping) {
         if (mapping == null || mapping.isBlank()) {
-            throw new RuntimeException("映射表达式不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "映射表达式不能为空");
         }
         try {
             CCJSqlParserUtil.parse("SELECT " + mapping + " FROM dual");
         } catch (Exception ex) {
-            throw new RuntimeException("映射表达式语法错误: " + ex.getMessage());
+            throw new BizException(ErrorCode.INVALID_PARAM, "映射表达式语法错误: " + ex.getMessage(), ex);
         }
     }
 }

@@ -110,8 +110,4 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    public static void main(String[] args) {
-        BCryptPasswordEncoder bCryptPasswordEncoder = new BCryptPasswordEncoder();
-        System.out.println(bCryptPasswordEncoder.encode("***REDACTED-SECRET***"));
-    }
 }

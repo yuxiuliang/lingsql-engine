@@ -3,6 +3,8 @@ package com.lingsql.billing;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.billing.entity.BillingPolicyVersion;
 import com.lingsql.billing.entity.TenantBillingOverride;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.billing.model.BillingPolicyVersionRequest;
 import com.lingsql.billing.model.TenantBillingOverrideRequest;
 import com.lingsql.billing.repository.BillingPolicyVersionRepository;
@@ -59,14 +61,14 @@ public class BillingAdminService {
      */
     public BillingPolicyVersion createPolicyVersion(BillingPolicyVersionRequest request) {
         if (request == null) {
-            throw new RuntimeException("计费策略不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "计费策略不能为空");
         }
         String versionCode = normalizeCode(request.getVersionCode());
         if (!StringUtils.hasText(versionCode)) {
-            throw new RuntimeException("计费版本号不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "计费版本号不能为空");
         }
         if (policyRepository.findByVersionCode(versionCode).isPresent()) {
-            throw new RuntimeException("计费版本已存在");
+            throw new BizException(ErrorCode.CONFLICT, "计费版本已存在");
         }
         BillingPolicyVersion entity = new BillingPolicyVersion();
         entity.setVersionCode(versionCode);
@@ -91,16 +93,16 @@ public class BillingAdminService {
      */
     public BillingPolicyVersion updatePolicyVersion(Long id, BillingPolicyVersionRequest request) {
         if (request == null) {
-            throw new RuntimeException("计费策略不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "计费策略不能为空");
         }
         BillingPolicyVersion entity = policyRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("计费版本不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "计费版本不存在"));
         if (StringUtils.hasText(request.getVersionCode())) {
             String versionCode = normalizeCode(request.getVersionCode());
-            if (!versionCode.equals(entity.getVersionCode())
-                    && policyRepository.findByVersionCode(versionCode).isPresent()) {
-                throw new RuntimeException("计费版本已存在");
-            }
+                if (!versionCode.equals(entity.getVersionCode())
+                        && policyRepository.findByVersionCode(versionCode).isPresent()) {
+                    throw new BizException(ErrorCode.CONFLICT, "计费版本已存在");
+                }
             entity.setVersionCode(versionCode);
         }
         applyPolicyRequest(entity, request, false);
@@ -122,7 +124,7 @@ public class BillingAdminService {
      */
     public BillingPolicyVersion activatePolicyVersion(Long id) {
         BillingPolicyVersion entity = policyRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("计费版本不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "计费版本不存在"));
         entity.setStatus(ACTIVE_STATUS);
         if (entity.getEffectiveTime() == null) {
             entity.setEffectiveTime(LocalDateTime.now());
@@ -154,10 +156,10 @@ public class BillingAdminService {
      */
     public TenantBillingOverride getOverride(String tenantId) {
         if (!StringUtils.hasText(tenantId)) {
-            throw new RuntimeException("租户ID不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户ID不能为空");
         }
         return overrideRepository.findByTenantId(tenantId)
-                .orElseThrow(() -> new RuntimeException("租户覆盖不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "租户覆盖不存在"));
     }
 
     /**
@@ -256,7 +258,7 @@ public class BillingAdminService {
             return objectMapper.writeValueAsString(value);
         } catch (Exception ex) {
             log.warn("序列化计费配置失败: {}", ex.getMessage());
-            throw new RuntimeException("计费配置格式错误");
+            throw new BizException(ErrorCode.BILLING_INVALID, "计费配置格式错误", ex);
         }
     }
 }

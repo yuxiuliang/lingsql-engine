@@ -1,6 +1,10 @@
 package com.lingsql.rbac.service;
 
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.result.PageResult;
+import com.lingsql.common.pagination.PageParam;
+import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacUser;
 import com.lingsql.rbac.entity.RbacUserRole;
@@ -44,6 +48,7 @@ public class UserAdminService {
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
+    private final PageParamResolver pageParamResolver;
 
     /**
      * 查询用户列表。
@@ -57,7 +62,8 @@ public class UserAdminService {
      * @date 2026-01-26
      */
     public PageResult<UserView> listUsers(String tenantId, String keyword, int page, int size) {
-        PageRequest pageable = PageRequest.of(Math.max(page - 1, 0), Math.max(size, 1), Sort.by(Sort.Direction.DESC, "id"));
+        PageParam param = pageParamResolver.resolve(page, size);
+        PageRequest pageable = PageRequest.of(Math.max(param.page() - 1, 0), param.size(), Sort.by(Sort.Direction.DESC, "id"));
         Page<RbacUser> result;
         if (StringUtils.hasText(tenantId)) {
             if (StringUtils.hasText(keyword)) {
@@ -69,7 +75,7 @@ public class UserAdminService {
             result = userRepository.findAll(pageable);
         }
         List<UserView> views = result.getContent().stream().map(this::toView).toList();
-        return new PageResult<>(views, result.getTotalElements(), page, size);
+        return new PageResult<>(views, result.getTotalElements(), param.page(), param.size());
     }
 
     /**
@@ -84,15 +90,15 @@ public class UserAdminService {
      */
     public UserView createUser(UserCreateRequest request, String tenantId, boolean sysAdmin) {
         if (request == null) {
-            throw new RuntimeException("请求不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "请求不能为空");
         }
         String username = normalize(request.getUsername());
         if (!StringUtils.hasText(username)) {
-            throw new RuntimeException("用户名不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "用户名不能为空");
         }
         String resolvedTenant = resolveTenantId(request.getTenantId(), tenantId, sysAdmin);
         if (userRepository.findByTenantIdAndUsername(resolvedTenant, username).isPresent()) {
-            throw new RuntimeException("账号已存在");
+            throw new BizException(ErrorCode.CONFLICT, "账号已存在");
         }
         validatePassword(request.getPassword());
         RbacUser user = new RbacUser();
@@ -122,10 +128,10 @@ public class UserAdminService {
      */
     public UserView updateUser(Long userId, UserUpdateRequest request, String tenantId, boolean sysAdmin) {
         if (userId == null) {
-            throw new RuntimeException("用户ID不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "用户ID不能为空");
         }
         RbacUser user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("用户不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.USER_NOT_FOUND, "用户不存在"));
         validateTenantAccess(user.getTenantId(), tenantId, sysAdmin);
         Integer originalStatus = user.getStatus();
         Integer originalExperience = user.getIsExperience();
@@ -172,14 +178,14 @@ public class UserAdminService {
      */
     public void resetPassword(Long userId, UserPasswordResetRequest request, String tenantId, boolean sysAdmin) {
         if (userId == null) {
-            throw new RuntimeException("用户ID不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "用户ID不能为空");
         }
         if (request == null || !StringUtils.hasText(request.getNewPassword())) {
-            throw new RuntimeException("新密码不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "新密码不能为空");
         }
         validatePassword(request.getNewPassword());
         RbacUser user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("用户不存在"));
+                .orElseThrow(() -> new BizException(ErrorCode.USER_NOT_FOUND, "用户不存在"));
         validateTenantAccess(user.getTenantId(), tenantId, sysAdmin);
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         user.setUpdateTime(LocalDateTime.now());
@@ -266,7 +272,7 @@ public class UserAdminService {
      */
     private Long resolveExperienceRoleId() {
         return roleRepository.findByTenantIdIsNullAndRoleCode(EXPERIENCE_ROLE_CODE)
-                .orElseThrow(() -> new RuntimeException("体验账号模板角色不存在"))
+                .orElseThrow(() -> new BizException(ErrorCode.ROLE_NOT_FOUND, "体验账号模板角色不存在"))
                 .getId();
     }
 
@@ -279,16 +285,16 @@ public class UserAdminService {
      */
     private void validatePassword(String password) {
         if (!StringUtils.hasText(password)) {
-            throw new RuntimeException("密码不能为空");
+            throw new BizException(ErrorCode.INVALID_PARAM, "密码不能为空");
         }
         String trimmed = password.trim();
         if (trimmed.length() < 8 || trimmed.length() > 32) {
-            throw new RuntimeException("密码长度需在 8-32 位");
+            throw new BizException(ErrorCode.INVALID_PARAM, "密码长度需在 8-32 位");
         }
         boolean hasLetter = trimmed.chars().anyMatch(Character::isLetter);
         boolean hasDigit = trimmed.chars().anyMatch(Character::isDigit);
         if (!hasLetter || !hasDigit) {
-            throw new RuntimeException("密码必须包含字母和数字");
+            throw new BizException(ErrorCode.INVALID_PARAM, "密码必须包含字母和数字");
         }
     }
 
@@ -307,7 +313,7 @@ public class UserAdminService {
             return StringUtils.hasText(requestTenant) ? requestTenant.trim() : sessionTenant;
         }
         if (!StringUtils.hasText(sessionTenant)) {
-            throw new RuntimeException("租户信息缺失");
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户信息缺失");
         }
         return sessionTenant.trim();
     }
@@ -326,10 +332,10 @@ public class UserAdminService {
             return;
         }
         if (!StringUtils.hasText(sessionTenant) || !StringUtils.hasText(targetTenant)) {
-            throw new RuntimeException("租户信息缺失");
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户信息缺失");
         }
         if (!sessionTenant.trim().equals(targetTenant.trim())) {
-            throw new RuntimeException("无权限访问");
+            throw new BizException(ErrorCode.FORBIDDEN, "无权限访问");
         }
     }
 

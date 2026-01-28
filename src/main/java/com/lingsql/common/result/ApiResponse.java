@@ -1,8 +1,9 @@
 package com.lingsql.common.result;
 
+import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.common.trace.RequestTraceContext;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import com.lingsql.common.trace.RequestTraceContext;
 import org.springframework.util.StringUtils;
 
 @Data
@@ -26,6 +27,20 @@ public class ApiResponse<T> {
 
     public static <T> ApiResponse<T> success(T data) {
         return new ApiResponse<>(200, "success", data);
+    }
+
+    public static <T> ApiResponse<T> fail(ErrorCode errorCode) {
+        if (errorCode == null) {
+            return new ApiResponse<>(500, "系统异常，请稍后再试", null);
+        }
+        return new ApiResponse<>(errorCode.getCode(), errorCode.getMessage(), null);
+    }
+
+    public static <T> ApiResponse<T> fail(ErrorCode errorCode, String message) {
+        if (errorCode == null) {
+            return new ApiResponse<>(500, resolveMessage(message, "系统异常，请稍后再试"), null);
+        }
+        return new ApiResponse<>(errorCode.getCode(), resolveMessage(message, errorCode.getMessage()), null);
     }
 
     /**
@@ -78,6 +93,13 @@ public class ApiResponse<T> {
      */
     public static <T> ApiResponse<T> tooManyRequests(String msg) {
         return new ApiResponse<>(429, msg, null);
+    }
+
+    private static String resolveMessage(String message, String fallback) {
+        if (StringUtils.hasText(message)) {
+            return message;
+        }
+        return fallback;
     }
 
     private static String resolveRequestId() {

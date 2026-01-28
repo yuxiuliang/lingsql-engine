@@ -3,6 +3,8 @@ package com.lingsql.rbac.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.rbac.entity.RbacUserExperiencePolicy;
 import com.lingsql.rbac.model.DataScopeRule;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.rbac.model.ExperiencePolicyRequest;
 import com.lingsql.rbac.model.ExperiencePolicyView;
 import com.lingsql.rbac.repository.RbacUserExperiencePolicyRepository;
@@ -126,7 +128,7 @@ public class ExperiencePolicyService {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (Exception ex) {
-            throw new RuntimeException("体验账号策略序列化失败");
+            throw new BizException(ErrorCode.SYSTEM_ERROR, "体验账号策略序列化失败", ex);
         }
     }
 }

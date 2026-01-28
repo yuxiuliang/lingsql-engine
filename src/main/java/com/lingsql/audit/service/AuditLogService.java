@@ -6,6 +6,9 @@ import com.lingsql.audit.model.AuditLogQuery;
 import com.lingsql.audit.model.AuditLogView;
 import com.lingsql.audit.repository.AuditLogRepository;
 import com.lingsql.common.result.PageResult;
+import com.lingsql.common.pagination.PageParam;
+import com.lingsql.common.pagination.PageParamResolver;
+import com.lingsql.config.LingSqlProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -37,6 +40,11 @@ public class AuditLogService {
 
     private final AuditLogRepository repository;
     private final ObjectMapper objectMapper;
+    private final LingSqlProperties properties;
+    private final PageParamResolver pageParamResolver;
+
+    private final java.util.Queue<RetryItem> retryQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private final java.util.concurrent.atomic.AtomicInteger retrySize = new java.util.concurrent.atomic.AtomicInteger();
 
     /**
      * 写入审计日志。
@@ -50,23 +58,9 @@ public class AuditLogService {
             return;
         }
         try {
-            AuditLog logEntity = new AuditLog();
-            logEntity.setTenantId(command.getTenantId());
-            logEntity.setUserId(command.getUserId());
-            logEntity.setRealUserId(resolveRealUserId(command));
-            logEntity.setUsername(command.getUsername());
-            logEntity.setAction(command.getAction());
-            logEntity.setResource(command.getResource());
-            logEntity.setDetail(sanitizeDetail(command.getDetail()));
-            logEntity.setSummary(resolveSummary(command));
-            logEntity.setSuccess(command.isSuccess() ? 1 : 0);
-            logEntity.setErrorMessage(command.getErrorMessage());
-            logEntity.setRequestIp(command.getRequestIp());
-            logEntity.setUserAgent(command.getUserAgent());
-            logEntity.setCreateTime(LocalDateTime.now());
-            repository.save(logEntity);
+            persist(command);
         } catch (Exception ex) {
-            log.warn("写入审计日志失败: {}", ex.getMessage());
+            enqueueRetry(command, ex);
         }
     }
 
@@ -82,6 +76,7 @@ public class AuditLogService {
      */
     public PageResult<AuditLogView> query(AuditLogQuery query, int page, int size) {
         AuditLogQuery safeQuery = query == null ? new AuditLogQuery() : query;
+        PageParam param = pageParamResolver.resolve(page, size);
         Specification<AuditLog> specification = (root, criteriaQuery, criteriaBuilder) -> {
             var predicate = criteriaBuilder.conjunction();
             if (StringUtils.hasText(safeQuery.getTenantId())) {
@@ -101,14 +96,94 @@ public class AuditLogService {
             }
             return predicate;
         };
-        PageRequest pageable = PageRequest.of(Math.max(page - 1, 0), Math.max(size, 1), Sort.by(Sort.Direction.DESC, "createTime"));
+        PageRequest pageable = PageRequest.of(Math.max(param.page() - 1, 0), param.size(), Sort.by(Sort.Direction.DESC, "createTime"));
         Page<AuditLog> result = repository.findAll(specification, pageable);
         return new PageResult<>(
                 result.getContent().stream().map(this::toView).toList(),
                 result.getTotalElements(),
-                page,
-                size
+                param.page(),
+                param.size()
         );
+    }
+
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelayString = "${lingsql.audit.retry-delay-ms:60000}")
+    public void retryFailedLogs() {
+        LingSqlProperties.Audit audit = properties.getAudit();
+        if (audit == null || !audit.isRetryEnabled()) {
+            return;
+        }
+        int batchSize = Math.max(1, audit.getRetryBatchSize());
+        for (int i = 0; i < batchSize; i++) {
+            RetryItem item = retryQueue.poll();
+            if (item == null) {
+                return;
+            }
+            retrySize.decrementAndGet();
+            try {
+                persist(item.command());
+            } catch (Exception ex) {
+                handleRetryFailure(item, ex);
+            }
+        }
+    }
+
+    private void persist(AuditLogCommand command) {
+        AuditLog logEntity = new AuditLog();
+        logEntity.setTenantId(command.getTenantId());
+        logEntity.setUserId(command.getUserId());
+        logEntity.setRealUserId(resolveRealUserId(command));
+        logEntity.setUsername(command.getUsername());
+        logEntity.setAction(command.getAction());
+        logEntity.setResource(command.getResource());
+        logEntity.setDetail(sanitizeDetail(command.getDetail()));
+        logEntity.setSummary(resolveSummary(command));
+        logEntity.setSuccess(command.isSuccess() ? 1 : 0);
+        logEntity.setErrorMessage(command.getErrorMessage());
+        logEntity.setRequestIp(command.getRequestIp());
+        logEntity.setUserAgent(command.getUserAgent());
+        logEntity.setCreateTime(LocalDateTime.now());
+        repository.save(logEntity);
+    }
+
+    private void enqueueRetry(AuditLogCommand command, Exception ex) {
+        LingSqlProperties.Audit audit = properties.getAudit();
+        if (audit == null || !audit.isRetryEnabled()) {
+            log.error("写入审计日志失败且未启用重试: {}", ex.getMessage(), ex);
+            return;
+        }
+        int maxQueue = audit.getRetryMaxQueue();
+        if (maxQueue <= 0) {
+            log.error("写入审计日志失败且重试队列容量为 0: {}", ex.getMessage(), ex);
+            return;
+        }
+        int current = retrySize.get();
+        if (current >= maxQueue) {
+            log.error("审计重试队列已满，丢弃日志: size={}, reason={}", current, ex.getMessage());
+            return;
+        }
+        retryQueue.offer(new RetryItem(command, 1));
+        retrySize.incrementAndGet();
+        log.warn("写入审计日志失败，已进入重试队列: size={}, reason={}", retrySize.get(), ex.getMessage());
+    }
+
+    private void handleRetryFailure(RetryItem item, Exception ex) {
+        LingSqlProperties.Audit audit = properties.getAudit();
+        if (audit == null) {
+            log.error("审计重试失败: {}", ex.getMessage(), ex);
+            return;
+        }
+        int maxAttempts = Math.max(1, audit.getRetryMaxAttempts());
+        int nextAttempt = item.attempt() + 1;
+        if (nextAttempt > maxAttempts) {
+            log.error("审计日志重试超过最大次数，已丢弃: attempts={}, reason={}", item.attempt(), ex.getMessage());
+            return;
+        }
+        retryQueue.offer(new RetryItem(item.command(), nextAttempt));
+        retrySize.incrementAndGet();
+        log.warn("审计日志重试失败，已重新入队: attempts={}, reason={}", nextAttempt, ex.getMessage());
+    }
+
+    private record RetryItem(AuditLogCommand command, int attempt) {
     }
 
     /**
