@@ -45,6 +45,22 @@ public class LingSqlProperties {
         private List<String> promptInjectionKeywords = new ArrayList<>();
 
         /**
+         * 是否启用敏感字段加密。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private boolean dataEncryptionEnabled = true;
+
+        /**
+         * 敏感字段加密密钥。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private String dataEncryptionKey;
+
+        /**
          * 是否启用安全响应头。
          *
          * @author 余炘洋
@@ -131,6 +147,38 @@ public class LingSqlProperties {
              * @date 2026-01-27
              */
             private Duration loginBlock = Duration.ofMinutes(10);
+
+            /**
+             * 是否启用敏感接口限流。
+             *
+             * @author 余炘洋
+             * @date 2026-01-28
+             */
+            private boolean sensitiveEnabled = true;
+
+            /**
+             * 敏感接口单窗口最大请求数。
+             *
+             * @author 余炘洋
+             * @date 2026-01-28
+             */
+            private int sensitiveMaxRequests = 60;
+
+            /**
+             * 敏感接口限流窗口。
+             *
+             * @author 余炘洋
+             * @date 2026-01-28
+             */
+            private Duration sensitiveWindow = Duration.ofMinutes(1);
+
+            /**
+             * 敏感接口触发限流后的封禁时间。
+             *
+             * @author 余炘洋
+             * @date 2026-01-28
+             */
+            private Duration sensitiveBlock = Duration.ofMinutes(5);
         }
 
         /**

@@ -27,6 +27,17 @@ public interface RbacUserRoleRepository extends JpaRepository<RbacUserRole, Long
     List<Long> findRoleIdsByUserId(@Param("userId") Long userId);
 
     /**
+     * 查询角色绑定的用户ID列表。
+     *
+     * @param roleId 角色ID
+     * @return 用户ID列表
+     * @author 余炘洋
+     * @date 2026-01-28
+     */
+    @Query("select ur.userId from RbacUserRole ur where ur.roleId = :roleId")
+    List<Long> findUserIdsByRoleId(@Param("roleId") Long roleId);
+
+    /**
      * 删除用户角色关系。
      *
      * @param userId 用户ID

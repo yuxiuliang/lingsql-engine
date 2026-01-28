@@ -9,6 +9,7 @@ import com.lingsql.rbac.model.RoleView;
 import com.lingsql.rbac.repository.RbacPermissionRepository;
 import com.lingsql.rbac.repository.RbacRolePermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
+import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -36,6 +37,9 @@ public class RoleAdminService {
     private final RbacRolePermissionRepository rolePermissionRepository;
     private final RbacPermissionRepository permissionRepository;
     private final TenantPermissionService tenantPermissionService;
+    private final RbacUserRoleRepository userRoleRepository;
+    private final TokenService tokenService;
+    private final RefreshTokenService refreshTokenService;
 
     /**
      * 查询角色列表。
@@ -115,6 +119,7 @@ public class RoleAdminService {
         RbacRole role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new RuntimeException("角色不存在"));
         validateRoleAccess(role, tenantId, sysAdmin);
+        Integer originalStatus = role.getStatus();
         if (request != null) {
             if (StringUtils.hasText(request.getRoleName())) {
                 role.setRoleName(normalize(request.getRoleName()));
@@ -127,6 +132,9 @@ public class RoleAdminService {
         roleRepository.save(role);
         if (request != null && request.getPermIds() != null) {
             applyRolePermissions(role, request.getPermIds(), sysAdmin, role.getTenantId());
+        }
+        if (request != null && shouldInvalidateRoleSessions(request, originalStatus)) {
+            revokeRoleSessions(role.getId());
         }
         List<Long> permIds = rolePermissionRepository.findPermIdsByRoleIds(List.of(role.getId()));
         return toView(role, permIds);
@@ -196,6 +204,45 @@ public class RoleAdminService {
             mapping.computeIfAbsent(relation.getRoleId(), key -> new ArrayList<>()).add(relation.getPermId());
         }
         return mapping;
+    }
+
+    /**
+     * 判断是否需要失效角色绑定用户的会话。
+     *
+     * @param request        更新请求
+     * @param originalStatus 原状态
+     * @return 是否需要失效
+     * @author 余炘洋
+     * @date 2026-01-28
+     */
+    private boolean shouldInvalidateRoleSessions(RoleUpdateRequest request, Integer originalStatus) {
+        if (request == null) {
+            return false;
+        }
+        boolean permChanged = request.getPermIds() != null;
+        boolean statusChanged = request.getStatus() != null && !request.getStatus().equals(originalStatus);
+        return permChanged || statusChanged;
+    }
+
+    /**
+     * 失效角色绑定用户的会话。
+     *
+     * @param roleId 角色ID
+     * @author 余炘洋
+     * @date 2026-01-28
+     */
+    private void revokeRoleSessions(Long roleId) {
+        if (roleId == null) {
+            return;
+        }
+        List<Long> userIds = userRoleRepository.findUserIdsByRoleId(roleId);
+        if (CollectionUtils.isEmpty(userIds)) {
+            return;
+        }
+        for (Long userId : userIds) {
+            tokenService.revokeUserTokens(userId);
+            refreshTokenService.revokeByUserId(userId);
+        }
     }
 
     /**

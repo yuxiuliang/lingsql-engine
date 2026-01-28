@@ -2,11 +2,13 @@ package com.lingsql.datasource.model;
 
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import com.lingsql.security.SensitiveStringAttributeConverter;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -65,6 +67,7 @@ public class TenantDbConfig {
      * @date 2026-01-22
      */
     @Column(name = "password")
+    @Convert(converter = SensitiveStringAttributeConverter.class)
     private String password;
 
     /**

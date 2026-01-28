@@ -3,6 +3,7 @@ package com.lingsql.config;
 import com.lingsql.context.TenantInterceptor;
 import com.lingsql.billing.PaymentWallInterceptor;
 import com.lingsql.rbac.security.LoginRateLimitInterceptor;
+import com.lingsql.rbac.security.SensitiveRateLimitInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -23,6 +24,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
     private final PaymentWallInterceptor paymentWallInterceptor;
     private final LingSqlProperties properties;
     private final LoginRateLimitInterceptor loginRateLimitInterceptor;
+    private final SensitiveRateLimitInterceptor sensitiveRateLimitInterceptor;
 
     /**
      * 构造函数注入。
@@ -35,12 +37,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
             TenantInterceptor tenantInterceptor,
             PaymentWallInterceptor paymentWallInterceptor,
             LingSqlProperties properties,
-            LoginRateLimitInterceptor loginRateLimitInterceptor
+            LoginRateLimitInterceptor loginRateLimitInterceptor,
+            SensitiveRateLimitInterceptor sensitiveRateLimitInterceptor
     ) {
         this.tenantInterceptor = tenantInterceptor;
         this.paymentWallInterceptor = paymentWallInterceptor;
         this.properties = properties;
         this.loginRateLimitInterceptor = loginRateLimitInterceptor;
+        this.sensitiveRateLimitInterceptor = sensitiveRateLimitInterceptor;
     }
 
     /**
@@ -55,6 +59,12 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(tenantInterceptor).addPathPatterns("/api/**");
         registry.addInterceptor(paymentWallInterceptor).addPathPatterns("/api/v1/chat/ask");
         registry.addInterceptor(loginRateLimitInterceptor).addPathPatterns("/api/v1/auth/login");
+        registry.addInterceptor(sensitiveRateLimitInterceptor)
+                .addPathPatterns(
+                        "/api/v1/auth/refresh",
+                        "/api/v1/auth/logout",
+                        "/api/v1/admin/users/*/password"
+                );
     }
 
     /**

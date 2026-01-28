@@ -32,12 +32,19 @@ server:
 lingsql:
   security:
     default-limit: 100
+    data-encryption-enabled: ${LINGSQL_DATA_ENCRYPTION_ENABLED:true}
+    data-encryption-key: ${LINGSQL_DATA_ENCRYPTION_KEY:}
     prompt-injection-keywords:
       - "忽略规则"
       - "绕过"
       - "system prompt"
       - "prompt injection"
       - "无视限制"
+    rate-limit:
+      sensitive-enabled: ${LINGSQL_SECURITY_RATE_SENSITIVE_ENABLED:true}
+      sensitive-max-requests: ${LINGSQL_SECURITY_RATE_SENSITIVE_MAX_REQUESTS:60}
+      sensitive-window: ${LINGSQL_SECURITY_RATE_SENSITIVE_WINDOW:1m}
+      sensitive-block: ${LINGSQL_SECURITY_RATE_SENSITIVE_BLOCK:5m}
   cache:
     schema-ttl: 24h
     comment-ttl: 168h
