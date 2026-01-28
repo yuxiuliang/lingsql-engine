@@ -44,6 +44,7 @@ import java.util.List;
 public class AuthController {
 
     private static final String REFRESH_TOKEN_HEADER = "X-Refresh-Token";
+    private static final String LOGIN_ERROR_MESSAGE = "账号、密码或租户信息错误";
 
     private final AuthService authService;
     private final MenuService menuService;
@@ -71,17 +72,7 @@ public class AuthController {
             writeRefreshCookie(httpRequest, httpResponse, response.getRefreshToken(), response.getRefreshExpiresIn());
             return ApiResponse.success(response);
         } catch (Exception ex) {
-            String message = ex.getMessage();
-            if (StringUtils.hasText(message) && message.contains("锁定")) {
-                return ApiResponse.unauthorized(message);
-            }
-            if (StringUtils.hasText(message) && message.contains("停用")) {
-                return ApiResponse.unauthorized(message);
-            }
-            if (StringUtils.hasText(message) && message.contains("多个租户")) {
-                return ApiResponse.unauthorized(message);
-            }
-            return ApiResponse.unauthorized("账号或密码错误");
+            return ApiResponse.unauthorized(LOGIN_ERROR_MESSAGE);
         }
     }
 

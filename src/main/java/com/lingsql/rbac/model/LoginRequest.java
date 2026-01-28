@@ -13,11 +13,12 @@ import lombok.Data;
 public class LoginRequest {
 
     /**
-     * 租户ID（可选，账号唯一时自动识别）。
+     * 租户ID（必填）。
      *
      * @author 余炘洋
      * @date 2026-01-26
      */
+    @NotBlank(message = "租户ID不能为空")
     private String tenantId;
 
     /**

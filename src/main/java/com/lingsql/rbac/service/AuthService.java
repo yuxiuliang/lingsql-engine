@@ -50,6 +50,8 @@ public class AuthService {
     private static final int MAX_LOGIN_FAILURES = 5;
     private static final Duration LOCK_DURATION = Duration.ofMinutes(30);
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
+    private static final String LOGIN_ERROR_MESSAGE = "账号、密码或租户信息错误";
+    private static final String DUMMY_PASSWORD_HASH = "$2a$10$7EqJtq98hPqEX7fNZaFWoO5.5dQ9K/9e2XcGQnQ8l7uP3BvI6JuaS";
 
     private final RbacUserRepository userRepository;
     private final RbacUserRoleRepository userRoleRepository;
@@ -77,15 +79,12 @@ public class AuthService {
     public LoginResponse login(LoginRequest request) {
         String tenantId = request.getTenantId() == null ? null : request.getTenantId().trim();
         String username = request.getUsername() == null ? null : request.getUsername().trim();
-        RbacUser user = resolveLoginUser(tenantId, username);
-        if (user.getStatus() != null && user.getStatus() == 0) {
-            throw new RuntimeException("账号已停用");
-        }
+        String rawPassword = request.getPassword() == null ? "" : request.getPassword();
+        RbacUser user = resolveLoginUser(tenantId, username, rawPassword);
         LocalDateTime now = LocalDateTime.now();
         if (user.getLockUntil() != null && user.getLockUntil().isAfter(now)) {
-            long minutes = Duration.between(now, user.getLockUntil()).toMinutes();
-            long remain = Math.max(1, minutes);
-            throw new RuntimeException("账号已锁定，请在 " + remain + " 分钟后重试");
+            passwordEncoder.matches(rawPassword, user.getPassword());
+            throw loginFailure();
         }
         if (user.getLockUntil() != null && !user.getLockUntil().isAfter(now)) {
             user.setLockUntil(null);
@@ -99,7 +98,10 @@ public class AuthService {
                 user.setLockUntil(now.plus(LOCK_DURATION));
             }
             userRepository.save(user);
-            throw new RuntimeException("账号或密码错误");
+            throw loginFailure();
+        }
+        if (user.getStatus() != null && user.getStatus() == 0) {
+            throw loginFailure();
         }
         RbacUserSession session = buildSessionForUser(user);
         String token = tokenService.createToken(session);
@@ -162,19 +164,30 @@ public class AuthService {
      * @author 余炘洋
      * @date 2026-01-26
      */
-    private RbacUser resolveLoginUser(String tenantId, String username) {
+    private RbacUser resolveLoginUser(String tenantId, String username, String rawPassword) {
         if (StringUtils.hasText(tenantId)) {
-            return userRepository.findByTenantIdAndUsername(tenantId, username)
-                    .orElseThrow(() -> new RuntimeException("账号或密码错误"));
+            Optional<RbacUser> found = userRepository.findByTenantIdAndUsername(tenantId, username);
+            if (found.isEmpty()) {
+                absorbTiming(rawPassword);
+                throw loginFailure();
+            }
+            return found.get();
         }
         List<RbacUser> candidates = userRepository.findTop2ByUsername(username);
-        if (CollectionUtils.isEmpty(candidates)) {
-            throw new RuntimeException("账号或密码错误");
-        }
-        if (candidates.size() > 1) {
-            throw new RuntimeException("账号存在于多个租户，请联系管理员");
+        if (CollectionUtils.isEmpty(candidates) || candidates.size() > 1) {
+            absorbTiming(rawPassword);
+            throw loginFailure();
         }
         return candidates.get(0);
+    }
+
+    private void absorbTiming(String rawPassword) {
+        String password = rawPassword == null ? "" : rawPassword;
+        passwordEncoder.matches(password, DUMMY_PASSWORD_HASH);
+    }
+
+    private RuntimeException loginFailure() {
+        return new RuntimeException(LOGIN_ERROR_MESSAGE);
     }
 
     /**

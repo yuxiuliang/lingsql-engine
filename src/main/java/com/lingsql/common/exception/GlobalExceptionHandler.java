@@ -3,6 +3,7 @@ package com.lingsql.common.exception;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.common.trace.RequestTraceContext;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
@@ -22,6 +23,9 @@ import java.util.Optional;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final String LOGIN_PATH = "/api/v1/auth/login";
+    private static final String LOGIN_ERROR_MESSAGE = "账号、密码或租户信息错误";
+
     /**
      * 处理请求体参数校验异常。
      *
@@ -31,7 +35,10 @@ public class GlobalExceptionHandler {
      * @date 2026-01-23
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ApiResponse<Void> handleMethodArgumentNotValidException(MethodArgumentNotValidException ex) {
+    public ApiResponse<Void> handleMethodArgumentNotValidException(MethodArgumentNotValidException ex, HttpServletRequest request) {
+        if (isLoginRequest(request)) {
+            return attachRequestId(ApiResponse.unauthorized(LOGIN_ERROR_MESSAGE));
+        }
         String message = Optional.ofNullable(ex.getBindingResult().getFieldError())
                 .map(DefaultMessageSourceResolvable::getDefaultMessage)
                 .orElse("参数校验失败");
@@ -47,7 +54,10 @@ public class GlobalExceptionHandler {
      * @date 2026-01-23
      */
     @ExceptionHandler(BindException.class)
-    public ApiResponse<Void> handleBindException(BindException ex) {
+    public ApiResponse<Void> handleBindException(BindException ex, HttpServletRequest request) {
+        if (isLoginRequest(request)) {
+            return attachRequestId(ApiResponse.unauthorized(LOGIN_ERROR_MESSAGE));
+        }
         String message = Optional.ofNullable(ex.getFieldError())
                 .map(DefaultMessageSourceResolvable::getDefaultMessage)
                 .orElse("参数校验失败");
@@ -63,7 +73,10 @@ public class GlobalExceptionHandler {
      * @date 2026-01-23
      */
     @ExceptionHandler(ConstraintViolationException.class)
-    public ApiResponse<Void> handleConstraintViolationException(ConstraintViolationException ex) {
+    public ApiResponse<Void> handleConstraintViolationException(ConstraintViolationException ex, HttpServletRequest request) {
+        if (isLoginRequest(request)) {
+            return attachRequestId(ApiResponse.unauthorized(LOGIN_ERROR_MESSAGE));
+        }
         String message = ex.getConstraintViolations()
                 .stream()
                 .map(violation -> violation.getMessage())
@@ -105,5 +118,13 @@ public class GlobalExceptionHandler {
         }
         response.setRequestId(RequestTraceContext.resolveRequestId());
         return response;
+    }
+
+    private boolean isLoginRequest(HttpServletRequest request) {
+        if (request == null) {
+            return false;
+        }
+        String uri = request.getRequestURI();
+        return uri != null && uri.startsWith(LOGIN_PATH);
     }
 }
