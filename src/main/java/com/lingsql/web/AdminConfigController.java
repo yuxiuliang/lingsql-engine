@@ -1,10 +1,8 @@
 package com.lingsql.web;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.agent.model.AiModelConfig;
 import com.lingsql.agent.repository.AiModelConfigRepository;
-import com.lingsql.audit.model.AuditLogCommand;
-import com.lingsql.audit.service.AuditLogService;
+import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
@@ -51,8 +49,7 @@ public class AdminConfigController {
     private final AiModelConfigRepository aiModelConfigRepository;
     private final SemanticLexiconRepository semanticLexiconRepository;
     private final JoinRuleRepository joinRuleRepository;
-    private final AuditLogService auditLogService;
-    private final ObjectMapper objectMapper;
+    private final AuditOperationExecutor auditOperationExecutor;
 
     /**
      * 查询租户配置列表。
@@ -87,14 +84,13 @@ public class AdminConfigController {
         }
         request.setId(null);
         request.setTenantId(normalizeTenantId(request.getTenantId()));
-        try {
-            TenantDbConfig saved = tenantDbConfigRepository.save(request);
-            recordAudit("TENANT_CREATE", "TENANT", request, true, null, http);
-            return ApiResponse.success(saved);
-        } catch (Exception ex) {
-            recordAudit("TENANT_CREATE", "TENANT", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "TENANT_CREATE",
+                "TENANT",
+                request,
+                http,
+                () -> tenantDbConfigRepository.save(request)
+        );
     }
 
     /**
@@ -155,14 +151,13 @@ public class AdminConfigController {
         config.setWhiteListColumns(request.getWhiteListColumns());
         config.setSensitiveColumns(request.getSensitiveColumns());
         config.setStatus(request.getStatus());
-        try {
-            TenantDbConfig saved = tenantDbConfigRepository.save(config);
-            recordAudit("TENANT_UPDATE", "TENANT", request, true, null, http);
-            return ApiResponse.success(saved);
-        } catch (Exception ex) {
-            recordAudit("TENANT_UPDATE", "TENANT", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "TENANT_UPDATE",
+                "TENANT",
+                request,
+                http,
+                () -> tenantDbConfigRepository.save(config)
+        );
     }
 
     /**
@@ -180,14 +175,14 @@ public class AdminConfigController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        try {
-            tenantDbConfigRepository.deleteById(id);
-            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, true, null, http);
-            return ApiResponse.success("租户配置已删除");
-        } catch (Exception ex) {
-            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.executeVoid(
+                "TENANT_DELETE",
+                "TENANT",
+                "id=" + id,
+                http,
+                () -> tenantDbConfigRepository.deleteById(id),
+                "租户配置已删除"
+        );
     }
 
     /**
@@ -222,14 +217,13 @@ public class AdminConfigController {
             return ApiResponse.forbidden("无权限访问");
         }
         request.setId(null);
-        try {
-            AiModelConfig saved = aiModelConfigRepository.save(request);
-            recordAudit("MODEL_CREATE", "MODEL", request, true, null, http);
-            return ApiResponse.success(saved);
-        } catch (Exception ex) {
-            recordAudit("MODEL_CREATE", "MODEL", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "MODEL_CREATE",
+                "MODEL",
+                request,
+                http,
+                () -> aiModelConfigRepository.save(request)
+        );
     }
 
     /**
@@ -260,14 +254,13 @@ public class AdminConfigController {
         config.setPriority(request.getPriority());
         config.setAutoRecover(request.getAutoRecover());
         config.setCooldownSeconds(request.getCooldownSeconds());
-        try {
-            AiModelConfig saved = aiModelConfigRepository.save(config);
-            recordAudit("MODEL_UPDATE", "MODEL", request, true, null, http);
-            return ApiResponse.success(saved);
-        } catch (Exception ex) {
-            recordAudit("MODEL_UPDATE", "MODEL", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "MODEL_UPDATE",
+                "MODEL",
+                request,
+                http,
+                () -> aiModelConfigRepository.save(config)
+        );
     }
 
     /**
@@ -285,95 +278,14 @@ public class AdminConfigController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        try {
-            aiModelConfigRepository.deleteById(id);
-            recordAudit("MODEL_DELETE", "MODEL", "id=" + id, true, null, http);
-            return ApiResponse.success("模型配置已删除");
-        } catch (Exception ex) {
-            recordAudit("MODEL_DELETE", "MODEL", "id=" + id, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
-    }
-
-    /**
-     * 记录审计日志。
-     *
-     * @param action   动作
-     * @param resource 资源
-     * @param request  请求体
-     * @param success  是否成功
-     * @param error    错误信息
-     * @param http     请求
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private void recordAudit(String action, String resource, Object request, boolean success, String error, HttpServletRequest http) {
-        RbacUserSession session = RbacSecurityUtils.currentSession();
-        if (session == null) {
-            return;
-        }
-        AuditLogCommand command = new AuditLogCommand();
-        command.setTenantId(session.getTenantId());
-        command.setUserId(session.getUserId());
-        command.setRealUserId(session.getUserId());
-        command.setUsername(session.getUsername());
-        command.setAction(action);
-        command.setResource(resource);
-        command.setDetail(serialize(request));
-        command.setSuccess(success);
-        command.setErrorMessage(error);
-        command.setRequestIp(resolveIp(http));
-        command.setUserAgent(resolveUserAgent(http));
-        auditLogService.record(command);
-    }
-
-    /**
-     * 序列化对象。
-     *
-     * @param value 对象
-     * @return JSON 字符串
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private String serialize(Object value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (Exception ex) {
-            return null;
-        }
-    }
-
-    /**
-     * 解析 IP。
-     *
-     * @param http 请求
-     * @return IP
-     * @author 余炘洋
-     * @date 2026-01-27
-     */
-    private String resolveIp(HttpServletRequest http) {
-        if (http == null) {
-            return null;
-        }
-        return http.getRemoteAddr();
-    }
-
-    /**
-     * 解析 User-Agent。
-     *
-     * @param http 请求
-     * @return User-Agent
-     * @author 余炘洋
-     * @date 2026-01-27
-     */
-    private String resolveUserAgent(HttpServletRequest http) {
-        if (http == null) {
-            return null;
-        }
-        return http.getHeader("User-Agent");
+        return auditOperationExecutor.executeVoid(
+                "MODEL_DELETE",
+                "MODEL",
+                "id=" + id,
+                http,
+                () -> aiModelConfigRepository.deleteById(id),
+                "模型配置已删除"
+        );
     }
 
     /**

@@ -1,4 +1,4 @@
-package com.lingsql.web.dto;
+package com.lingsql.chat.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

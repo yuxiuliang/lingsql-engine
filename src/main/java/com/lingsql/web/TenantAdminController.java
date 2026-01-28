@@ -1,8 +1,6 @@
 package com.lingsql.web;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lingsql.audit.model.AuditLogCommand;
-import com.lingsql.audit.service.AuditLogService;
+import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
@@ -36,8 +34,7 @@ import java.util.List;
 public class TenantAdminController {
 
     private final TenantAdminService tenantAdminService;
-    private final AuditLogService auditLogService;
-    private final ObjectMapper objectMapper;
+    private final AuditOperationExecutor auditOperationExecutor;
 
     /**
      * 查询租户列表。
@@ -70,14 +67,13 @@ public class TenantAdminController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        try {
-            TenantView view = tenantAdminService.createTenant(request);
-            recordAudit("TENANT_CREATE", "TENANT", request, true, null, http);
-            return ApiResponse.success(view);
-        } catch (Exception ex) {
-            recordAudit("TENANT_CREATE", "TENANT", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "TENANT_CREATE",
+                "TENANT",
+                request,
+                http,
+                () -> tenantAdminService.createTenant(request)
+        );
     }
 
     /**
@@ -96,14 +92,13 @@ public class TenantAdminController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        try {
-            TenantView view = tenantAdminService.updateTenant(id, request);
-            recordAudit("TENANT_UPDATE", "TENANT", request, true, null, http);
-            return ApiResponse.success(view);
-        } catch (Exception ex) {
-            recordAudit("TENANT_UPDATE", "TENANT", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "TENANT_UPDATE",
+                "TENANT",
+                request,
+                http,
+                () -> tenantAdminService.updateTenant(id, request)
+        );
     }
 
     /**
@@ -121,96 +116,16 @@ public class TenantAdminController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        try {
-            tenantAdminService.deleteTenant(id);
-            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, true, null, http);
-            return ApiResponse.success("租户已删除");
-        } catch (Exception ex) {
-            recordAudit("TENANT_DELETE", "TENANT", "id=" + id, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.executeVoid(
+                "TENANT_DELETE",
+                "TENANT",
+                "id=" + id,
+                http,
+                () -> tenantAdminService.deleteTenant(id),
+                "租户已删除"
+        );
     }
 
-    /**
-     * 记录审计日志。
-     *
-     * @param action   动作
-     * @param resource 资源
-     * @param request  请求体
-     * @param success  是否成功
-     * @param error    错误信息
-     * @param http     请求
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private void recordAudit(String action, String resource, Object request, boolean success, String error, HttpServletRequest http) {
-        RbacUserSession session = RbacSecurityUtils.currentSession();
-        if (session == null) {
-            return;
-        }
-        AuditLogCommand command = new AuditLogCommand();
-        command.setTenantId(session.getTenantId());
-        command.setUserId(session.getUserId());
-        command.setRealUserId(session.getUserId());
-        command.setUsername(session.getUsername());
-        command.setAction(action);
-        command.setResource(resource);
-        command.setDetail(serialize(request));
-        command.setSuccess(success);
-        command.setErrorMessage(error);
-        command.setRequestIp(resolveIp(http));
-        command.setUserAgent(resolveUserAgent(http));
-        auditLogService.record(command);
-    }
-
-    /**
-     * 序列化对象。
-     *
-     * @param value 对象
-     * @return JSON 字符串
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private String serialize(Object value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (Exception ex) {
-            return null;
-        }
-    }
-
-    /**
-     * 解析 IP。
-     *
-     * @param http 请求
-     * @return IP
-     * @author 余炘洋
-     * @date 2026-01-27
-     */
-    private String resolveIp(HttpServletRequest http) {
-        if (http == null) {
-            return null;
-        }
-        return http.getRemoteAddr();
-    }
-
-    /**
-     * 解析 User-Agent。
-     *
-     * @param http 请求
-     * @return User-Agent
-     * @author 余炘洋
-     * @date 2026-01-27
-     */
-    private String resolveUserAgent(HttpServletRequest http) {
-        if (http == null) {
-            return null;
-        }
-        return http.getHeader("User-Agent");
-    }
 
     /**
      * 判断是否系统管理员。

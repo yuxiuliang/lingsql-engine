@@ -23,6 +23,7 @@ import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.repository.TenantRepository;
 import com.lingsql.config.LingSqlProperties;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -133,21 +134,21 @@ public class AuthService {
         Duration refreshTtl = resolveRefreshTtl();
         RefreshTokenService.RefreshTokenResult result = refreshTokenService.rotateRefreshToken(refreshToken, refreshTtl);
         if (result == null || result.payload() == null) {
-            throw new RuntimeException("Refresh Token 无效");
+            throw new BadCredentialsException("Refresh Token 无效");
         }
         Long userId = result.payload().userId();
         if (userId == null) {
-            throw new RuntimeException("Refresh Token 无效");
+            throw new BadCredentialsException("Refresh Token 无效");
         }
         RbacUser user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("账号不存在"));
+                .orElseThrow(() -> new BadCredentialsException("账号不存在"));
         if (user.getStatus() != null && user.getStatus() == 0) {
-            throw new RuntimeException("账号已停用");
+            throw new BadCredentialsException("账号已停用");
         }
         if (StringUtils.hasText(result.payload().tenantId())
                 && StringUtils.hasText(user.getTenantId())
                 && !result.payload().tenantId().equalsIgnoreCase(user.getTenantId())) {
-            throw new RuntimeException("账号不存在");
+            throw new BadCredentialsException("账号不存在");
         }
         RbacUserSession session = buildSessionForUser(user);
         String token = tokenService.createToken(session);
@@ -187,7 +188,7 @@ public class AuthService {
     }
 
     private RuntimeException loginFailure() {
-        return new RuntimeException(LOGIN_ERROR_MESSAGE);
+        return new BadCredentialsException(LOGIN_ERROR_MESSAGE);
     }
 
     /**

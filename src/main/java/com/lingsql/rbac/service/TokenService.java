@@ -8,6 +8,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -22,16 +23,16 @@ import java.util.Date;
 import java.util.UUID;
 
 /**
- * Token 会话管理服务（JWT 无状态）。
+ * Token 会话管理服务（JWT + Redis 会话）。
  *
  * @author 余炘洋
  * @date 2026-01-26
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TokenService {
 
-    private static final String SESSION_CLAIM = "session";
     private static final String REVOKED_JTI_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "revoked:jti:";
     private static final String REVOKED_HASH_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "revoked:hash:";
     private static final String REVOKED_USER_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "revoked:user:";
@@ -98,12 +99,10 @@ public class TokenService {
             if (cached != null) {
                 return cached;
             }
-            Object sessionObj = claims.get(SESSION_CLAIM);
-            if (sessionObj == null) {
-                return null;
-            }
-            return objectMapper.convertValue(sessionObj, RbacUserSession.class);
+            log.warn("Token 会话缓存缺失: jti={}", jti);
+            return null;
         } catch (Exception ex) {
+            log.warn("解析 Token 失败: {}", ex.getMessage());
             return null;
         }
     }
@@ -117,7 +116,7 @@ public class TokenService {
      * @date 2026-01-26
      */
     public void refreshSession(String token, RbacUserSession session) {
-        // JWT 无状态模式下无需刷新
+        // 会话由 Redis 缓存维护，无需刷新
     }
 
     /**
@@ -344,7 +343,8 @@ public class TokenService {
             String json = objectMapper.writeValueAsString(session);
             redisTemplate.opsForValue().set(buildSessionKey(jti), json, ttl);
         } catch (Exception ex) {
-            // 忽略缓存失败，仍可依赖 Token
+            log.error("缓存会话失败: jti={}", jti, ex);
+            throw new IllegalStateException("会话缓存失败", ex);
         }
     }
 

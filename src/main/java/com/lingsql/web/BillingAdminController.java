@@ -1,8 +1,6 @@
 package com.lingsql.web;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lingsql.audit.model.AuditLogCommand;
-import com.lingsql.audit.service.AuditLogService;
+import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.billing.BillingAdminService;
 import com.lingsql.billing.entity.BillingPolicyVersion;
 import com.lingsql.billing.entity.TenantBillingOverride;
@@ -36,8 +34,7 @@ import java.util.List;
 public class BillingAdminController {
 
     private final BillingAdminService billingAdminService;
-    private final AuditLogService auditLogService;
-    private final ObjectMapper objectMapper;
+    private final AuditOperationExecutor auditOperationExecutor;
 
     /**
      * 查询计费策略版本列表。
@@ -70,14 +67,13 @@ public class BillingAdminController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        try {
-            BillingPolicyVersion saved = billingAdminService.createPolicyVersion(request);
-            recordAudit("BILLING_POLICY_CREATE", "BILLING_POLICY", request, true, null, http);
-            return ApiResponse.success(saved);
-        } catch (Exception ex) {
-            recordAudit("BILLING_POLICY_CREATE", "BILLING_POLICY", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "BILLING_POLICY_CREATE",
+                "BILLING_POLICY",
+                request,
+                http,
+                () -> billingAdminService.createPolicyVersion(request)
+        );
     }
 
     /**
@@ -98,14 +94,13 @@ public class BillingAdminController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        try {
-            BillingPolicyVersion saved = billingAdminService.updatePolicyVersion(id, request);
-            recordAudit("BILLING_POLICY_UPDATE", "BILLING_POLICY", request, true, null, http);
-            return ApiResponse.success(saved);
-        } catch (Exception ex) {
-            recordAudit("BILLING_POLICY_UPDATE", "BILLING_POLICY", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "BILLING_POLICY_UPDATE",
+                "BILLING_POLICY",
+                request,
+                http,
+                () -> billingAdminService.updatePolicyVersion(id, request)
+        );
     }
 
     /**
@@ -123,14 +118,13 @@ public class BillingAdminController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        try {
-            BillingPolicyVersion saved = billingAdminService.activatePolicyVersion(id);
-            recordAudit("BILLING_POLICY_ACTIVATE", "BILLING_POLICY", "id=" + id, true, null, http);
-            return ApiResponse.success(saved);
-        } catch (Exception ex) {
-            recordAudit("BILLING_POLICY_ACTIVATE", "BILLING_POLICY", "id=" + id, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "BILLING_POLICY_ACTIVATE",
+                "BILLING_POLICY",
+                "id=" + id,
+                http,
+                () -> billingAdminService.activatePolicyVersion(id)
+        );
     }
 
     /**
@@ -188,59 +182,13 @@ public class BillingAdminController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        try {
-            TenantBillingOverride saved = billingAdminService.upsertOverride(tenantId, request);
-            recordAudit("BILLING_OVERRIDE_UPSERT", "BILLING_OVERRIDE", request, true, null, http);
-            return ApiResponse.success(saved);
-        } catch (Exception ex) {
-            recordAudit("BILLING_OVERRIDE_UPSERT", "BILLING_OVERRIDE", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
-    }
-
-    private void recordAudit(String action, String resource, Object request, boolean success, String error, HttpServletRequest http) {
-        RbacUserSession session = RbacSecurityUtils.currentSession();
-        if (session == null) {
-            return;
-        }
-        AuditLogCommand command = new AuditLogCommand();
-        command.setTenantId(session.getTenantId());
-        command.setUserId(session.getUserId());
-        command.setRealUserId(session.getUserId());
-        command.setUsername(session.getUsername());
-        command.setAction(action);
-        command.setResource(resource);
-        command.setDetail(serialize(request));
-        command.setSuccess(success);
-        command.setErrorMessage(error);
-        command.setRequestIp(resolveIp(http));
-        command.setUserAgent(resolveUserAgent(http));
-        auditLogService.record(command);
-    }
-
-    private String serialize(Object value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (Exception ex) {
-            return null;
-        }
-    }
-
-    private String resolveIp(HttpServletRequest http) {
-        if (http == null) {
-            return null;
-        }
-        return http.getRemoteAddr();
-    }
-
-    private String resolveUserAgent(HttpServletRequest http) {
-        if (http == null) {
-            return null;
-        }
-        return http.getHeader("User-Agent");
+        return auditOperationExecutor.execute(
+                "BILLING_OVERRIDE_UPSERT",
+                "BILLING_OVERRIDE",
+                request,
+                http,
+                () -> billingAdminService.upsertOverride(tenantId, request)
+        );
     }
 
     private boolean isSysAdmin() {

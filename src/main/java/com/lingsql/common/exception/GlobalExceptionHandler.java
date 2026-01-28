@@ -4,6 +4,7 @@ import com.lingsql.common.result.ApiResponse;
 import com.lingsql.common.trace.RequestTraceContext;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
@@ -11,6 +12,7 @@ import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.util.StringUtils;
 
 import java.util.Optional;
 
@@ -20,10 +22,12 @@ import java.util.Optional;
  * @author 余炘洋
  * @date 2026-01-23
  */
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final String LOGIN_PATH = "/api/v1/auth/login";
+    private static final String REFRESH_PATH = "/api/v1/auth/refresh";
     private static final String LOGIN_ERROR_MESSAGE = "账号、密码或租户信息错误";
 
     /**
@@ -95,7 +99,13 @@ public class GlobalExceptionHandler {
      * @date 2026-01-23
      */
     @ExceptionHandler(AuthenticationException.class)
-    public ApiResponse<Void> handleAuthenticationException(AuthenticationException ex) {
+    public ApiResponse<Void> handleAuthenticationException(AuthenticationException ex, HttpServletRequest request) {
+        if (isLoginRequest(request)) {
+            return attachRequestId(ApiResponse.unauthorized(LOGIN_ERROR_MESSAGE));
+        }
+        if (isRefreshRequest(request) && StringUtils.hasText(ex.getMessage())) {
+            return attachRequestId(ApiResponse.unauthorized(ex.getMessage()));
+        }
         return attachRequestId(ApiResponse.unauthorized("未登录或登录已过期"));
     }
 
@@ -112,6 +122,20 @@ public class GlobalExceptionHandler {
         return attachRequestId(ApiResponse.forbidden("无权限访问"));
     }
 
+    /**
+     * 处理未捕获异常。
+     *
+     * @param ex 异常
+     * @return 统一响应
+     * @author 余炘洋
+     * @date 2026-01-28
+     */
+    @ExceptionHandler(Exception.class)
+    public ApiResponse<Void> handleUnexpectedException(Exception ex) {
+        log.error("系统异常: {}", ex.getMessage(), ex);
+        return attachRequestId(ApiResponse.error("系统异常，请稍后再试"));
+    }
+
     private <T> ApiResponse<T> attachRequestId(ApiResponse<T> response) {
         if (response == null) {
             return null;
@@ -126,5 +150,13 @@ public class GlobalExceptionHandler {
         }
         String uri = request.getRequestURI();
         return uri != null && uri.startsWith(LOGIN_PATH);
+    }
+
+    private boolean isRefreshRequest(HttpServletRequest request) {
+        if (request == null) {
+            return false;
+        }
+        String uri = request.getRequestURI();
+        return uri != null && uri.startsWith(REFRESH_PATH);
     }
 }

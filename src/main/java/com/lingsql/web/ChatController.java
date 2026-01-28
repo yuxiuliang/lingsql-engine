@@ -2,18 +2,14 @@ package com.lingsql.web;
 
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.common.result.PageResult;
-import com.lingsql.chat.entity.ChatHistory;
 import com.lingsql.chat.model.ChatHistoryDetailView;
+import com.lingsql.chat.model.ChatHistoryUpdateRequest;
 import com.lingsql.chat.model.ChatHistoryView;
+import com.lingsql.chat.model.ChatRequest;
+import com.lingsql.chat.model.ChatResult;
+import com.lingsql.chat.service.ChatApplicationService;
 import com.lingsql.chat.service.ChatHistoryService;
-import com.lingsql.chat.service.ChatMemoryService;
 import com.lingsql.context.TenantContext;
-import com.lingsql.executor.ResultRefiner;
-import com.lingsql.executor.SmartSqlExecutor;
-import com.lingsql.executor.SqlExecutionResult;
-import com.lingsql.web.dto.ChatHistoryUpdateRequest;
-import com.lingsql.web.dto.ChatRequest;
-import com.lingsql.web.dto.ChatResult;
 import lombok.RequiredArgsConstructor;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -39,10 +35,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 @RequiredArgsConstructor
 public class ChatController {
 
-    private final SmartSqlExecutor sqlExecutor;
-    private final ResultRefiner resultRefiner;
+    private final ChatApplicationService chatApplicationService;
     private final ChatHistoryService chatHistoryService;
-    private final ChatMemoryService chatMemoryService;
 
     /**
      * 核心问答接口。
@@ -56,35 +50,7 @@ public class ChatController {
     @PostMapping("/ask")
     @PreAuthorize("hasAuthority('API:CHAT:ASK')")
     public ApiResponse<ChatResult> ask(@Valid @RequestBody ChatRequest request) {
-        String tenantId = TenantContext.getTenantId();
-        Long userId = TenantContext.getUserId();
-        SqlExecutionResult executionResult;
-        try {
-            executionResult = sqlExecutor.execute(tenantId, request.getQuestion(), "WEB");
-        } catch (Exception ex) {
-            executionResult = SqlExecutionResult.failure(null, ex.getMessage());
-        }
-        String finalAnswer = resultRefiner.refine(request.getQuestion(), executionResult);
-        String sqlText = normalizeSqlForView(executionResult);
-        if (executionResult.isSuccess()) {
-            chatMemoryService.saveSuccessExchange(
-                    tenantId,
-                    request.getQuestion(),
-                    finalAnswer,
-                    executionResult.getSql(),
-                    executionResult.getData()
-            );
-        }
-        ChatHistory history = chatHistoryService.saveHistory(
-                tenantId,
-                userId,
-                request.getQuestion(),
-                finalAnswer,
-                sqlText,
-                executionResult.getData()
-        );
-        ChatResult chatResult = new ChatResult(finalAnswer, executionResult.getData(), sqlText, history.getId());
-        return ApiResponse.success(chatResult);
+        return ApiResponse.success(chatApplicationService.ask(request));
     }
 
     /**
@@ -156,29 +122,4 @@ public class ChatController {
         return ApiResponse.success("历史记录已删除");
     }
 
-    /**
-     * 规范化 SQL 展示内容。
-     *
-     * @param executionResult 执行结果
-     * @return SQL 文本
-     * @author 余炘洋
-     * @date 2026-01-23
-     */
-    private String normalizeSqlForView(SqlExecutionResult executionResult) {
-        if (executionResult == null) {
-            return "ERROR:UNKNOWN";
-        }
-        if (executionResult.isSuccess()) {
-            return executionResult.getSql();
-        }
-        String sql = executionResult.getSql();
-        if (sql != null && sql.startsWith("ERROR")) {
-            return sql;
-        }
-        String errorMessage = executionResult.getErrorMessage();
-        if (errorMessage == null || errorMessage.isBlank()) {
-            return "ERROR:UNKNOWN";
-        }
-        return "ERROR:" + errorMessage;
-    }
 }

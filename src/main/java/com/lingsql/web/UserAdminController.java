@@ -1,8 +1,6 @@
 package com.lingsql.web;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lingsql.audit.model.AuditLogCommand;
-import com.lingsql.audit.service.AuditLogService;
+import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.common.result.PageResult;
 import com.lingsql.rbac.model.UserCreateRequest;
@@ -40,8 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserAdminController {
 
     private final UserAdminService userAdminService;
-    private final AuditLogService auditLogService;
-    private final ObjectMapper objectMapper;
+    private final AuditOperationExecutor auditOperationExecutor;
 
     /**
      * 查询用户列表。
@@ -82,14 +79,13 @@ public class UserAdminController {
     public ApiResponse<UserView> createUser(@Valid @RequestBody UserCreateRequest request, HttpServletRequest http) {
         RbacUserSession session = requireSession();
         boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
-        try {
-            UserView view = userAdminService.createUser(request, session.getTenantId(), sysAdmin);
-            recordAudit(session, "USER_CREATE", "USER", request, true, null, http);
-            return ApiResponse.success(view);
-        } catch (Exception ex) {
-            recordAudit(session, "USER_CREATE", "USER", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "USER_CREATE",
+                "USER",
+                request,
+                http,
+                () -> userAdminService.createUser(request, session.getTenantId(), sysAdmin)
+        );
     }
 
     /**
@@ -107,14 +103,13 @@ public class UserAdminController {
     public ApiResponse<UserView> updateUser(@PathVariable Long id, @RequestBody UserUpdateRequest request, HttpServletRequest http) {
         RbacUserSession session = requireSession();
         boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
-        try {
-            UserView view = userAdminService.updateUser(id, request, session.getTenantId(), sysAdmin);
-            recordAudit(session, "USER_UPDATE", "USER", request, true, null, http);
-            return ApiResponse.success(view);
-        } catch (Exception ex) {
-            recordAudit(session, "USER_UPDATE", "USER", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "USER_UPDATE",
+                "USER",
+                request,
+                http,
+                () -> userAdminService.updateUser(id, request, session.getTenantId(), sysAdmin)
+        );
     }
 
     /**
@@ -132,14 +127,14 @@ public class UserAdminController {
     public ApiResponse<String> resetPassword(@PathVariable Long id, @Valid @RequestBody UserPasswordResetRequest request, HttpServletRequest http) {
         RbacUserSession session = requireSession();
         boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
-        try {
-            userAdminService.resetPassword(id, request, session.getTenantId(), sysAdmin);
-            recordAudit(session, "USER_PASSWORD_RESET", "USER", request, true, null, http);
-            return ApiResponse.success("密码已重置");
-        } catch (Exception ex) {
-            recordAudit(session, "USER_PASSWORD_RESET", "USER", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.executeVoid(
+                "USER_PASSWORD_RESET",
+                "USER",
+                request,
+                http,
+                () -> userAdminService.resetPassword(id, request, session.getTenantId(), sysAdmin),
+                "密码已重置"
+        );
     }
 
     /**
@@ -157,83 +152,6 @@ public class UserAdminController {
         return session;
     }
 
-    /**
-     * 记录审计日志。
-     *
-     * @param session    会话
-     * @param action     动作
-     * @param resource   资源
-     * @param request    请求体
-     * @param success    是否成功
-     * @param error      错误信息
-     * @param http       请求
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private void recordAudit(RbacUserSession session, String action, String resource, Object request, boolean success, String error, HttpServletRequest http) {
-        AuditLogCommand command = new AuditLogCommand();
-        command.setTenantId(session.getTenantId());
-        command.setUserId(session.getUserId());
-        command.setRealUserId(session.getUserId());
-        command.setUsername(session.getUsername());
-        command.setAction(action);
-        command.setResource(resource);
-        command.setDetail(serialize(request));
-        command.setSuccess(success);
-        command.setErrorMessage(error);
-        command.setRequestIp(resolveIp(http));
-        command.setUserAgent(resolveUserAgent(http));
-        auditLogService.record(command);
-    }
-
-    /**
-     * 序列化对象。
-     *
-     * @param value 对象
-     * @return JSON 字符串
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private String serialize(Object value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (Exception ex) {
-            return null;
-        }
-    }
-
-    /**
-     * 解析 IP。
-     *
-     * @param http 请求
-     * @return IP
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private String resolveIp(HttpServletRequest http) {
-        if (http == null) {
-            return null;
-        }
-        return http.getRemoteAddr();
-    }
-
-    /**
-     * 解析 User-Agent。
-     *
-     * @param http 请求
-     * @return User-Agent
-     * @author 余炘洋
-     * @date 2026-01-27
-     */
-    private String resolveUserAgent(HttpServletRequest http) {
-        if (http == null) {
-            return null;
-        }
-        return http.getHeader("User-Agent");
-    }
 
     /**
      * 规范化字符串。

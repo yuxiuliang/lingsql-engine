@@ -1,8 +1,6 @@
 package com.lingsql.web;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lingsql.audit.model.AuditLogCommand;
-import com.lingsql.audit.service.AuditLogService;
+import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.model.RoleCreateRequest;
 import com.lingsql.rbac.model.RoleUpdateRequest;
@@ -40,8 +38,7 @@ import java.util.List;
 public class RoleAdminController {
 
     private final RoleAdminService roleAdminService;
-    private final AuditLogService auditLogService;
-    private final ObjectMapper objectMapper;
+    private final AuditOperationExecutor auditOperationExecutor;
 
     /**
      * 查询角色列表。
@@ -74,14 +71,13 @@ public class RoleAdminController {
     public ApiResponse<RoleView> createRole(@Valid @RequestBody RoleCreateRequest request, HttpServletRequest http) {
         RbacUserSession session = requireSession();
         boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
-        try {
-            RoleView view = roleAdminService.createRole(request, session.getTenantId(), sysAdmin);
-            recordAudit(session, "ROLE_CREATE", "ROLE", request, true, null, http);
-            return ApiResponse.success(view);
-        } catch (Exception ex) {
-            recordAudit(session, "ROLE_CREATE", "ROLE", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "ROLE_CREATE",
+                "ROLE",
+                request,
+                http,
+                () -> roleAdminService.createRole(request, session.getTenantId(), sysAdmin)
+        );
     }
 
     /**
@@ -99,14 +95,13 @@ public class RoleAdminController {
     public ApiResponse<RoleView> updateRole(@PathVariable Long id, @RequestBody RoleUpdateRequest request, HttpServletRequest http) {
         RbacUserSession session = requireSession();
         boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
-        try {
-            RoleView view = roleAdminService.updateRole(id, request, session.getTenantId(), sysAdmin);
-            recordAudit(session, "ROLE_UPDATE", "ROLE", request, true, null, http);
-            return ApiResponse.success(view);
-        } catch (Exception ex) {
-            recordAudit(session, "ROLE_UPDATE", "ROLE", request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
-        }
+        return auditOperationExecutor.execute(
+                "ROLE_UPDATE",
+                "ROLE",
+                request,
+                http,
+                () -> roleAdminService.updateRole(id, request, session.getTenantId(), sysAdmin)
+        );
     }
 
     /**
@@ -124,83 +119,6 @@ public class RoleAdminController {
         return session;
     }
 
-    /**
-     * 记录审计日志。
-     *
-     * @param session    会话
-     * @param action     动作
-     * @param resource   资源
-     * @param request    请求体
-     * @param success    是否成功
-     * @param error      错误信息
-     * @param http       请求
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private void recordAudit(RbacUserSession session, String action, String resource, Object request, boolean success, String error, HttpServletRequest http) {
-        AuditLogCommand command = new AuditLogCommand();
-        command.setTenantId(session.getTenantId());
-        command.setUserId(session.getUserId());
-        command.setRealUserId(session.getUserId());
-        command.setUsername(session.getUsername());
-        command.setAction(action);
-        command.setResource(resource);
-        command.setDetail(serialize(request));
-        command.setSuccess(success);
-        command.setErrorMessage(error);
-        command.setRequestIp(resolveIp(http));
-        command.setUserAgent(resolveUserAgent(http));
-        auditLogService.record(command);
-    }
-
-    /**
-     * 序列化对象。
-     *
-     * @param value 对象
-     * @return JSON 字符串
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private String serialize(Object value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (Exception ex) {
-            return null;
-        }
-    }
-
-    /**
-     * 解析 IP。
-     *
-     * @param http 请求
-     * @return IP
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private String resolveIp(HttpServletRequest http) {
-        if (http == null) {
-            return null;
-        }
-        return http.getRemoteAddr();
-    }
-
-    /**
-     * 解析 User-Agent。
-     *
-     * @param http 请求
-     * @return User-Agent
-     * @author 余炘洋
-     * @date 2026-01-27
-     */
-    private String resolveUserAgent(HttpServletRequest http) {
-        if (http == null) {
-            return null;
-        }
-        return http.getHeader("User-Agent");
-    }
 
     /**
      * 规范化字符串。

@@ -1,4 +1,4 @@
-package com.lingsql.web.dto;
+package com.lingsql.chat.model;
 
 import com.lingsql.common.validation.ChatQuestionLength;
 import lombok.Data;

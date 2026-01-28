@@ -44,7 +44,6 @@ import java.util.List;
 public class AuthController {
 
     private static final String REFRESH_TOKEN_HEADER = "X-Refresh-Token";
-    private static final String LOGIN_ERROR_MESSAGE = "账号、密码或租户信息错误";
 
     private final AuthService authService;
     private final MenuService menuService;
@@ -66,14 +65,10 @@ public class AuthController {
             HttpServletRequest httpRequest,
             HttpServletResponse httpResponse
     ) {
-        try {
-            LoginResponse response = authService.login(request);
-            writeAuthCookie(httpRequest, httpResponse, response.getToken(), response.getExpiresIn());
-            writeRefreshCookie(httpRequest, httpResponse, response.getRefreshToken(), response.getRefreshExpiresIn());
-            return ApiResponse.success(response);
-        } catch (Exception ex) {
-            return ApiResponse.unauthorized(LOGIN_ERROR_MESSAGE);
-        }
+        LoginResponse response = authService.login(request);
+        writeAuthCookie(httpRequest, httpResponse, response.getToken(), response.getExpiresIn());
+        writeRefreshCookie(httpRequest, httpResponse, response.getRefreshToken(), response.getRefreshExpiresIn());
+        return ApiResponse.success(response);
     }
 
     /**
@@ -159,14 +154,10 @@ public class AuthController {
         if (!StringUtils.hasText(refreshToken)) {
             return ApiResponse.unauthorized("Refresh Token 无效");
         }
-        try {
-            LoginResponse refreshed = authService.refresh(refreshToken);
-            writeAuthCookie(request, response, refreshed.getToken(), refreshed.getExpiresIn());
-            writeRefreshCookie(request, response, refreshed.getRefreshToken(), refreshed.getRefreshExpiresIn());
-            return ApiResponse.success(refreshed);
-        } catch (Exception ex) {
-            return ApiResponse.unauthorized("Refresh Token 无效");
-        }
+        LoginResponse refreshed = authService.refresh(refreshToken);
+        writeAuthCookie(request, response, refreshed.getToken(), refreshed.getExpiresIn());
+        writeRefreshCookie(request, response, refreshed.getRefreshToken(), refreshed.getRefreshExpiresIn());
+        return ApiResponse.success(refreshed);
     }
 
     /**
