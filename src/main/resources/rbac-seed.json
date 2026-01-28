@@ -1,7 +1,6 @@
 {
   "permissions": [
     {"permCode": "MENU:CHAT", "permName": "菜单-智能问答", "permType": "MENU", "status": 1},
-    {"permCode": "MENU:CHAT:HISTORY", "permName": "菜单-问答历史", "permType": "MENU", "status": 1},
     {"permCode": "MENU:ADMIN", "permName": "菜单-管理后台", "permType": "MENU", "status": 1},
     {"permCode": "MENU:ADMIN:TENANT", "permName": "菜单-租户管理", "permType": "MENU", "status": 1},
     {"permCode": "MENU:ADMIN:DATASOURCE", "permName": "菜单-数据源管理", "permType": "MENU", "status": 1},
