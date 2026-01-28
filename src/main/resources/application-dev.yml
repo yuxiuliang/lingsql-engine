@@ -50,8 +50,9 @@ server:
 lingsql:
   security:
     default-limit: 100
-    data-encryption-enabled: ${LINGSQL_DATA_ENCRYPTION_ENABLED:false}
+    data-encryption-enabled: ${LINGSQL_DATA_ENCRYPTION_ENABLED:true}
     data-encryption-key: ${LINGSQL_DATA_ENCRYPTION_KEY:}
+    data-encryption-migrate: ${LINGSQL_DATA_ENCRYPTION_MIGRATE:true}
     prompt-injection-keywords:
       - "忽略规则"
       - "绕过"

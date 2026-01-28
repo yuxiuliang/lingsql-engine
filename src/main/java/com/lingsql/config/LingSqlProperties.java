@@ -61,6 +61,14 @@ public class LingSqlProperties {
         private String dataEncryptionKey;
 
         /**
+         * 是否执行敏感数据加密迁移。
+         *
+         * @author 余炘洋
+         * @date 2026-01-28
+         */
+        private boolean dataEncryptionMigrate = false;
+
+        /**
          * 是否启用安全响应头。
          *
          * @author 余炘洋
