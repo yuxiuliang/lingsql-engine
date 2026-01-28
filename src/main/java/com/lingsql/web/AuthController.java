@@ -1,7 +1,6 @@
 package com.lingsql.web;
 
 import com.lingsql.common.result.ApiResponse;
-import com.lingsql.config.LingSqlProperties;
 import com.lingsql.rbac.model.LoginRequest;
 import com.lingsql.rbac.model.LoginResponse;
 import com.lingsql.rbac.model.MenuView;
@@ -13,13 +12,10 @@ import com.lingsql.rbac.service.AuthService;
 import com.lingsql.rbac.service.MenuService;
 import com.lingsql.rbac.service.RefreshTokenService;
 import com.lingsql.rbac.service.TokenService;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseCookie;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.util.StringUtils;
@@ -49,7 +45,6 @@ public class AuthController {
     private final MenuService menuService;
     private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
-    private final LingSqlProperties properties;
 
     /**
      * 登录接口。
@@ -66,8 +61,6 @@ public class AuthController {
             HttpServletResponse httpResponse
     ) {
         LoginResponse response = authService.login(request);
-        writeAuthCookie(httpRequest, httpResponse, response.getToken(), response.getExpiresIn());
-        writeRefreshCookie(httpRequest, httpResponse, response.getRefreshToken(), response.getRefreshExpiresIn());
         return ApiResponse.success(response);
     }
 
@@ -125,7 +118,7 @@ public class AuthController {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
-        String token = resolveToken(authHeader, request);
+        String token = resolveToken(authHeader);
         if (StringUtils.hasText(token)) {
             tokenService.revokeToken(token);
         }
@@ -134,8 +127,6 @@ public class AuthController {
             RefreshTokenService.RefreshTokenPayload payload = refreshTokenService.verify(refreshToken);
             refreshTokenService.revoke(refreshToken, payload == null ? null : payload.userId());
         }
-        clearRefreshCookie(request, response);
-        clearAuthCookie(request, response);
         return ApiResponse.success("已退出登录");
     }
 
@@ -155,8 +146,6 @@ public class AuthController {
             return ApiResponse.unauthorized("Refresh Token 无效");
         }
         LoginResponse refreshed = authService.refresh(refreshToken);
-        writeAuthCookie(request, response, refreshed.getToken(), refreshed.getExpiresIn());
-        writeRefreshCookie(request, response, refreshed.getRefreshToken(), refreshed.getRefreshExpiresIn());
         return ApiResponse.success(refreshed);
     }
 
@@ -168,14 +157,14 @@ public class AuthController {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private String resolveToken(String authHeader, HttpServletRequest request) {
+    private String resolveToken(String authHeader) {
         if (StringUtils.hasText(authHeader)) {
             if (authHeader.startsWith(RbacSecurityConstants.BEARER_PREFIX)) {
                 return authHeader.substring(RbacSecurityConstants.BEARER_PREFIX.length()).trim();
             }
             return authHeader.trim();
         }
-        return resolveTokenFromCookie(request);
+        return null;
     }
 
     private String resolveRefreshToken(HttpServletRequest request) {
@@ -183,155 +172,7 @@ public class AuthController {
         if (StringUtils.hasText(header)) {
             return header.trim();
         }
-        return resolveRefreshTokenFromCookie(request);
-    }
-
-    private String resolveTokenFromCookie(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null || cookies.length == 0) {
-            return null;
-        }
-        String cookieName = resolveCookieName();
-        for (Cookie cookie : cookies) {
-            if (cookieName.equals(cookie.getName())) {
-                return cookie.getValue();
-            }
-        }
         return null;
-    }
-
-    private String resolveRefreshTokenFromCookie(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null || cookies.length == 0) {
-            return null;
-        }
-        String cookieName = resolveRefreshCookieName();
-        for (Cookie cookie : cookies) {
-            if (cookieName.equals(cookie.getName())) {
-                return cookie.getValue();
-            }
-        }
-        return null;
-    }
-
-    private void writeAuthCookie(HttpServletRequest request, HttpServletResponse response, String token, long expiresIn) {
-        if (!StringUtils.hasText(token)) {
-            return;
-        }
-        LingSqlProperties.Auth auth = properties.getAuth();
-        String sameSite = resolveSameSite(auth == null ? null : auth.getCookieSameSite());
-        boolean secure = resolveSecure(request, sameSite, auth == null ? null : auth.getCookieSecure());
-        ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from(resolveCookieName(), token)
-                .httpOnly(true)
-                .secure(secure)
-                .path(resolveCookiePath())
-                .sameSite(sameSite)
-                .maxAge(expiresIn);
-        String domain = auth == null ? null : auth.getCookieDomain();
-        if (StringUtils.hasText(domain)) {
-            builder.domain(domain.trim());
-        }
-        response.addHeader(HttpHeaders.SET_COOKIE, builder.build().toString());
-    }
-
-    private void clearAuthCookie(HttpServletRequest request, HttpServletResponse response) {
-        LingSqlProperties.Auth auth = properties.getAuth();
-        String sameSite = resolveSameSite(auth == null ? null : auth.getCookieSameSite());
-        boolean secure = resolveSecure(request, sameSite, auth == null ? null : auth.getCookieSecure());
-        ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from(resolveCookieName(), "")
-                .httpOnly(true)
-                .secure(secure)
-                .path(resolveCookiePath())
-                .sameSite(sameSite)
-                .maxAge(0);
-        String domain = auth == null ? null : auth.getCookieDomain();
-        if (StringUtils.hasText(domain)) {
-            builder.domain(domain.trim());
-        }
-        response.addHeader(HttpHeaders.SET_COOKIE, builder.build().toString());
-    }
-
-    private void writeRefreshCookie(HttpServletRequest request, HttpServletResponse response, String refreshToken, long expiresIn) {
-        if (!StringUtils.hasText(refreshToken)) {
-            return;
-        }
-        LingSqlProperties.Auth auth = properties.getAuth();
-        String sameSite = resolveSameSite(auth == null ? null : auth.getCookieSameSite());
-        boolean secure = resolveSecure(request, sameSite, auth == null ? null : auth.getCookieSecure());
-        ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from(resolveRefreshCookieName(), refreshToken)
-                .httpOnly(true)
-                .secure(secure)
-                .path(resolveCookiePath())
-                .sameSite(sameSite)
-                .maxAge(expiresIn);
-        String domain = auth == null ? null : auth.getCookieDomain();
-        if (StringUtils.hasText(domain)) {
-            builder.domain(domain.trim());
-        }
-        response.addHeader(HttpHeaders.SET_COOKIE, builder.build().toString());
-    }
-
-    private void clearRefreshCookie(HttpServletRequest request, HttpServletResponse response) {
-        LingSqlProperties.Auth auth = properties.getAuth();
-        String sameSite = resolveSameSite(auth == null ? null : auth.getCookieSameSite());
-        boolean secure = resolveSecure(request, sameSite, auth == null ? null : auth.getCookieSecure());
-        ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from(resolveRefreshCookieName(), "")
-                .httpOnly(true)
-                .secure(secure)
-                .path(resolveCookiePath())
-                .sameSite(sameSite)
-                .maxAge(0);
-        String domain = auth == null ? null : auth.getCookieDomain();
-        if (StringUtils.hasText(domain)) {
-            builder.domain(domain.trim());
-        }
-        response.addHeader(HttpHeaders.SET_COOKIE, builder.build().toString());
-    }
-
-    private String resolveCookieName() {
-        LingSqlProperties.Auth auth = properties.getAuth();
-        if (auth == null || !StringUtils.hasText(auth.getCookieName())) {
-            return "LINGSQL_TOKEN";
-        }
-        return auth.getCookieName().trim();
-    }
-
-    private String resolveRefreshCookieName() {
-        LingSqlProperties.Auth auth = properties.getAuth();
-        if (auth == null || !StringUtils.hasText(auth.getRefreshCookieName())) {
-            return "LINGSQL_REFRESH";
-        }
-        return auth.getRefreshCookieName().trim();
-    }
-
-    private String resolveCookiePath() {
-        LingSqlProperties.Auth auth = properties.getAuth();
-        if (auth == null || !StringUtils.hasText(auth.getCookiePath())) {
-            return "/";
-        }
-        return auth.getCookiePath().trim();
-    }
-
-    private String resolveSameSite(String sameSite) {
-        if (!StringUtils.hasText(sameSite)) {
-            return "Lax";
-        }
-        String normalized = sameSite.trim();
-        if ("Strict".equalsIgnoreCase(normalized)) {
-            return "Strict";
-        }
-        if ("None".equalsIgnoreCase(normalized)) {
-            return "None";
-        }
-        return "Lax";
-    }
-
-    private boolean resolveSecure(HttpServletRequest request, String sameSite, Boolean cookieSecure) {
-        boolean secure = cookieSecure != null ? cookieSecure : request.isSecure();
-        if ("None".equalsIgnoreCase(sameSite)) {
-            return true;
-        }
-        return secure;
     }
 
     /**
