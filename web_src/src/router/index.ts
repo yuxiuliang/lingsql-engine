@@ -27,12 +27,6 @@ const routes: Array<RouteRecordRaw> = [
                 meta: {title: 'AI 语数对话', icon: 'ChatLineRound'}
             },
             {
-                path: '/chat/history',
-                name: 'ChatHistory',
-                component: () => import('@/views/chat/index.vue'),
-                meta: {title: '问答历史', icon: 'ChatLineRound'}
-            },
-            {
                 path: '/dashboard',
                 name: 'Dashboard',
                 component: () => import('@/views/dashboard/index.vue'),
