@@ -83,6 +83,7 @@ public class SmartSqlExecutor {
             fillFailureLog(logCommand, null, ex.getMessage());
             throw ex;
         } finally {
+            tenantBillingService.charge(tenantId, logCommand);
             sqlExecuteLogService.record(logCommand);
             LlmTraceContext.clear();
             sqlTaskTracker.finish(tenantId);
@@ -137,7 +138,6 @@ public class SmartSqlExecutor {
         }
         logCommand.setAiSql(rawSql);
         applyModelTrace(logCommand);
-        tenantBillingService.charge(tenantId, logCommand);
 
         String rewrittenSql = rewriter.rewrite(rawSql, config, tenantId);
         try {
@@ -198,6 +198,16 @@ public class SmartSqlExecutor {
         logCommand.setModelProvider(traceInfo.getProviderName());
         logCommand.setModelName(traceInfo.getModelName());
         logCommand.setModelVersion(traceInfo.getModelVersion());
-        logCommand.setTokenCount(traceInfo.getTokenCount());
+        Integer tokens = traceInfo.getTokenCount();
+        if (tokens == null || tokens <= 0) {
+            return;
+        }
+        Integer current = logCommand.getTokenCount();
+        if (current == null) {
+            logCommand.setTokenCount(tokens);
+            return;
+        }
+        long total = (long) current + tokens;
+        logCommand.setTokenCount(total > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) total);
     }
 }

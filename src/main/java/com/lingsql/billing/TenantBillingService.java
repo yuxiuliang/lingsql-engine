@@ -97,7 +97,11 @@ public class TenantBillingService {
         if (!StringUtils.hasText(tenantId) || command == null) {
             return BillingChargeResult.skip();
         }
-        TenantInfo tenant = tenantRepository.findByTenantIdAndIsDeleted(tenantId, NOT_DELETED).orElse(null);
+        Integer tokenCount = command.getTokenCount();
+        if (tokenCount == null || tokenCount <= 0) {
+            return BillingChargeResult.skip();
+        }
+        TenantInfo tenant = tenantRepository.findByTenantIdAndIsDeletedForUpdate(tenantId, NOT_DELETED).orElse(null);
         if (tenant == null) {
             return BillingChargeResult.skip();
         }

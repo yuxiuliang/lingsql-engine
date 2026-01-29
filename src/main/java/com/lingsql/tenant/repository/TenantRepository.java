@@ -1,7 +1,9 @@
 package com.lingsql.tenant.repository;
 
 import com.lingsql.tenant.entity.TenantInfo;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 
 import java.util.List;
 import java.util.Optional;
@@ -45,6 +47,18 @@ public interface TenantRepository extends JpaRepository<TenantInfo, Long> {
      * @date 2026-01-26
      */
     Optional<TenantInfo> findByTenantIdAndIsDeleted(String tenantId, Integer isDeleted);
+
+    /**
+     * 按租户ID与删除状态查询租户并加锁。
+     *
+     * @param tenantId  租户ID
+     * @param isDeleted 删除标记
+     * @return 租户信息
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<TenantInfo> findByTenantIdAndIsDeletedForUpdate(String tenantId, Integer isDeleted);
 
     /**
      * 判断租户ID是否存在。

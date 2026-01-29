@@ -14,6 +14,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -99,9 +100,14 @@ public class BillingPolicy {
      * @date 2026-01-27
      */
     public BillingPolicySnapshot currentSnapshot() {
-        BillingPolicyVersion policy = policyRepository.findFirstByStatusOrderByEffectiveTimeDesc(ACTIVE_STATUS)
-                .orElse(null);
+        LocalDateTime now = LocalDateTime.now();
+        BillingPolicyVersion policy = policyRepository
+                .findFirstByStatusAndEffectiveTimeLessThanEqualOrderByEffectiveTimeDesc(ACTIVE_STATUS, now)
+                .orElseGet(() -> policyRepository.findFirstByStatusOrderByEffectiveTimeDesc(ACTIVE_STATUS).orElse(null));
         if (policy == null) {
+            return DEFAULT_SNAPSHOT;
+        }
+        if (policy.getEffectiveTime() != null && policy.getEffectiveTime().isAfter(now)) {
             return DEFAULT_SNAPSHOT;
         }
         String versionKey = buildVersionKey(policy);
