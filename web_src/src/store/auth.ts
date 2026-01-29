@@ -30,6 +30,7 @@ const readArray = (key: string): string[] => {
  */
 export interface AuthState {
   token: string;
+  refreshToken: string;
   userId: number;
   tenantId: string;
   tenantName: string;
@@ -53,6 +54,7 @@ export interface AuthState {
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     token: localStorage.getItem('token') || '',
+    refreshToken: localStorage.getItem('refreshToken') || '',
     userId: Number(localStorage.getItem('userId') || 0),
     tenantId: localStorage.getItem('tenantId') || '',
     tenantName: localStorage.getItem('tenantName') || '',
@@ -106,9 +108,11 @@ export const useAuthStore = defineStore('auth', {
       experience = false,
       roles: string[] = [],
       permissions: string[] = [],
-      tenantName = ''
+      tenantName = '',
+      refreshToken = ''
     ) {
       this.token = token || '';
+      this.refreshToken = refreshToken || '';
       this.userId = userId || 0;
       this.tenantId = tenantId;
       this.tenantName = tenantName || '';
@@ -127,6 +131,7 @@ export const useAuthStore = defineStore('auth', {
       }
       localStorage.setItem('userId', String(this.userId || 0));
       localStorage.setItem('token', this.token || '');
+      localStorage.setItem('refreshToken', this.refreshToken || '');
       localStorage.setItem('tenantId', tenantId);
       localStorage.setItem('tenantName', tenantName || '');
       localStorage.setItem('username', username);
@@ -155,6 +160,7 @@ export const useAuthStore = defineStore('auth', {
      */
     logout() {
       this.token = '';
+      this.refreshToken = '';
       this.userId = 0;
       this.tenantId = '';
       this.tenantName = '';
@@ -169,6 +175,7 @@ export const useAuthStore = defineStore('auth', {
       this.sessionReady = false;
       localStorage.removeItem('userId');
       localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
       localStorage.removeItem('tenantId');
       localStorage.removeItem('tenantName');
       localStorage.removeItem('activeTenantId');
@@ -218,6 +225,24 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem('permissions', JSON.stringify(this.permissions || []));
       localStorage.setItem('activeTenantId', this.activeTenantId || '');
       localStorage.setItem('activeTenantName', this.activeTenantName || '');
+    },
+    /**
+     * 更新访问令牌与刷新令牌。
+     *
+     * @param token 访问令牌
+     * @param refreshToken 刷新令牌
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    updateToken(token: string, refreshToken = '') {
+      this.token = token || '';
+      if (refreshToken) {
+        this.refreshToken = refreshToken;
+      }
+      localStorage.setItem('token', this.token || '');
+      if (refreshToken) {
+        localStorage.setItem('refreshToken', this.refreshToken || '');
+      }
     },
     /**
      * 更新租户标识。

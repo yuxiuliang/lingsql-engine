@@ -7,6 +7,7 @@ import com.lingsql.config.LingSqlProperties;
 import com.lingsql.rbac.security.RbacSecurityConstants;
 import com.lingsql.rbac.security.RbacUserSession;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
@@ -88,25 +89,51 @@ public class TokenService {
      * @date 2026-01-26
      */
     public RbacUserSession getSession(String token) {
+        TokenParseResult result = parseSession(token);
+        return result.status() == TokenStatus.VALID ? result.session() : null;
+    }
+
+    /**
+     * 解析 Token 并返回状态。
+     *
+     * @param token Token
+     * @return 解析结果
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    public TokenParseResult parseSession(String token) {
         if (!StringUtils.hasText(token)) {
-            return null;
+            return new TokenParseResult(TokenStatus.EMPTY, null);
         }
         try {
             Claims claims = parseClaims(token);
             if (isRevoked(token, claims)) {
-                return null;
+                return new TokenParseResult(TokenStatus.REVOKED, null);
             }
             String jti = claims.getId();
             RbacUserSession cached = loadSession(jti);
             if (cached != null) {
-                return cached;
+                return new TokenParseResult(TokenStatus.VALID, cached);
             }
             log.warn("Token 会话缓存缺失: jti={}", jti);
-            return null;
+            return new TokenParseResult(TokenStatus.INVALID, null);
+        } catch (ExpiredJwtException ex) {
+            return new TokenParseResult(TokenStatus.EXPIRED, null);
         } catch (Exception ex) {
             log.warn("解析 Token 失败: {}", ex.getMessage());
-            return null;
+            return new TokenParseResult(TokenStatus.INVALID, null);
         }
+    }
+
+    public enum TokenStatus {
+        VALID,
+        EXPIRED,
+        REVOKED,
+        INVALID,
+        EMPTY
+    }
+
+    public record TokenParseResult(TokenStatus status, RbacUserSession session) {
     }
 
     /**

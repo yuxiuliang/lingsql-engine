@@ -29,7 +29,14 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
-        ApiResponse<Void> payload = ApiResponse.unauthorized("会话已过期，请重新登录");
+        ApiResponse<Void> payload = resolvePayload(request);
         response.getWriter().write(objectMapper.writeValueAsString(payload));
+    }
+
+    private ApiResponse<Void> resolvePayload(HttpServletRequest request) {
+        if (request != null && Boolean.TRUE.equals(request.getAttribute(RbacSecurityConstants.TOKEN_EXPIRED_ATTRIBUTE))) {
+            return ApiResponse.unauthorized(RbacSecurityConstants.TOKEN_EXPIRED_MESSAGE);
+        }
+        return ApiResponse.unauthorized("会话已过期，请重新登录");
     }
 }

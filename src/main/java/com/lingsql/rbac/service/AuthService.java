@@ -108,8 +108,8 @@ public class AuthService {
         String token = tokenService.createToken(session);
         String refreshToken = null;
         long refreshExpiresIn = 0;
-        if (isSuperAdmin(session)) {
-            Duration refreshTtl = resolveRefreshTtl();
+        Duration refreshTtl = resolveRefreshTtl();
+        if (refreshTtl != null && !refreshTtl.isZero() && !refreshTtl.isNegative()) {
             refreshToken = refreshTokenService.issueRefreshToken(session, refreshTtl);
             refreshExpiresIn = refreshTtl.getSeconds();
         }

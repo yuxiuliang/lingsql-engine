@@ -55,7 +55,11 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         if (SecurityContextHolder.getContext().getAuthentication() == null) {
             String token = resolveToken(request);
             if (StringUtils.hasText(token)) {
-                RbacUserSession session = tokenService.getSession(token);
+                TokenService.TokenParseResult parseResult = tokenService.parseSession(token);
+                if (parseResult.status() == TokenService.TokenStatus.EXPIRED) {
+                    request.setAttribute(RbacSecurityConstants.TOKEN_EXPIRED_ATTRIBUTE, Boolean.TRUE);
+                }
+                RbacUserSession session = parseResult.session();
                 if (session != null) {
                     if (session.getUserId() == null) {
                         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);

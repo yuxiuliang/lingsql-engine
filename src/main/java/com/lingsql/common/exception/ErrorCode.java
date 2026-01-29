@@ -25,6 +25,9 @@ public enum ErrorCode {
     SQL_INVALID(621, "SQL 校验失败"),
     DATA_SCOPE_INVALID(622, "数据权限规则错误"),
     BILLING_INVALID(630, "计费配置错误"),
+    BILLING_BALANCE_INSUFFICIENT(631, "余额不足"),
+    BILLING_QUOTA_EXCEEDED(632, "限额触发"),
+    BILLING_PLAN_CONFLICT(633, "套餐冲突"),
     AUTH_INVALID(640, "认证失败"),
     TOKEN_INVALID(641, "Token 无效"),
     SYSTEM_ERROR(500, "系统异常，请稍后再试");

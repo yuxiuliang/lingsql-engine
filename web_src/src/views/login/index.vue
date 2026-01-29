@@ -82,7 +82,8 @@ const handleLogin = async () => {
       response.experience || false,
       response.roles || [],
       response.permissions || [],
-      response.tenantName || ''
+      response.tenantName || '',
+      response.refreshToken || ''
     );
     const menus = await fetchMenus();
     authStore.setMenus(menus);

@@ -25,6 +25,22 @@ public final class RbacSecurityConstants {
     public static final String BEARER_PREFIX = "Bearer ";
 
     /**
+     * Token 过期标记。
+     *
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    public static final String TOKEN_EXPIRED_MESSAGE = "TOKEN_EXPIRED";
+
+    /**
+     * Token 过期请求属性。
+     *
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    public static final String TOKEN_EXPIRED_ATTRIBUTE = "TOKEN_EXPIRED";
+
+    /**
      * Redis Token 前缀。
      *
      * @author 余炘洋
