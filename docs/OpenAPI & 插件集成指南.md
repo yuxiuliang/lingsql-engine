@@ -1304,7 +1304,7 @@ plugin:
   id: excel-export
   name: Excel 导出插件
   version: 1.0.0
-  author: LingSQL Team
+  author: 余炘洋
   description: 将查询结果导出为 Excel 文件
   main: com.lingsql.plugin.ExcelExportPlugin
 
@@ -1618,7 +1618,7 @@ async function callApi<T>(request: () => Promise<T>): Promise<T> {
 
 | 版本 | 日期 | 作者 | 变更说明 |
 |------|------|------|----------|
-| v1.0 | 2026-01-29 | LingSQL Team | 初始版本 |
+| v1.0 | 2026-01-29 | 余炘洋 | 初始版本 |
 
 ---
 
