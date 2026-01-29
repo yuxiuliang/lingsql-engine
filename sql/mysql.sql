@@ -108,7 +108,7 @@ CREATE TABLE `t_lingsql_engine_billing_ledger`
     `unit_cost`      bigint       DEFAULT NULL COMMENT '单价(点/Token)',
     `cost_amount`    bigint       DEFAULT NULL COMMENT '成本金额',
     `billing_version` varchar(64) DEFAULT NULL COMMENT '计费版本',
-    `event_type`     tinyint      DEFAULT '0' COMMENT '事件类型: 0-预扣, 1-退款',
+    `event_type`     tinyint      DEFAULT '0' COMMENT '事件类型: 0-预扣, 1-退款, 2-结算',
     `status`         tinyint      DEFAULT '0' COMMENT '状态: 0-待结算, 1-已结算, 2-失败',
     `create_time`    datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `apply_time`     datetime     DEFAULT NULL COMMENT '结算时间',

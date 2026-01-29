@@ -31,6 +31,7 @@ public class BillingLedgerService {
     private static final String EVENT_GUARD_KEY_PREFIX = "lingsql:billing:ledger:event:";
     private static final int STATUS_PENDING = 0;
     private static final int EVENT_TYPE_RESERVE = 0;
+    private static final int EVENT_TYPE_CLOSE = 2;
     private static final Duration DEFAULT_CHARGED_KEY_TTL = Duration.ofDays(3);
 
     private final BillingLedgerEventRepository repository;
@@ -49,6 +50,25 @@ public class BillingLedgerService {
      * @date 2026-01-29
      */
     public boolean recordReserveEvents(String requestId, String tenantId, int eventSeq, List<BillingChargeItem> items) {
+        return recordEvents(requestId, tenantId, eventSeq, EVENT_TYPE_RESERVE, items);
+    }
+
+    /**
+     * 写入结算账本事件（幂等）。
+     *
+     * @param requestId 请求ID
+     * @param tenantId  租户ID
+     * @param eventSeq  事件序号
+     * @param items     计费明细
+     * @return 是否写入成功
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    public boolean recordCloseEvents(String requestId, String tenantId, int eventSeq, List<BillingChargeItem> items) {
+        return recordEvents(requestId, tenantId, eventSeq, EVENT_TYPE_CLOSE, items);
+    }
+
+    private boolean recordEvents(String requestId, String tenantId, int eventSeq, int eventType, List<BillingChargeItem> items) {
         if (!StringUtils.hasText(requestId) || !StringUtils.hasText(tenantId) || eventSeq <= 0
                 || CollectionUtils.isEmpty(items)) {
             return false;
@@ -69,7 +89,7 @@ public class BillingLedgerService {
             event.setCostAmount(item.costAmount());
             event.setBillingVersion(item.policyVersion());
             event.setStatus(STATUS_PENDING);
-            event.setEventType(EVENT_TYPE_RESERVE);
+            event.setEventType(eventType);
             event.setCreateTime(now);
             entities.add(event);
         }

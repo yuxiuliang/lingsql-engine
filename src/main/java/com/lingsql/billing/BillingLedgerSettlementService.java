@@ -31,6 +31,7 @@ public class BillingLedgerSettlementService {
     private static final int STATUS_APPLIED = 1;
     private static final int STATUS_FAILED = 2;
     private static final int NOT_DELETED = 0;
+    private static final int EVENT_TYPE_RESERVE = 0;
 
     private final BillingLedgerEventRepository ledgerRepository;
     private final TenantRepository tenantRepository;
@@ -62,7 +63,9 @@ public class BillingLedgerSettlementService {
                 }
                 continue;
             }
-            costByTenant.merge(event.getTenantId(), event.getCostAmount(), Long::sum);
+            if (event.getEventType() == null || event.getEventType() == EVENT_TYPE_RESERVE) {
+                costByTenant.merge(event.getTenantId(), event.getCostAmount(), Long::sum);
+            }
         }
         LocalDateTime now = LocalDateTime.now();
         if (!invalidIds.isEmpty()) {
