@@ -73,6 +73,10 @@ lingsql:
     ledger-batch-size: 200
     ledger-settle-interval-ms: 5000
     charged-key-ttl: 72h
+    reconcile-window: 24h
+    reconcile-interval-ms: 60000
+    reconcile-batch-size: 200
+    reconcile-diff-threshold: 0
   web:
     max-page-size: 100
     export-max-rows: 10000

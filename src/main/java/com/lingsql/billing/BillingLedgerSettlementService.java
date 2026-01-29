@@ -43,7 +43,7 @@ public class BillingLedgerSettlementService {
      * @author 余炘洋
      * @date 2026-01-29
      */
-    @Scheduled(fixedDelayString = "#{@lingSqlProperties.billing.ledgerSettleIntervalMs}")
+    @Scheduled(fixedDelayString = "${lingsql.billing.ledger-settle-interval-ms}")
     @Transactional
     public void settleLedger() {
         int batchSize = resolveBatchSize();

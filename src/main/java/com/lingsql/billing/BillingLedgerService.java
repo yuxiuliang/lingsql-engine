@@ -54,7 +54,7 @@ public class BillingLedgerService {
     }
 
     /**
-     * 写入结算账本事件（幂等）。
+     * 写入 CLOSE 账本事件（幂等）。
      *
      * @param requestId 请求ID
      * @param tenantId  租户ID

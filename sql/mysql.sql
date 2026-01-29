@@ -108,7 +108,7 @@ CREATE TABLE `t_lingsql_engine_billing_ledger`
     `unit_cost`      bigint       DEFAULT NULL COMMENT '单价(点/Token)',
     `cost_amount`    bigint       DEFAULT NULL COMMENT '成本金额',
     `billing_version` varchar(64) DEFAULT NULL COMMENT '计费版本',
-    `event_type`     tinyint      DEFAULT '0' COMMENT '事件类型: 0-预扣, 1-退款, 2-结算',
+    `event_type`     tinyint      DEFAULT '0' COMMENT '事件类型: 0-预扣, 1-退款, 2-CLOSE(对账)',
     `status`         tinyint      DEFAULT '0' COMMENT '状态: 0-待结算, 1-已结算, 2-失败',
     `create_time`    datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `apply_time`     datetime     DEFAULT NULL COMMENT '结算时间',
@@ -120,6 +120,30 @@ CREATE TABLE `t_lingsql_engine_billing_ledger`
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='计费账本事件表';
+
+-- 计费对账日志表
+CREATE TABLE `t_lingsql_engine_billing_reconcile_log`
+(
+    `id`           bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`    varchar(64)  DEFAULT NULL COMMENT '租户ID',
+    `request_id`   varchar(64)  NOT NULL COMMENT '请求ID',
+    `reserve_total` bigint      DEFAULT NULL COMMENT '预扣总额',
+    `close_total`  bigint       DEFAULT NULL COMMENT 'CLOSE 总额',
+    `diff_amount`  bigint       DEFAULT NULL COMMENT '差异金额',
+    `status`       tinyint      DEFAULT '0' COMMENT '状态: 0-未处理, 1-已处理',
+    `resolve_note` varchar(255) DEFAULT NULL COMMENT '处理备注',
+    `resolve_user_id` bigint    DEFAULT NULL COMMENT '处理人ID',
+    `resolve_time` datetime     DEFAULT NULL COMMENT '处理时间',
+    `latest_time`  datetime     DEFAULT NULL COMMENT '最新账本时间',
+    `create_time`  datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`  datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_billing_reconcile_request` (`request_id`),
+    KEY `idx_billing_reconcile_tenant` (`tenant_id`),
+    KEY `idx_billing_reconcile_create` (`create_time`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='计费对账日志表';
 
 
 

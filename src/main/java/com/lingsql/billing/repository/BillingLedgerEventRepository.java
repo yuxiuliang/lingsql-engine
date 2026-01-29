@@ -63,4 +63,45 @@ public interface BillingLedgerEventRepository extends JpaRepository<BillingLedge
                      @Param("status") Integer status,
                      @Param("oldStatus") Integer oldStatus,
                      @Param("applyTime") LocalDateTime applyTime);
+
+    /**
+     * 查询账本对账候选。
+     *
+     * @param since    起始时间
+     * @param pageable 分页
+     * @return 对账统计
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    @Query(value = """
+            SELECT request_id AS requestId,
+                   MIN(tenant_id) AS tenantId,
+                   SUM(CASE WHEN event_type = 0 THEN IFNULL(cost_amount, 0) ELSE 0 END) AS reserveTotal,
+                   SUM(CASE WHEN event_type = 2 THEN IFNULL(cost_amount, 0) ELSE 0 END) AS closeTotal,
+                   MAX(create_time) AS latestTime
+              FROM t_lingsql_engine_billing_ledger
+             WHERE create_time >= :since
+             GROUP BY request_id
+            HAVING SUM(CASE WHEN event_type = 2 THEN IFNULL(cost_amount, 0) ELSE 0 END) > 0
+             ORDER BY latestTime DESC
+            """, nativeQuery = true)
+    List<LedgerReconcileProjection> findReconcileCandidates(@Param("since") LocalDateTime since, Pageable pageable);
+
+    /**
+     * 账本对账投影。
+     *
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    interface LedgerReconcileProjection {
+        String getRequestId();
+
+        String getTenantId();
+
+        Long getReserveTotal();
+
+        Long getCloseTotal();
+
+        java.sql.Timestamp getLatestTime();
+    }
 }

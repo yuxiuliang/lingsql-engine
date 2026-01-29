@@ -2,15 +2,21 @@ package com.lingsql.web;
 
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.billing.BillingAdminService;
+import com.lingsql.billing.BillingReconcileLogService;
 import com.lingsql.billing.entity.BillingPolicyVersion;
 import com.lingsql.billing.entity.TenantBillingOverride;
+import com.lingsql.billing.model.BillingReconcileLogQuery;
+import com.lingsql.billing.model.BillingReconcileLogView;
+import com.lingsql.billing.model.BillingReconcileResolveRequest;
 import com.lingsql.billing.model.BillingPolicyVersionRequest;
 import com.lingsql.billing.model.TenantBillingOverrideRequest;
 import com.lingsql.common.result.ApiResponse;
+import com.lingsql.common.result.PageResult;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,7 +25,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -35,6 +43,7 @@ public class BillingAdminController {
 
     private final BillingAdminService billingAdminService;
     private final AuditOperationExecutor auditOperationExecutor;
+    private final BillingReconcileLogService billingReconcileLogService;
 
     /**
      * 查询计费策略版本列表。
@@ -189,6 +198,63 @@ public class BillingAdminController {
                 http,
                 () -> billingAdminService.upsertOverride(tenantId, request)
         );
+    }
+
+    /**
+     * 查询计费对账日志。
+     *
+     * @param tenantId  租户ID
+     * @param requestId 请求ID
+     * @param startTime 开始时间
+     * @param endTime   结束时间
+     * @param page      页码
+     * @param size      每页大小
+     * @return 对账日志分页
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    @GetMapping("/reconcile/logs")
+    @PreAuthorize("hasAuthority('ADMIN:BILLING:READ')")
+    public ApiResponse<PageResult<BillingReconcileLogView>> listReconcileLogs(
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) String requestId,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        BillingReconcileLogQuery query = new BillingReconcileLogQuery();
+        query.setTenantId(tenantId);
+        query.setRequestId(requestId);
+        query.setStatus(status);
+        query.setStartTime(startTime);
+        query.setEndTime(endTime);
+        return ApiResponse.success(billingReconcileLogService.query(query, page, size));
+    }
+
+    /**
+     * 标记对账日志已处理。
+     *
+     * @param id      日志ID
+     * @param request 请求
+     * @return 处理后的日志
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    @PutMapping("/reconcile/logs/{id}/resolve")
+    @PreAuthorize("hasAuthority('ADMIN:BILLING:WRITE')")
+    public ApiResponse<BillingReconcileLogView> resolveReconcileLog(@PathVariable Long id,
+                                                                    @RequestBody(required = false) BillingReconcileResolveRequest request) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        RbacUserSession session = RbacSecurityUtils.currentSession();
+        String note = request == null ? null : request.getNote();
+        return ApiResponse.success(billingReconcileLogService.resolve(id, session == null ? null : session.getUserId(), note));
     }
 
     private boolean isSysAdmin() {

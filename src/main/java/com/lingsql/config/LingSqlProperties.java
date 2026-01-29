@@ -270,6 +270,38 @@ public class LingSqlProperties {
          * @date 2026-01-29
          */
         private Duration chargedKeyTtl = Duration.ofDays(3);
+
+        /**
+         * 对账扫描窗口。
+         *
+         * @author 余炘洋
+         * @date 2026-01-29
+         */
+        private Duration reconcileWindow = Duration.ofHours(24);
+
+        /**
+         * 对账扫描间隔(毫秒)。
+         *
+         * @author 余炘洋
+         * @date 2026-01-29
+         */
+        private long reconcileIntervalMs = 60000L;
+
+        /**
+         * 对账批量大小。
+         *
+         * @author 余炘洋
+         * @date 2026-01-29
+         */
+        private int reconcileBatchSize = 200;
+
+        /**
+         * 对账差异阈值。
+         *
+         * @author 余炘洋
+         * @date 2026-01-29
+         */
+        private long reconcileDiffThreshold = 0L;
     }
 
     /**

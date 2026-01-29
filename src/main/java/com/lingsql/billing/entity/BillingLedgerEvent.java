@@ -104,7 +104,7 @@ public class BillingLedgerEvent {
     private String billingVersion;
 
     /**
-     * 事件类型: 0-预扣, 1-退款。
+     * 事件类型: 0-预扣, 1-退款, 2-CLOSE(对账)。
      *
      * @author 余炘洋
      * @date 2026-01-29

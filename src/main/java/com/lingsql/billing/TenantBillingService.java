@@ -134,7 +134,7 @@ public class TenantBillingService {
         int closeSeq = command.nextBillingEventSeq();
         boolean closeRecorded = billingLedgerService.recordCloseEvents(requestId, tenantId, closeSeq, chargeItems);
         if (!closeRecorded) {
-            log.warn("写入结算账本失败: tenantId={}, requestId={}, eventSeq={}", tenantId, requestId, closeSeq);
+            log.warn("写入CLOSE账本失败: tenantId={}, requestId={}, eventSeq={}", tenantId, requestId, closeSeq);
         }
         command.setCostAmount(costAmount);
         command.setBillingVersion(chargeItems.getFirst().policyVersion());
