@@ -60,7 +60,6 @@
   ],
   "menus": [
     {"menuCode": "MENU_CHAT", "menuName": "智能问答", "parentCode": null, "path": "/chat", "component": "ChatPage", "icon": "chat", "sort": 10, "visible": 1, "status": 1, "permCode": "MENU:CHAT"},
-    {"menuCode": "MENU_CHAT_HISTORY", "menuName": "问答历史", "parentCode": null, "path": "/chat/history", "component": "ChatHistory", "icon": "chat", "sort": 20, "visible": 1, "status": 1, "permCode": "MENU:CHAT:HISTORY"},
     {"menuCode": "MENU_ADMIN", "menuName": "管理后台", "parentCode": null, "path": "/layout", "component": "Layout", "icon": "model", "sort": 100, "visible": 1, "status": 1, "permCode": "MENU:ADMIN"},
     {"menuCode": "MENU_ADMIN_DASHBOARD", "menuName": "仪表盘", "parentCode": "MENU_ADMIN", "path": "/dashboard", "component": "Dashboard", "icon": "dashboard", "sort": 1, "visible": 1, "status": 1, "permCode": "MENU:ADMIN:DASHBOARD"},
     {"menuCode": "MENU_ADMIN_PLAN", "menuName": "套餐管理", "parentCode": "MENU_ADMIN", "path": "/plan", "component": "PlanManage", "icon": "plan", "sort": 112, "visible": 1, "status": 1, "permCode": "MENU:ADMIN:PLAN"},
