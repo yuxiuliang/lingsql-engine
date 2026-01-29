@@ -97,4 +97,15 @@ public interface TenantRepository extends JpaRepository<TenantInfo, Long> {
      * @date 2026-01-27
      */
     long countByIsDeletedAndStatus(Integer isDeleted, Integer status);
+
+    /**
+     * 按套餐名称统计租户数量。
+     *
+     * @param planName  套餐名称
+     * @param isDeleted 删除标记
+     * @return 数量
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    long countByPlanNameAndIsDeleted(String planName, Integer isDeleted);
 }

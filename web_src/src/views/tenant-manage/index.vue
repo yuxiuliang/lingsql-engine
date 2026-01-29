@@ -10,16 +10,23 @@ import {
   TenantView,
   updateTenant
 } from '@/api/tenant';
+import {BillingPlanView, fetchPlans} from '@/api/plan';
 import {useAuthStore} from '@/store/auth';
 
 const authStore = useAuthStore();
 const tenants = ref<TenantView[]>([]);
 const loading = ref(false);
+const planList = ref<BillingPlanView[]>([]);
 const dialogVisible = ref(false);
 const editingId = ref<number | null>(null);
 const initConfig = ref(false);
 const planOptions = computed(() => {
   const options = new Set<string>();
+  planList.value.forEach((plan) => {
+    if (plan.planName && plan.planName.trim()) {
+      options.add(plan.planName.trim());
+    }
+  });
   tenants.value.forEach((tenant) => {
     if (tenant.planName && tenant.planName.trim()) {
       options.add(tenant.planName.trim());
@@ -118,6 +125,20 @@ const loadTenants = async () => {
     ElMessage.error(error instanceof Error ? error.message : '加载租户失败');
   } finally {
     loading.value = false;
+  }
+};
+
+/**
+ * 加载套餐列表。
+ *
+ * @author 余炘洋
+ * @date 2026-01-29
+ */
+const loadPlans = async () => {
+  try {
+    planList.value = await fetchPlans();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载套餐失败');
   }
 };
 
@@ -287,6 +308,7 @@ const isMessageBoxCancel = (error: unknown) => {
   return error === 'cancel' || error === 'close';
 };
 
+loadPlans();
 loadTenants();
 </script>
 
