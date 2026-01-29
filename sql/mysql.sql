@@ -96,6 +96,31 @@ CREATE TABLE `t_lingsql_engine_billing_tenant_override`
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='租户计费覆盖表';
 
+-- 计费账本事件表
+CREATE TABLE `t_lingsql_engine_billing_ledger`
+(
+    `id`             bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `request_id`     varchar(64)  NOT NULL COMMENT '请求ID',
+    `event_seq`      int          NOT NULL COMMENT '事件序号',
+    `tenant_id`      varchar(64)  NOT NULL COMMENT '租户ID',
+    `model_name`     varchar(64)  DEFAULT NULL COMMENT '模型名称',
+    `token_count`    int          DEFAULT NULL COMMENT 'Token 数量',
+    `unit_cost`      bigint       DEFAULT NULL COMMENT '单价(点/Token)',
+    `cost_amount`    bigint       DEFAULT NULL COMMENT '成本金额',
+    `billing_version` varchar(64) DEFAULT NULL COMMENT '计费版本',
+    `event_type`     tinyint      DEFAULT '0' COMMENT '事件类型: 0-预扣, 1-退款',
+    `status`         tinyint      DEFAULT '0' COMMENT '状态: 0-待结算, 1-已结算, 2-失败',
+    `create_time`    datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `apply_time`     datetime     DEFAULT NULL COMMENT '结算时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_billing_ledger_request_seq_model` (`request_id`, `event_seq`, `model_name`),
+    KEY `idx_billing_ledger_tenant` (`tenant_id`),
+    KEY `idx_billing_ledger_status` (`status`),
+    KEY `idx_billing_ledger_create` (`create_time`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='计费账本事件表';
+
 
 
 CREATE TABLE `t_lingsql_engine_ai_model_config`

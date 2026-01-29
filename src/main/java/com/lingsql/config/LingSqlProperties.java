@@ -240,6 +240,39 @@ public class LingSqlProperties {
     }
 
     /**
+     * 计费相关配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    @Data
+    public static class Billing {
+        /**
+         * 账本结算批量大小。
+         *
+         * @author 余炘洋
+         * @date 2026-01-29
+         */
+        private int ledgerBatchSize = 200;
+
+        /**
+         * 账本结算间隔(毫秒)。
+         *
+         * @author 余炘洋
+         * @date 2026-01-29
+         */
+        private long ledgerSettleIntervalMs = 5000L;
+
+        /**
+         * 计费幂等 Key 的 TTL。
+         *
+         * @author 余炘洋
+         * @date 2026-01-29
+         */
+        private Duration chargedKeyTtl = Duration.ofDays(3);
+    }
+
+    /**
      * AI 记忆配置。
      *
      * @author 余炘洋
@@ -657,6 +690,14 @@ public class LingSqlProperties {
      * @date 2026-01-22
      */
     private Cache cache = new Cache();
+
+    /**
+     * 计费配置。
+     *
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    private Billing billing = new Billing();
 
     /**
      * Hikari 连接池配置。

@@ -51,6 +51,10 @@ lingsql:
     comment-ttl: 168h
     semantic-ttl: 6h
     chat-history-ttl: 30m
+  billing:
+    ledger-batch-size: 200
+    ledger-settle-interval-ms: 5000
+    charged-key-ttl: 72h
   web:
     max-page-size: ${LINGSQL_WEB_MAX_PAGE_SIZE:100}
     export-max-rows: ${LINGSQL_WEB_EXPORT_MAX_ROWS:10000}

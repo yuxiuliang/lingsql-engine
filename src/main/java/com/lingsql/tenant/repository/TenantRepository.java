@@ -4,6 +4,9 @@ import com.lingsql.tenant.entity.TenantInfo;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -70,6 +73,33 @@ public interface TenantRepository extends JpaRepository<TenantInfo, Long> {
      * @date 2026-01-26
      */
     boolean existsByTenantIdAndIsDeleted(String tenantId, Integer isDeleted);
+
+    /**
+     * 扣减租户余额（原子更新）。
+     *
+     * @param tenantId  租户ID
+     * @param cost      扣费金额
+     * @param isDeleted 删除标记
+     * @param updateTime 更新时间
+     * @return 更新条数
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    @Modifying
+    @Query("""
+            UPDATE TenantInfo t
+               SET t.quotaBalance = CASE
+                                        WHEN t.quotaBalance - :cost < 0 THEN 0
+                                        ELSE t.quotaBalance - :cost
+                                    END,
+                   t.updateTime = :updateTime
+             WHERE t.tenantId = :tenantId
+               AND t.isDeleted = :isDeleted
+            """)
+    int decreaseBalance(@Param("tenantId") String tenantId,
+                        @Param("cost") long cost,
+                        @Param("isDeleted") Integer isDeleted,
+                        @Param("updateTime") java.time.LocalDateTime updateTime);
 
     /**
      * 统计活跃租户数量。

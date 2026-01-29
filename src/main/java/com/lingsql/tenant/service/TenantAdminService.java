@@ -5,6 +5,7 @@ import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.executor.SqlTaskTracker;
+import com.lingsql.billing.BillingBalanceService;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
@@ -70,6 +71,7 @@ public class TenantAdminService {
     private final RbacRoleDataScopeRepository roleDataScopeRepository;
     private final RbacUserRepository userRepository;
     private final SqlTaskTracker sqlTaskTracker;
+    private final BillingBalanceService billingBalanceService;
 
     /**
      * 查询租户列表。
@@ -120,6 +122,7 @@ public class TenantAdminService {
         tenant.setUpdateTime(LocalDateTime.now());
         TenantInfo saved = tenantRepository.save(tenant);
         initializeTenant(saved, request);
+        billingBalanceService.resetBalance(saved.getTenantId(), saved.getQuotaBalance());
         return toView(saved);
     }
 
@@ -204,6 +207,9 @@ public class TenantAdminService {
         }
         tenant.setUpdateTime(LocalDateTime.now());
         TenantInfo saved = tenantRepository.save(tenant);
+        if (request.getQuotaBalance() != null) {
+            billingBalanceService.resetBalance(saved.getTenantId(), saved.getQuotaBalance());
+        }
         return toView(saved);
     }
 

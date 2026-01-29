@@ -3,12 +3,15 @@ package com.lingsql.billing;
 import com.lingsql.audit.model.SqlExecuteLogCommand;
 import com.lingsql.audit.repository.SqlExecuteLogRepository;
 import com.lingsql.billing.entity.TenantBillingOverride;
+import com.lingsql.billing.model.BillingChargeItem;
 import com.lingsql.billing.model.BillingLimit;
 import com.lingsql.billing.model.BillingPolicySnapshot;
 import com.lingsql.billing.model.BillingQuote;
 import com.lingsql.billing.repository.TenantBillingOverrideRepository;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.repository.TenantRepository;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,6 +20,10 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 租户计费服务。
@@ -40,6 +47,8 @@ public class TenantBillingService {
     private final SqlExecuteLogRepository sqlExecuteLogRepository;
     private final BillingPolicy billingPolicy;
     private final TenantBillingOverrideRepository tenantBillingOverrideRepository;
+    private final BillingLedgerService billingLedgerService;
+    private final BillingBalanceService billingBalanceService;
 
     /**
      * 校验租户是否允许继续调用。
@@ -58,7 +67,8 @@ public class TenantBillingService {
             return BillingCheckResult.deny(MESSAGE_UPGRADE);
         }
         long balance = resolveBalance(tenant.getQuotaBalance());
-        if (balance <= 0) {
+        long cachedBalance = billingBalanceService.getAvailableBalance(tenantId, balance);
+        if (cachedBalance <= 0) {
             return BillingCheckResult.deny(MESSAGE_UPGRADE);
         }
         BillingPolicySnapshot snapshot = billingPolicy.currentSnapshot();
@@ -97,35 +107,95 @@ public class TenantBillingService {
         if (!StringUtils.hasText(tenantId) || command == null) {
             return BillingChargeResult.skip();
         }
-        Integer tokenCount = command.getTokenCount();
-        if (tokenCount == null || tokenCount <= 0) {
+        TenantInfo tenant = tenantRepository.findByTenantIdAndIsDeleted(tenantId, NOT_DELETED).orElse(null);
+        if (tenant == null) {
             return BillingChargeResult.skip();
         }
-        TenantInfo tenant = tenantRepository.findByTenantIdAndIsDeletedForUpdate(tenantId, NOT_DELETED).orElse(null);
-        if (tenant == null) {
+        Map<String, Integer> tokenUsage = resolveTokenUsage(command);
+        if (tokenUsage.isEmpty()) {
+            return BillingChargeResult.skip();
+        }
+        long reserved = resolveReservedCost(command.getReservedCostAmount());
+        if (reserved <= 0) {
             return BillingChargeResult.skip();
         }
         TenantBillingOverride override = tenantBillingOverrideRepository
                 .findByTenantIdAndStatus(tenantId, OVERRIDE_ACTIVE_STATUS)
                 .orElse(null);
-        BillingQuote quote = billingPolicy.quote(
-                command.getModelName(),
-                command.getTokenCount(),
-                tenant.getTenantType(),
-                override == null ? null : override.getPriceMultiplier()
-        );
-        long costAmount = quote.costAmount();
-        command.setCostAmount(costAmount);
-        command.setBillingVersion(quote.policyVersion());
-        long balance = resolveBalance(tenant.getQuotaBalance());
-        long newBalance = balance - costAmount;
-        if (newBalance < 0) {
-            log.warn("租户余额不足，已透支: tenantId={}, balance={}, cost={}", tenantId, balance, costAmount);
-            newBalance = 0;
+        List<BillingChargeItem> chargeItems = buildChargeItems(tokenUsage, tenant, override);
+        if (chargeItems.isEmpty()) {
+            return BillingChargeResult.skip();
         }
-        tenant.setQuotaBalance(newBalance);
-        tenantRepository.save(tenant);
-        return BillingChargeResult.success(costAmount, balance, newBalance);
+        long costAmount = chargeItems.stream().mapToLong(BillingChargeItem::costAmount).sum();
+        if (costAmount <= 0) {
+            return BillingChargeResult.skip();
+        }
+        command.setCostAmount(costAmount);
+        command.setBillingVersion(chargeItems.getFirst().policyVersion());
+        return BillingChargeResult.success(costAmount, reserved, reserved - costAmount);
+    }
+
+    /**
+     * 预扣费用，余额不足时直接拒绝。
+     *
+     * @param tenantId 租户ID
+     * @param command  日志命令
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    public void reserveCost(String tenantId, SqlExecuteLogCommand command) {
+        if (!StringUtils.hasText(tenantId) || command == null) {
+            return;
+        }
+        TenantInfo tenant = tenantRepository.findByTenantIdAndIsDeleted(tenantId, NOT_DELETED).orElse(null);
+        if (tenant == null) {
+            return;
+        }
+        Map<String, Integer> tokenUsage = resolveTokenUsage(command);
+        if (tokenUsage.isEmpty()) {
+            return;
+        }
+        Map<String, Integer> reservedUsage = resolveReservedUsage(command);
+        Map<String, Integer> deltaUsage = resolveDeltaUsage(tokenUsage, reservedUsage);
+        if (deltaUsage.isEmpty()) {
+            return;
+        }
+        TenantBillingOverride override = tenantBillingOverrideRepository
+                .findByTenantIdAndStatus(tenantId, OVERRIDE_ACTIVE_STATUS)
+                .orElse(null);
+        List<BillingChargeItem> totalItems = buildChargeItems(tokenUsage, tenant, override);
+        if (totalItems.isEmpty()) {
+            return;
+        }
+        long totalCost = totalItems.stream().mapToLong(BillingChargeItem::costAmount).sum();
+        if (totalCost <= 0) {
+            return;
+        }
+        List<BillingChargeItem> deltaItems = buildChargeItems(deltaUsage, tenant, override);
+        long deltaCost = deltaItems.stream().mapToLong(BillingChargeItem::costAmount).sum();
+        if (deltaCost <= 0) {
+            applyReservedUsage(command, deltaUsage);
+            command.setReservedCostAmount(totalCost);
+            command.setCostAmount(totalCost);
+            command.setBillingVersion(totalItems.getFirst().policyVersion());
+            return;
+        }
+        long balance = resolveBalance(tenant.getQuotaBalance());
+        BillingChargeResult result = billingBalanceService.reserveBalance(tenantId, deltaCost, balance);
+        if (!result.charged()) {
+            throw new BizException(ErrorCode.BILLING_INVALID, "余额不足，请升级套餐");
+        }
+        String requestId = resolveRequestId(command);
+        int eventSeq = command.nextBillingEventSeq();
+        boolean recorded = billingLedgerService.recordReserveEvents(requestId, tenantId, eventSeq, deltaItems);
+        if (!recorded) {
+            billingBalanceService.refundBalance(tenantId, deltaCost);
+            throw new BizException(ErrorCode.BILLING_INVALID, "账本写入失败，请稍后重试");
+        }
+        applyReservedUsage(command, deltaUsage);
+        command.setReservedCostAmount(totalCost);
+        command.setCostAmount(totalCost);
+        command.setBillingVersion(totalItems.getFirst().policyVersion());
     }
 
     /**
@@ -141,5 +211,142 @@ public class TenantBillingService {
             return 0;
         }
         return quotaBalance;
+    }
+
+    private long resolveReservedCost(Long reservedCostAmount) {
+        if (reservedCostAmount == null || reservedCostAmount < 0) {
+            return 0;
+        }
+        return reservedCostAmount;
+    }
+
+    private Map<String, Integer> resolveReservedUsage(SqlExecuteLogCommand command) {
+        Map<String, Integer> usage = new HashMap<>();
+        if (command.getReservedModelTokenUsage() != null) {
+            command.getReservedModelTokenUsage().forEach((model, tokens) -> {
+                if (tokens == null || tokens <= 0) {
+                    return;
+                }
+                usage.put(normalizeModelName(model), tokens);
+            });
+        }
+        return usage;
+    }
+
+    private Map<String, Integer> resolveDeltaUsage(Map<String, Integer> tokenUsage,
+                                                   Map<String, Integer> reservedUsage) {
+        Map<String, Integer> delta = new HashMap<>();
+        for (Map.Entry<String, Integer> entry : tokenUsage.entrySet()) {
+            int current = entry.getValue() == null ? 0 : entry.getValue();
+            int reserved = reservedUsage.getOrDefault(entry.getKey(), 0);
+            int diff = current - reserved;
+            if (diff > 0) {
+                delta.put(entry.getKey(), diff);
+            }
+        }
+        return delta;
+    }
+
+    private void applyReservedUsage(SqlExecuteLogCommand command, Map<String, Integer> deltaUsage) {
+        if (command == null || deltaUsage == null || deltaUsage.isEmpty()) {
+            return;
+        }
+        deltaUsage.forEach(command::addReservedModelTokens);
+    }
+
+    /**
+     * 解析模型 Token 使用情况。
+     *
+     * @param command 日志命令
+     * @return 统计结果
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    private Map<String, Integer> resolveTokenUsage(SqlExecuteLogCommand command) {
+        Map<String, Integer> usage = new HashMap<>();
+        if (command.getModelTokenUsage() != null) {
+            command.getModelTokenUsage().forEach((model, tokens) -> {
+                if (tokens == null || tokens <= 0) {
+                    return;
+                }
+                String normalized = normalizeModelName(model);
+                usage.merge(normalized, tokens, Integer::sum);
+            });
+        }
+        if (usage.isEmpty() && command.getTokenCount() != null && command.getTokenCount() > 0) {
+            String normalized = normalizeModelName(command.getModelName());
+            usage.put(normalized, command.getTokenCount());
+        }
+        return usage;
+    }
+
+    /**
+     * 构建计费明细。
+     *
+     * @param tokenUsage  模型 Token 统计
+     * @param tenant      租户信息
+     * @param override    计费覆盖
+     * @return 计费明细
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    private List<BillingChargeItem> buildChargeItems(Map<String, Integer> tokenUsage,
+                                                     TenantInfo tenant,
+                                                     TenantBillingOverride override) {
+        List<BillingChargeItem> items = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : tokenUsage.entrySet()) {
+            if (entry.getValue() == null || entry.getValue() <= 0) {
+                continue;
+            }
+            BillingQuote quote = billingPolicy.quote(
+                    entry.getKey(),
+                    entry.getValue(),
+                    tenant.getTenantType(),
+                    override == null ? null : override.getPriceMultiplier()
+            );
+            items.add(new BillingChargeItem(
+                    entry.getKey(),
+                    entry.getValue(),
+                    quote.unitCost(),
+                    quote.costAmount(),
+                    quote.policyVersion()
+            ));
+        }
+        return items;
+    }
+
+    /**
+     * 解析请求ID。
+     *
+     * @param command 日志命令
+     * @return 请求ID
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    private String resolveRequestId(SqlExecuteLogCommand command) {
+        if (command == null) {
+            return null;
+        }
+        if (StringUtils.hasText(command.getRequestId())) {
+            return command.getRequestId();
+        }
+        String fallback = java.util.UUID.randomUUID().toString().replace("-", "");
+        command.setRequestId(fallback);
+        return fallback;
+    }
+
+    /**
+     * 规范化模型名称。
+     *
+     * @param modelName 模型名称
+     * @return 规范化名称
+     * @author 余炘洋
+     * @date 2026-01-29
+     */
+    private String normalizeModelName(String modelName) {
+        if (!StringUtils.hasText(modelName)) {
+            return "UNKNOWN";
+        }
+        return modelName.trim().toUpperCase();
     }
 }

@@ -6,6 +6,7 @@ import com.lingsql.audit.service.SqlExecuteLogService;
 import com.lingsql.billing.TenantBillingService;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.common.trace.RequestTraceContext;
 import com.lingsql.context.TenantContext;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
@@ -69,6 +70,7 @@ public class SmartSqlExecutor {
      */
     public SqlExecutionResult execute(String tenantId, String question, String requestSource) {
         SqlExecuteLogCommand logCommand = new SqlExecuteLogCommand();
+        logCommand.setRequestId(RequestTraceContext.resolveRequestId());
         logCommand.setTenantId(tenantId);
         logCommand.setUserId(TenantContext.getUserId());
         logCommand.setQuestion(question);
@@ -138,6 +140,7 @@ public class SmartSqlExecutor {
         }
         logCommand.setAiSql(rawSql);
         applyModelTrace(logCommand);
+        tenantBillingService.reserveCost(tenantId, logCommand);
 
         String rewrittenSql = rewriter.rewrite(rawSql, config, tenantId);
         try {
@@ -202,6 +205,7 @@ public class SmartSqlExecutor {
         if (tokens == null || tokens <= 0) {
             return;
         }
+        logCommand.addModelTokens(traceInfo.getModelName(), tokens);
         Integer current = logCommand.getTokenCount();
         if (current == null) {
             logCommand.setTokenCount(tokens);
