@@ -13,7 +13,6 @@ import com.lingsql.rbac.service.MenuService;
 import com.lingsql.rbac.service.RefreshTokenService;
 import com.lingsql.rbac.service.TokenService;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -56,9 +55,7 @@ public class AuthController {
      */
     @PostMapping("/login")
     public ApiResponse<LoginResponse> login(
-            @Valid @RequestBody LoginRequest request,
-            HttpServletRequest httpRequest,
-            HttpServletResponse httpResponse
+            @Valid @RequestBody LoginRequest request
     ) {
         LoginResponse response = authService.login(request);
         return ApiResponse.success(response);
@@ -115,8 +112,7 @@ public class AuthController {
     @PreAuthorize("isAuthenticated()")
     public ApiResponse<String> logout(
             @RequestHeader(value = RbacSecurityConstants.AUTH_HEADER, required = false) String authHeader,
-            HttpServletRequest request,
-            HttpServletResponse response
+            HttpServletRequest request
     ) {
         String token = resolveToken(authHeader);
         if (StringUtils.hasText(token)) {
@@ -133,14 +129,13 @@ public class AuthController {
     /**
      * 刷新 Token。
      *
-     * @param request  请求
-     * @param response 响应
+     * @param request 请求
      * @return 登录响应
      * @author 余炘洋
      * @date 2026-01-27
      */
     @PostMapping("/refresh")
-    public ApiResponse<LoginResponse> refresh(HttpServletRequest request, HttpServletResponse response) {
+    public ApiResponse<LoginResponse> refresh(HttpServletRequest request) {
         String refreshToken = resolveRefreshToken(request);
         if (!StringUtils.hasText(refreshToken)) {
             return ApiResponse.unauthorized("Refresh Token 无效");

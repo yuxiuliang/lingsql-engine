@@ -52,7 +52,7 @@ export interface AuthState {
  */
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
-    token: '',
+    token: localStorage.getItem('token') || '',
     userId: Number(localStorage.getItem('userId') || 0),
     tenantId: localStorage.getItem('tenantId') || '',
     tenantName: localStorage.getItem('tenantName') || '',
@@ -108,7 +108,7 @@ export const useAuthStore = defineStore('auth', {
       permissions: string[] = [],
       tenantName = ''
     ) {
-      this.token = '';
+      this.token = token || '';
       this.userId = userId || 0;
       this.tenantId = tenantId;
       this.tenantName = tenantName || '';
@@ -126,6 +126,7 @@ export const useAuthStore = defineStore('auth', {
         this.activeTenantName = tenantName || tenantId;
       }
       localStorage.setItem('userId', String(this.userId || 0));
+      localStorage.setItem('token', this.token || '');
       localStorage.setItem('tenantId', tenantId);
       localStorage.setItem('tenantName', tenantName || '');
       localStorage.setItem('username', username);
@@ -167,6 +168,7 @@ export const useAuthStore = defineStore('auth', {
       this.menus = [];
       this.sessionReady = false;
       localStorage.removeItem('userId');
+      localStorage.removeItem('token');
       localStorage.removeItem('tenantId');
       localStorage.removeItem('tenantName');
       localStorage.removeItem('activeTenantId');

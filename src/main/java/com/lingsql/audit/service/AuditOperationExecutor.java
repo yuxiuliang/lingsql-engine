@@ -2,6 +2,8 @@ package com.lingsql.audit.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.audit.model.AuditLogCommand;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
@@ -35,9 +37,12 @@ public class AuditOperationExecutor {
             T result = supplier.get();
             recordAudit(action, resource, request, true, null, http);
             return ApiResponse.success(result);
+        } catch (BizException ex) {
+            recordAudit(action, resource, request, false, ex.getMessage(), http);
+            throw ex;
         } catch (Exception ex) {
             recordAudit(action, resource, request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
+            throw new BizException(ErrorCode.SYSTEM_ERROR, "系统异常，请稍后再试", ex);
         }
     }
 
@@ -46,9 +51,12 @@ public class AuditOperationExecutor {
             runnable.run();
             recordAudit(action, resource, request, true, null, http);
             return ApiResponse.success(successMessage);
+        } catch (BizException ex) {
+            recordAudit(action, resource, request, false, ex.getMessage(), http);
+            throw ex;
         } catch (Exception ex) {
             recordAudit(action, resource, request, false, ex.getMessage(), http);
-            return ApiResponse.error(ex.getMessage());
+            throw new BizException(ErrorCode.SYSTEM_ERROR, "系统异常，请稍后再试", ex);
         }
     }
 

@@ -575,53 +575,6 @@ public class LingSqlProperties {
          */
         private Duration refreshTtl = Duration.ofDays(7);
 
-        /**
-         * 登录 Cookie 名称。
-         *
-         * @author 余炘洋
-         * @date 2026-01-27
-         */
-        private String cookieName = "LINGSQL_TOKEN";
-
-        /**
-         * Cookie 域名(可选)。
-         *
-         * @author 余炘洋
-         * @date 2026-01-27
-         */
-        private String cookieDomain;
-
-        /**
-         * Cookie Path。
-         *
-         * @author 余炘洋
-         * @date 2026-01-27
-         */
-        private String cookiePath = "/";
-
-        /**
-         * Cookie SameSite 策略(Lax/Strict/None)。
-         *
-         * @author 余炘洋
-         * @date 2026-01-27
-         */
-        private String cookieSameSite = "Lax";
-
-        /**
-         * Cookie Secure 标记(为空时根据请求协议自动判断)。
-         *
-         * @author 余炘洋
-         * @date 2026-01-27
-         */
-        private Boolean cookieSecure;
-
-        /**
-         * Refresh Token Cookie 名称。
-         *
-         * @author 余炘洋
-         * @date 2026-01-27
-         */
-        private String refreshCookieName = "LINGSQL_REFRESH";
     }
 
     /**
