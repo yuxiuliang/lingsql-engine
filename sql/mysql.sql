@@ -305,6 +305,7 @@ CREATE TABLE `t_lingsql_engine_menu`
 (
     `id`          bigint      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `tenant_id`   varchar(64) DEFAULT NULL COMMENT '租户ID，NULL 表示全局',
+    `tenant_key`  varchar(64) GENERATED ALWAYS AS (IFNULL(`tenant_id`, 'GLOBAL')) STORED COMMENT '租户唯一键(兼容NULL)',
     `menu_code`   varchar(64) NOT NULL COMMENT '菜单编码',
     `menu_name`   varchar(128) NOT NULL COMMENT '菜单名称',
     `parent_id`   bigint      DEFAULT NULL COMMENT '父级菜单ID',

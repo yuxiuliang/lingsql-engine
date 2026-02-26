@@ -120,39 +120,10 @@ public class SqlRewriter {
      * @date 2026-01-22
      */
     private void injectTenantCondition(PlainSelect plainSelect, String columnName, String tenantId) {
-        if (containsColumn(plainSelect.getWhere(), columnName)) {
+        if (!StringUtils.hasText(columnName) || !StringUtils.hasText(tenantId)) {
             return;
         }
-        EqualsTo equalsTo = new EqualsTo();
-        equalsTo.setLeftExpression(buildColumn(plainSelect, columnName));
-        equalsTo.setRightExpression(new StringValue(tenantId));
-        Expression where = plainSelect.getWhere();
-        if (where == null) {
-            plainSelect.setWhere(equalsTo);
-        } else {
-            plainSelect.setWhere(new AndExpression(where, equalsTo));
-        }
-    }
-
-    /**
-     * 判断条件中是否已包含指定字段。
-     *
-     * @param expression 条件表达式
-     * @param columnName 字段名
-     * @return 是否包含
-     * @author 余炘洋
-     * @date 2026-01-22
-     */
-    private boolean containsColumn(Expression expression, String columnName) {
-        if (expression == null) {
-            return false;
-        }
-        if (columnName == null || columnName.isBlank()) {
-            return false;
-        }
-        ColumnDetectVisitor visitor = new ColumnDetectVisitor(columnName);
-        expression.accept(visitor);
-        return visitor.isFound();
+        injectEqualsCondition(plainSelect, buildColumn(plainSelect, columnName), new StringValue(tenantId));
     }
 
     /**
@@ -222,18 +193,10 @@ public class SqlRewriter {
             if (columnName == null || columnName.isBlank()) {
                 columnName = "creator_id";
             }
-            if (containsColumn(plainSelect.getWhere(), columnName)) {
-                return;
+            if (session.getUserId() == null) {
+                throw new BizException(ErrorCode.SECURITY_VIOLATION, "数据权限缺少用户信息");
             }
-            EqualsTo equalsTo = new EqualsTo();
-            equalsTo.setLeftExpression(buildColumn(plainSelect, columnName));
-            equalsTo.setRightExpression(new LongValue(String.valueOf(session.getUserId())));
-            Expression where = plainSelect.getWhere();
-            if (where == null) {
-                plainSelect.setWhere(equalsTo);
-            } else {
-                plainSelect.setWhere(new AndExpression(where, equalsTo));
-            }
+            injectEqualsCondition(plainSelect, buildColumn(plainSelect, columnName), new LongValue(String.valueOf(session.getUserId())));
             return;
         }
         if (RbacDataScopeType.CUSTOM.equals(normalized)) {
@@ -253,6 +216,27 @@ public class SqlRewriter {
                 throw new BizException(ErrorCode.DATA_SCOPE_INVALID, "数据权限规则配置错误", ex);
             }
         }
+    }
+
+    /**
+     * 追加等值条件，避免原条件被覆盖。
+     *
+     * @param plainSelect 查询体
+     * @param left        左表达式
+     * @param right       右表达式
+     * @author 余炘洋
+     * @date 2026-02-26
+     */
+    private void injectEqualsCondition(PlainSelect plainSelect, Expression left, Expression right) {
+        EqualsTo equalsTo = new EqualsTo();
+        equalsTo.setLeftExpression(left);
+        equalsTo.setRightExpression(right);
+        Expression where = plainSelect.getWhere();
+        if (where == null) {
+            plainSelect.setWhere(equalsTo);
+            return;
+        }
+        plainSelect.setWhere(new AndExpression(where, equalsTo));
     }
 
     /**
@@ -393,51 +377,4 @@ public class SqlRewriter {
         }
     }
 
-    /**
-     * 字段检测访问器。
-     *
-     * @author 余炘洋
-     * @date 2026-01-22
-     */
-    private static class ColumnDetectVisitor extends ExpressionDeParser {
-        private final String columnName;
-        private boolean found = false;
-
-        /**
-         * 构造函数。
-         *
-         * @param columnName 字段名
-         * @author 余炘洋
-         * @date 2026-01-22
-         */
-        private ColumnDetectVisitor(String columnName) {
-            this.columnName = columnName == null ? "" : columnName.toLowerCase();
-        }
-
-        /**
-         * 访问列节点以检测字段。
-         *
-         * @param column 列
-         * @author 余炘洋
-         * @date 2026-01-22
-         */
-        @Override
-        public void visit(Column column) {
-            if (column.getColumnName() != null && column.getColumnName().equalsIgnoreCase(columnName)) {
-                found = true;
-            }
-            super.visit(column);
-        }
-
-        /**
-         * 是否命中字段。
-         *
-         * @return 是否命中
-         * @author 余炘洋
-         * @date 2026-01-22
-         */
-        private boolean isFound() {
-            return found;
-        }
-    }
 }

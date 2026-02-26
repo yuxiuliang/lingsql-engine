@@ -13,9 +13,9 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.util.StringUtils;
 
 import java.util.Optional;
 
@@ -106,8 +106,8 @@ public class GlobalExceptionHandler {
         if (isLoginRequest(request)) {
             return attachRequestId(ApiResponse.fail(ErrorCode.UNAUTHORIZED, LOGIN_ERROR_MESSAGE));
         }
-        if (isRefreshRequest(request) && StringUtils.hasText(ex.getMessage())) {
-            return attachRequestId(ApiResponse.fail(ErrorCode.UNAUTHORIZED, ex.getMessage()));
+        if (isRefreshRequest(request)) {
+            return attachRequestId(ApiResponse.fail(ErrorCode.UNAUTHORIZED, "登录状态已失效，请重新登录"));
         }
         return attachRequestId(ApiResponse.fail(ErrorCode.UNAUTHORIZED, "未登录或登录已过期"));
     }
@@ -157,7 +157,22 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(SqlExecutionException.class)
     public ApiResponse<Void> handleSqlExecutionException(SqlExecutionException ex) {
-        return attachRequestId(ApiResponse.fail(ErrorCode.SQL_INVALID, ex.getMessage()));
+        log.warn("SQL 执行异常: {}", ex.getMessage());
+        return attachRequestId(ApiResponse.fail(ErrorCode.SQL_INVALID, "SQL 执行失败，请检查查询条件"));
+    }
+
+    /**
+     * 处理静态资源不存在异常。
+     *
+     * @param ex 异常
+     * @return 统一响应
+     * @author 余炘洋
+     * @date 2026-02-26
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ApiResponse<Void> handleNoResourceFoundException(NoResourceFoundException ex) {
+        log.debug("资源不存在: {}", ex.getMessage());
+        return attachRequestId(ApiResponse.fail(ErrorCode.NOT_FOUND, "资源不存在"));
     }
 
     /**

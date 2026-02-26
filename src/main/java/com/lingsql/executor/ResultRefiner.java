@@ -18,6 +18,7 @@ import java.util.Map;
 public class ResultRefiner {
 
     private final LlmClient llmClient;
+    private static final String REFINE_FALLBACK_MESSAGE = "生成答复失败，请稍后重试。";
 
     private static final String REFINER_PROMPT = """
         你是一个专业的数据分析助手，请基于问题与查询结果生成简洁、准确的回复。
@@ -51,7 +52,7 @@ public class ResultRefiner {
         try {
             return llmClient.chat(REFINER_PROMPT, userPrompt);
         } catch (Exception ex) {
-            return "生成答复失败，原因：" + ex.getMessage() + "。请稍后重试。";
+            return REFINE_FALLBACK_MESSAGE;
         }
     }
 

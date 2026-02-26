@@ -79,7 +79,7 @@ public class LlmClient {
             }
         } catch (Exception ex) {
             log.error("模型切换失败: {}", ex.getMessage(), ex);
-            throw new BizException(ErrorCode.MODEL_UNAVAILABLE, "模型调用失败: " + ex.getMessage(), ex);
+            throw new BizException(ErrorCode.MODEL_UNAVAILABLE, "模型调用失败，请稍后重试", ex);
         }
     }
 

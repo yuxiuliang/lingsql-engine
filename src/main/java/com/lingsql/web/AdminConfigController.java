@@ -16,6 +16,7 @@ import com.lingsql.schema.entity.SemanticLexiconItem;
 import com.lingsql.schema.repository.JoinRuleRepository;
 import com.lingsql.schema.repository.SemanticLexiconRepository;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -45,7 +46,10 @@ import java.sql.DriverManager;
 @RestController
 @RequestMapping("/api/v1/admin/config")
 @RequiredArgsConstructor
+@Slf4j
 public class AdminConfigController {
+
+    private static final String CONNECTION_TEST_ERROR_MESSAGE = "连接失败，请检查数据库配置后重试";
 
     private final TenantDbConfigRepository tenantDbConfigRepository;
     private final AiModelConfigRepository aiModelConfigRepository;
@@ -120,7 +124,8 @@ public class AdminConfigController {
                 return ApiResponse.success("连接成功");
             }
         } catch (Exception ex) {
-            return ApiResponse.error("连接失败: " + ex.getMessage());
+            log.warn("测试租户数据库连接失败: driverClass={}, jdbcUrl={}", driverClass, url, ex);
+            return ApiResponse.error(CONNECTION_TEST_ERROR_MESSAGE);
         }
     }
 
@@ -512,7 +517,8 @@ public class AdminConfigController {
         try {
             CCJSqlParserUtil.parse("SELECT " + mapping + " FROM dual");
         } catch (Exception ex) {
-            throw new BizException(ErrorCode.INVALID_PARAM, "映射表达式语法错误: " + ex.getMessage(), ex);
+            log.warn("映射表达式语法校验失败: mapping={}", mapping, ex);
+            throw new BizException(ErrorCode.INVALID_PARAM, "映射表达式语法错误", ex);
         }
     }
 }

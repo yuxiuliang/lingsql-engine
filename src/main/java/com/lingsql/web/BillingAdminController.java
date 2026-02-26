@@ -15,6 +15,7 @@ import com.lingsql.common.result.PageResult;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -39,7 +40,10 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/admin/billing")
 @RequiredArgsConstructor
+@Slf4j
 public class BillingAdminController {
+
+    private static final String OVERRIDE_QUERY_ERROR_MESSAGE = "查询租户计费覆盖失败，请稍后重试";
 
     private final BillingAdminService billingAdminService;
     private final AuditOperationExecutor auditOperationExecutor;
@@ -169,7 +173,8 @@ public class BillingAdminController {
         try {
             return ApiResponse.success(billingAdminService.getOverride(tenantId));
         } catch (Exception ex) {
-            return ApiResponse.error(ex.getMessage());
+            log.warn("查询租户计费覆盖失败: tenantId={}", tenantId, ex);
+            return ApiResponse.error(OVERRIDE_QUERY_ERROR_MESSAGE);
         }
     }
 

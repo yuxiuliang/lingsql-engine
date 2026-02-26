@@ -85,8 +85,7 @@ public class SmartSqlExecutor {
             fillFailureLog(logCommand, null, ex.getMessage());
             throw ex;
         } finally {
-            tenantBillingService.charge(tenantId, logCommand);
-            sqlExecuteLogService.record(logCommand);
+            finalizeBillingAndAudit(tenantId, logCommand);
             LlmTraceContext.clear();
             sqlTaskTracker.finish(tenantId);
         }
@@ -144,7 +143,7 @@ public class SmartSqlExecutor {
 
         String rewrittenSql = rewriter.rewrite(rawSql, config, tenantId);
         try {
-            securityChecker.check(rewrittenSql, config);
+            securityChecker.check(rewrittenSql, config, tenantId);
             long start = System.currentTimeMillis();
             List<Map<String, Object>> data = jdbcTemplate.queryForList(rewrittenSql);
             long costMs = System.currentTimeMillis() - start;
@@ -213,5 +212,28 @@ public class SmartSqlExecutor {
         }
         long total = (long) current + tokens;
         logCommand.setTokenCount(total > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) total);
+    }
+
+    /**
+     * 结束执行后处理计费与审计日志，避免非核心流程异常反向影响主链路。
+     *
+     * @param tenantId   租户标识
+     * @param logCommand 日志对象
+     * @author 余炘洋
+     * @date 2026-02-26
+     */
+    private void finalizeBillingAndAudit(String tenantId, SqlExecuteLogCommand logCommand) {
+        try {
+            tenantBillingService.charge(tenantId, logCommand);
+        } catch (Exception ex) {
+            log.error("执行后计费失败: tenantId={}, requestId={}", tenantId,
+                    logCommand == null ? null : logCommand.getRequestId(), ex);
+        }
+        try {
+            sqlExecuteLogService.record(logCommand);
+        } catch (Exception ex) {
+            log.error("执行日志写入失败: tenantId={}, requestId={}", tenantId,
+                    logCommand == null ? null : logCommand.getRequestId(), ex);
+        }
     }
 }

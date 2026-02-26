@@ -4,9 +4,16 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.datasource.model.TenantDbConfig;
+import com.lingsql.rbac.model.DataScopeRule;
+import com.lingsql.rbac.model.RbacDataScopeType;
+import com.lingsql.rbac.security.RbacSecurityUtils;
+import com.lingsql.rbac.security.RbacUserSession;
 import lombok.RequiredArgsConstructor;
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.LongValue;
+import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
+import net.sf.jsqlparser.expression.operators.relational.EqualsTo;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.Statement;
@@ -22,6 +29,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * SQL 安全校验器，负责白名单与敏感字段验证。
@@ -38,12 +46,13 @@ public class SqlSecurityChecker {
     /**
      * 校验 SQL 是否安全。
      *
-     * @param statement SQL 语句对象
-     * @param config 租户配置
+     * @param sql      SQL 文本
+     * @param config   租户配置
+     * @param tenantId 当前租户ID
      * @author 余炘洋
      * @date 2026-01-22
      */
-    public void check(String sql, TenantDbConfig config) {
+    public void check(String sql, TenantDbConfig config, String tenantId) {
         try {
             Statement statement = CCJSqlParserUtil.parse(sql);
             if (!(statement instanceof Select select)) {
@@ -55,7 +64,8 @@ public class SqlSecurityChecker {
                 throw new BizException(ErrorCode.SQL_INVALID, "安全警告：仅支持单条 SELECT 查询");
             }
             validateLimit(plainSelect);
-            validateTenantCondition(config, plainSelect.getWhere());
+            validateTenantCondition(config, plainSelect.getWhere(), tenantId);
+            validateSelfDataScopeCondition(plainSelect.getWhere());
             validateTables(statement, config);
             validateColumns(plainSelect, config);
         } catch (BizException ex) {
@@ -91,20 +101,48 @@ public class SqlSecurityChecker {
      *
      * @param config 租户配置
      * @param where  WHERE 条件
+     * @param tenantId 当前租户ID
      * @author 余炘洋
      * @date 2026-01-22
      */
-    private void validateTenantCondition(TenantDbConfig config, Expression where) {
+    private void validateTenantCondition(TenantDbConfig config, Expression where, String tenantId) {
         if (!config.isLogicalIsolation()) {
             return;
+        }
+        if (!StringUtils.hasText(tenantId)) {
+            throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：租户上下文缺失");
         }
         if (where == null) {
             throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：逻辑隔离模式缺少 tenant 条件");
         }
-        ColumnDetectVisitor visitor = new ColumnDetectVisitor(config.resolveLogicColumn());
-        where.accept(visitor);
-        if (!visitor.isFound()) {
-            throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：逻辑隔离模式缺少 tenant 条件");
+        String columnName = config.resolveLogicColumn();
+        if (!containsEqualsCondition(where, columnName, tenantId, null)) {
+            throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：逻辑隔离模式 tenant 条件不合法");
+        }
+    }
+
+    /**
+     * 校验 SELF 数据权限条件是否包含当前用户。
+     *
+     * @param where WHERE 条件
+     * @author 余炘洋
+     * @date 2026-02-26
+     */
+    private void validateSelfDataScopeCondition(Expression where) {
+        RbacUserSession session = RbacSecurityUtils.currentSession();
+        if (session == null || session.getDataScope() == null) {
+            return;
+        }
+        DataScopeRule rule = session.getDataScope();
+        if (!RbacDataScopeType.SELF.equalsIgnoreCase(rule.getScopeType())) {
+            return;
+        }
+        if (session.getUserId() == null || where == null) {
+            throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：SELF 数据权限缺少用户条件");
+        }
+        String scopeColumn = StringUtils.hasText(rule.getScopeColumn()) ? rule.getScopeColumn() : "creator_id";
+        if (!containsEqualsCondition(where, scopeColumn, null, session.getUserId())) {
+            throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：SELF 数据权限条件不合法");
         }
     }
 
@@ -211,6 +249,79 @@ public class SqlSecurityChecker {
     }
 
     /**
+     * 判断 WHERE 条件中是否包含指定字段与目标值的等值条件。
+     *
+     * @param where         WHERE 条件
+     * @param columnName    字段名
+     * @param expectedText  期望字符串值
+     * @param expectedLong  期望数字值
+     * @return 是否匹配
+     * @author 余炘洋
+     * @date 2026-02-26
+     */
+    private boolean containsEqualsCondition(Expression where, String columnName, String expectedText, Long expectedLong) {
+        if (where == null || !StringUtils.hasText(columnName)) {
+            return false;
+        }
+        EqualsConditionVisitor visitor = new EqualsConditionVisitor(columnName, expectedText, expectedLong);
+        where.accept(visitor);
+        if (visitor.isFound()) {
+            return true;
+        }
+        return containsEqualsByText(where.toString(), normalizeColumnName(columnName), expectedText, expectedLong);
+    }
+
+    /**
+     * 文本兜底校验，处理部分表达式节点类型差异。
+     *
+     * @param whereText    WHERE 文本
+     * @param columnName   字段名
+     * @param expectedText 期望字符串值
+     * @param expectedLong 期望数字值
+     * @return 是否匹配
+     * @author 余炘洋
+     * @date 2026-02-26
+     */
+    private boolean containsEqualsByText(String whereText, String columnName, String expectedText, Long expectedLong) {
+        if (!StringUtils.hasText(whereText) || !StringUtils.hasText(columnName)) {
+            return false;
+        }
+        String normalized = whereText.replace("`", "");
+        String columnPattern = "(?:\\b\\w+\\.)?" + Pattern.quote(columnName);
+        if (expectedText != null) {
+            String valuePattern = Pattern.quote("'" + expectedText + "'");
+            return Pattern.compile(columnPattern + "\\s*=\\s*" + valuePattern, Pattern.CASE_INSENSITIVE).matcher(normalized).find()
+                    || Pattern.compile(valuePattern + "\\s*=\\s*" + columnPattern, Pattern.CASE_INSENSITIVE).matcher(normalized).find();
+        }
+        if (expectedLong != null) {
+            String valuePattern = "(?:'?)" + Pattern.quote(String.valueOf(expectedLong)) + "(?:'?)";
+            return Pattern.compile(columnPattern + "\\s*=\\s*" + valuePattern, Pattern.CASE_INSENSITIVE).matcher(normalized).find()
+                    || Pattern.compile(valuePattern + "\\s*=\\s*" + columnPattern, Pattern.CASE_INSENSITIVE).matcher(normalized).find();
+        }
+        return false;
+    }
+
+    /**
+     * 标准化字段名，去除表前缀与反引号。
+     *
+     * @param columnName 原始字段名
+     * @return 标准化字段名
+     * @author 余炘洋
+     * @date 2026-02-26
+     */
+    private String normalizeColumnName(String columnName) {
+        if (!StringUtils.hasText(columnName)) {
+            return "";
+        }
+        String normalized = columnName.trim().replace("`", "");
+        int dotIndex = normalized.lastIndexOf('.');
+        if (dotIndex > -1 && dotIndex < normalized.length() - 1) {
+            normalized = normalized.substring(dotIndex + 1);
+        }
+        return normalized.toLowerCase();
+    }
+
+    /**
      * 列收集访问器。
      *
      * @author 余炘洋
@@ -264,39 +375,113 @@ public class SqlSecurityChecker {
     }
 
     /**
-     * tenant 条件检测访问器。
+     * 等值条件检测访问器。
      *
      * @author 余炘洋
-     * @date 2026-01-22
+     * @date 2026-02-26
      */
-    private static class ColumnDetectVisitor extends ExpressionDeParser {
+    private class EqualsConditionVisitor extends ExpressionDeParser {
         private final String columnName;
+        private final String expectedText;
+        private final Long expectedLong;
         private boolean found = false;
 
         /**
          * 构造函数。
          *
-         * @param columnName 字段名
+         * @param columnName   字段名
+         * @param expectedText 期望字符串值
+         * @param expectedLong 期望数字值
          * @author 余炘洋
-         * @date 2026-01-22
+         * @date 2026-02-26
          */
-        private ColumnDetectVisitor(String columnName) {
-            this.columnName = columnName == null ? "" : columnName.toLowerCase();
+        private EqualsConditionVisitor(String columnName, String expectedText, Long expectedLong) {
+            this.columnName = normalizeColumnName(columnName);
+            this.expectedText = expectedText;
+            this.expectedLong = expectedLong;
         }
 
         /**
-         * 访问列节点。
+         * 访问等值表达式。
          *
-         * @param column 列
+         * @param equalsTo 等值条件
          * @author 余炘洋
-         * @date 2026-01-22
+         * @date 2026-02-26
          */
         @Override
-        public void visit(Column column) {
-            if (column.getColumnName() != null && column.getColumnName().equalsIgnoreCase(columnName)) {
-                found = true;
+        public void visit(EqualsTo equalsTo) {
+            if (equalsTo == null || found) {
+                super.visit(equalsTo);
+                return;
             }
-            super.visit(column);
+            if (matches(equalsTo.getLeftExpression(), equalsTo.getRightExpression())
+                    || matches(equalsTo.getRightExpression(), equalsTo.getLeftExpression())) {
+                found = true;
+                return;
+            }
+            super.visit(equalsTo);
+        }
+
+        private boolean matches(Expression columnExpr, Expression valueExpr) {
+            if (!(columnExpr instanceof Column column) || column.getColumnName() == null) {
+                return false;
+            }
+            String actualColumn = normalizeColumnName(column.getColumnName());
+            if (!actualColumn.equals(columnName)) {
+                return false;
+            }
+            if (expectedText != null) {
+                return matchesTextValue(valueExpr, expectedText);
+            }
+            if (expectedLong != null) {
+                return matchesLongValue(valueExpr, expectedLong);
+            }
+            return false;
+        }
+
+        private boolean matchesTextValue(Expression valueExpr, String expected) {
+            if (valueExpr == null) {
+                return false;
+            }
+            if (valueExpr instanceof StringValue stringValue) {
+                return expected.equals(stringValue.getValue());
+            }
+            if (valueExpr instanceof LongValue longValue) {
+                return expected.equals(String.valueOf(longValue.getValue()));
+            }
+            return expected.equals(stripValue(valueExpr.toString()));
+        }
+
+        private boolean matchesLongValue(Expression valueExpr, Long expected) {
+            if (valueExpr == null || expected == null) {
+                return false;
+            }
+            if (valueExpr instanceof LongValue longValue) {
+                return longValue.getValue() == expected.longValue();
+            }
+            if (valueExpr instanceof StringValue stringValue) {
+                try {
+                    return Long.parseLong(stringValue.getValue()) == expected.longValue();
+                } catch (NumberFormatException ex) {
+                    return false;
+                }
+            }
+            try {
+                return Long.parseLong(stripValue(valueExpr.toString())) == expected.longValue();
+            } catch (NumberFormatException ex) {
+                return false;
+            }
+        }
+
+        private String stripValue(String raw) {
+            if (raw == null) {
+                return "";
+            }
+            String value = raw.trim();
+            if (value.startsWith("'") && value.endsWith("'") && value.length() >= 2) {
+                return value.substring(1, value.length() - 1);
+            }
+            return value;
         }
 
         /**
@@ -304,7 +489,7 @@ public class SqlSecurityChecker {
          *
          * @return 是否命中
          * @author 余炘洋
-         * @date 2026-01-22
+         * @date 2026-02-26
          */
         private boolean isFound() {
             return found;

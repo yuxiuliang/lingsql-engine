@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ChatApplicationService {
 
+    private static final String EXECUTION_ERROR_MESSAGE = "SQL 执行失败，请检查查询条件";
+
     private final SmartSqlExecutor sqlExecutor;
     private final ResultRefiner resultRefiner;
     private final ChatHistoryService chatHistoryService;
@@ -40,8 +42,9 @@ public class ChatApplicationService {
         try {
             executionResult = sqlExecutor.execute(tenantId, request.getQuestion(), "WEB");
         } catch (Exception ex) {
-            executionResult = SqlExecutionResult.failure(null, ex.getMessage());
+            executionResult = SqlExecutionResult.failure(null, EXECUTION_ERROR_MESSAGE);
         }
+        executionResult = sanitizeForUser(executionResult);
         String finalAnswer = resultRefiner.refine(request.getQuestion(), executionResult);
         String sqlText = normalizeSqlForView(executionResult);
         if (executionResult.isSuccess()) {
@@ -71,14 +74,13 @@ public class ChatApplicationService {
         if (executionResult.isSuccess()) {
             return executionResult.getSql();
         }
-        String sql = executionResult.getSql();
-        if (sql != null && sql.startsWith("ERROR")) {
-            return sql;
+        return "ERROR:" + EXECUTION_ERROR_MESSAGE;
+    }
+
+    private SqlExecutionResult sanitizeForUser(SqlExecutionResult executionResult) {
+        if (executionResult == null || executionResult.isSuccess()) {
+            return executionResult;
         }
-        String errorMessage = executionResult.getErrorMessage();
-        if (errorMessage == null || errorMessage.isBlank()) {
-            return "ERROR:UNKNOWN";
-        }
-        return "ERROR:" + errorMessage;
+        return SqlExecutionResult.failure(executionResult.getSql(), EXECUTION_ERROR_MESSAGE);
     }
 }
