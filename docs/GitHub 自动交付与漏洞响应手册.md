@@ -47,6 +47,13 @@
 ./scripts/ops/github_guard.sh
 ```
 
+商用阶段建议追加：
+
+```bash
+./scripts/ops/security_compliance_guard.sh
+./scripts/ops/commercial_acceptance_gate.sh
+```
+
 流程包含：
 
 1. 后端测试

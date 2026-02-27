@@ -3,6 +3,7 @@ package com.lingsql.web;
 import com.lingsql.agent.repository.AiModelConfigRepository;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.billing.BillingAdminService;
+import com.lingsql.billing.BillingCommercialReadinessService;
 import com.lingsql.billing.BillingReconcileLogService;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
@@ -95,7 +96,8 @@ class AdminSecurityResponseTest {
         BillingAdminController controller = new BillingAdminController(
                 billingAdminService,
                 Mockito.mock(AuditOperationExecutor.class),
-                Mockito.mock(BillingReconcileLogService.class)
+                Mockito.mock(BillingReconcileLogService.class),
+                Mockito.mock(BillingCommercialReadinessService.class)
         );
 
         ApiResponse<?> response = controller.getOverride("TENANT_A");
@@ -105,4 +107,3 @@ class AdminSecurityResponseTest {
         assertFalse(response.getMessage().contains("root"));
     }
 }
-

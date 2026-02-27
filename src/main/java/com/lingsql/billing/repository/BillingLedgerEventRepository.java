@@ -88,6 +88,27 @@ public interface BillingLedgerEventRepository extends JpaRepository<BillingLedge
     List<LedgerReconcileProjection> findReconcileCandidates(@Param("since") LocalDateTime since, Pageable pageable);
 
     /**
+     * 统计指定时间后的账本事件数量。
+     *
+     * @param since 起始时间
+     * @return 账本事件数量
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    long countByCreateTimeAfter(LocalDateTime since);
+
+    /**
+     * 统计指定时间后、指定状态的账本事件数量。
+     *
+     * @param since  起始时间
+     * @param status 事件状态
+     * @return 账本事件数量
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    long countByCreateTimeAfterAndStatus(LocalDateTime since, Integer status);
+
+    /**
      * 账本对账投影。
      *
      * @author 余炘洋

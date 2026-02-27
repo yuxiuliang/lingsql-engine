@@ -2,8 +2,10 @@ package com.lingsql.web;
 
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.billing.BillingAdminService;
+import com.lingsql.billing.BillingCommercialReadinessService;
 import com.lingsql.billing.BillingReconcileLogService;
 import com.lingsql.billing.entity.BillingPolicyVersion;
+import com.lingsql.billing.model.BillingCommercialReadinessView;
 import com.lingsql.billing.entity.TenantBillingOverride;
 import com.lingsql.billing.model.BillingReconcileLogQuery;
 import com.lingsql.billing.model.BillingReconcileLogView;
@@ -48,6 +50,7 @@ public class BillingAdminController {
     private final BillingAdminService billingAdminService;
     private final AuditOperationExecutor auditOperationExecutor;
     private final BillingReconcileLogService billingReconcileLogService;
+    private final BillingCommercialReadinessService billingCommercialReadinessService;
 
     /**
      * 查询计费策略版本列表。
@@ -260,6 +263,25 @@ public class BillingAdminController {
         RbacUserSession session = RbacSecurityUtils.currentSession();
         String note = request == null ? null : request.getNote();
         return ApiResponse.success(billingReconcileLogService.resolve(id, session == null ? null : session.getUserId(), note));
+    }
+
+    /**
+     * 获取计费商用验收快照。
+     *
+     * @param windowHours 统计窗口（小时）
+     * @return 商用验收结果
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @GetMapping("/readiness/snapshot")
+    @PreAuthorize("hasAuthority('ADMIN:BILLING:READ')")
+    public ApiResponse<BillingCommercialReadinessView> readinessSnapshot(
+            @RequestParam(required = false) Integer windowHours
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return ApiResponse.success(billingCommercialReadinessService.snapshot(windowHours));
     }
 
     private boolean isSysAdmin() {

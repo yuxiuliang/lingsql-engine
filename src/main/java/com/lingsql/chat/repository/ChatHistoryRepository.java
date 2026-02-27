@@ -69,4 +69,24 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
      * @date 2026-01-23
      */
     void deleteByIdAndTenantIdAndUserId(Long id, String tenantId, Long userId);
+
+    /**
+     * 统计指定时间之前的聊天历史数量。
+     *
+     * @param createTime 截止时间
+     * @return 数量
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    long countByCreateTimeBefore(java.time.LocalDateTime createTime);
+
+    /**
+     * 删除指定时间之前的聊天历史。
+     *
+     * @param createTime 截止时间
+     * @return 删除数量
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    long deleteByCreateTimeBefore(java.time.LocalDateTime createTime);
 }

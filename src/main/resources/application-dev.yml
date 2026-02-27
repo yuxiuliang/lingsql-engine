@@ -98,6 +98,17 @@ lingsql:
     reconcile-interval-ms: 60000
     reconcile-batch-size: 200
     reconcile-diff-threshold: 0
+    readiness-window-hours: 24
+    readiness-failed-rate-threshold: 0.01
+    readiness-max-open-reconcile: 0
+  retention:
+    enabled: ${LINGSQL_RETENTION_ENABLED:false}
+    cleanup-cron: "${LINGSQL_RETENTION_CLEANUP_CRON:0 0 3 * * ?}"
+    dry-run: ${LINGSQL_RETENTION_DRY_RUN:true}
+    sql-log-days: ${LINGSQL_RETENTION_SQL_LOG_DAYS:90}
+    audit-log-days: ${LINGSQL_RETENTION_AUDIT_LOG_DAYS:180}
+    chat-history-days: ${LINGSQL_RETENTION_CHAT_HISTORY_DAYS:30}
+    alert-threshold: ${LINGSQL_RETENTION_ALERT_THRESHOLD:1000}
   web:
     max-page-size: 100
     export-max-rows: 10000

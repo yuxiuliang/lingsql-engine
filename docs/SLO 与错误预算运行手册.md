@@ -34,6 +34,8 @@ LingSQL 生产环境默认采用以下可用性目标（可按业务线调整）
 
 仓库脚本：`scripts/ops/slo_error_budget_report.sh`
 
+容量基线建议配套执行：`scripts/ops/reliability_baseline.sh`（成功率 + P95 门禁）。
+
 ### 3.1 快速执行
 
 ```bash

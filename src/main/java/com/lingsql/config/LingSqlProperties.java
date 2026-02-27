@@ -320,6 +320,99 @@ public class LingSqlProperties {
          * @date 2026-01-29
          */
         private long reconcileDiffThreshold = 0L;
+
+        /**
+         * 商用验收窗口（小时）。
+         * 用于统计近窗口账本失败率与对账积压。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private int readinessWindowHours = 24;
+
+        /**
+         * 商用验收允许的账本失败率阈值。
+         * 例如 0.01 表示 1%。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private double readinessFailedRateThreshold = 0.01D;
+
+        /**
+         * 商用验收允许的未处理对账日志上限。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private int readinessMaxOpenReconcile = 0;
+    }
+
+    /**
+     * 数据留存与清理配置。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @Data
+    public static class Retention {
+        /**
+         * 是否启用留存清理任务。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private boolean enabled = false;
+
+        /**
+         * 留存清理任务 Cron。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private String cleanupCron = "0 0 3 * * ?";
+
+        /**
+         * 是否启用演练模式。
+         * 开启后仅统计不删除。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private boolean dryRun = true;
+
+        /**
+         * SQL 执行日志保留天数。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private int sqlLogDays = 90;
+
+        /**
+         * 管理审计日志保留天数。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private int auditLogDays = 180;
+
+        /**
+         * 聊天历史保留天数。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private int chatHistoryDays = 30;
+
+        /**
+         * 仅在删除总量达到阈值时发送告警。
+         * 0 表示关闭阈值保护。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private long alertThreshold = 1000L;
     }
 
     /**
@@ -1042,6 +1135,14 @@ public class LingSqlProperties {
      * @date 2026-01-28
      */
     private Audit audit = new Audit();
+
+    /**
+     * 数据留存配置。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    private Retention retention = new Retention();
 
     /**
      * 运维告警配置。

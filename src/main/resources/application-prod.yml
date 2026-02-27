@@ -80,6 +80,17 @@ lingsql:
     reconcile-interval-ms: 60000
     reconcile-batch-size: 200
     reconcile-diff-threshold: 0
+    readiness-window-hours: ${LINGSQL_BILLING_READINESS_WINDOW_HOURS:24}
+    readiness-failed-rate-threshold: ${LINGSQL_BILLING_READINESS_FAILED_RATE_THRESHOLD:0.01}
+    readiness-max-open-reconcile: ${LINGSQL_BILLING_READINESS_MAX_OPEN_RECONCILE:0}
+  retention:
+    enabled: ${LINGSQL_RETENTION_ENABLED:false}
+    cleanup-cron: "${LINGSQL_RETENTION_CLEANUP_CRON:0 0 3 * * ?}"
+    dry-run: ${LINGSQL_RETENTION_DRY_RUN:true}
+    sql-log-days: ${LINGSQL_RETENTION_SQL_LOG_DAYS:90}
+    audit-log-days: ${LINGSQL_RETENTION_AUDIT_LOG_DAYS:180}
+    chat-history-days: ${LINGSQL_RETENTION_CHAT_HISTORY_DAYS:30}
+    alert-threshold: ${LINGSQL_RETENTION_ALERT_THRESHOLD:1000}
   web:
     max-page-size: ${LINGSQL_WEB_MAX_PAGE_SIZE:100}
     export-max-rows: ${LINGSQL_WEB_EXPORT_MAX_ROWS:10000}
@@ -147,7 +158,7 @@ lingsql:
     refresh-cookie-name: ${LINGSQL_REFRESH_COOKIE_NAME:lingsql_refresh_token}
     refresh-cookie-path: ${LINGSQL_REFRESH_COOKIE_PATH:/api/v1/auth}
     refresh-cookie-same-site: ${LINGSQL_REFRESH_COOKIE_SAME_SITE:Lax}
-    refresh-cookie-secure: ${LINGSQL_REFRESH_COOKIE_SECURE:false}
+    refresh-cookie-secure: ${LINGSQL_REFRESH_COOKIE_SECURE:true}
     single-session-enabled: ${LINGSQL_AUTH_SINGLE_SESSION_ENABLED:true}
   admin:
     enabled: ${LINGSQL_ADMIN_ENABLED:false}

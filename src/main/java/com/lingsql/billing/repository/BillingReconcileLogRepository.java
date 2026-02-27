@@ -60,4 +60,25 @@ public interface BillingReconcileLogRepository
                     @Param("resolveUserId") Long resolveUserId,
                     @Param("resolveTime") java.time.LocalDateTime resolveTime,
                     @Param("updateTime") java.time.LocalDateTime updateTime);
+
+    /**
+     * 统计指定状态的对账日志数量。
+     *
+     * @param status 状态
+     * @return 数量
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    long countByStatus(Integer status);
+
+    /**
+     * 统计指定时间后、指定状态的对账日志数量。
+     *
+     * @param createTime 起始时间
+     * @param status     状态
+     * @return 数量
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    long countByCreateTimeAfterAndStatus(java.time.LocalDateTime createTime, Integer status);
 }

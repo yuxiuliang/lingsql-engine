@@ -30,6 +30,26 @@ public interface SqlExecuteLogRepository extends JpaRepository<SqlExecuteLog, Lo
     long countByTenantIdAndCreateTimeBetween(String tenantId, LocalDateTime start, LocalDateTime end);
 
     /**
+     * 统计指定时间之前的 SQL 日志数量。
+     *
+     * @param createTime 截止时间
+     * @return 数量
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    long countByCreateTimeBefore(LocalDateTime createTime);
+
+    /**
+     * 删除指定时间之前的 SQL 日志。
+     *
+     * @param createTime 截止时间
+     * @return 删除数量
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    long deleteByCreateTimeBefore(LocalDateTime createTime);
+
+    /**
      * 统计租户在时间范围内的 Token 消耗。
      *
      * @param tenantId 租户ID
