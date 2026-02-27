@@ -24,6 +24,8 @@ import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleSnapshot;
 import com.lingsql.tenant.model.TenantLifecycleState;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
+import com.lingsql.tenant.model.TenantRiskLevel;
+import com.lingsql.tenant.model.TenantRiskSnapshot;
 import com.lingsql.tenant.model.TenantUpdateRequest;
 import com.lingsql.tenant.model.TenantView;
 import com.lingsql.tenant.repository.TenantRepository;
@@ -107,21 +109,30 @@ public class TenantAdminService {
             TenantLifecycleSnapshot snapshot = tenantLifecycleService.evaluate(tenant, now);
             if (snapshot.state() == TenantLifecycleState.ACTIVE) {
                 summary.setActive(summary.getActive() + 1);
-                continue;
-            }
-            if (snapshot.state() == TenantLifecycleState.EXPIRING_SOON) {
+            } else if (snapshot.state() == TenantLifecycleState.EXPIRING_SOON) {
                 summary.setExpiringSoon(summary.getExpiringSoon() + 1);
-                continue;
-            }
-            if (snapshot.state() == TenantLifecycleState.GRACE_PERIOD) {
+            } else if (snapshot.state() == TenantLifecycleState.GRACE_PERIOD) {
                 summary.setGracePeriod(summary.getGracePeriod() + 1);
-                continue;
-            }
-            if (snapshot.state() == TenantLifecycleState.SUSPENDED) {
+            } else if (snapshot.state() == TenantLifecycleState.SUSPENDED) {
                 summary.setSuspended(summary.getSuspended() + 1);
+            } else {
+                summary.setDisabled(summary.getDisabled() + 1);
+            }
+            TenantRiskSnapshot riskSnapshot = tenantLifecycleService.evaluateRisk(tenant, now);
+            if (riskSnapshot == null) {
                 continue;
             }
-            summary.setDisabled(summary.getDisabled() + 1);
+            if (riskSnapshot.level() == TenantRiskLevel.MEDIUM
+                    || riskSnapshot.level() == TenantRiskLevel.HIGH
+                    || riskSnapshot.level() == TenantRiskLevel.CRITICAL) {
+                summary.setAtRisk(summary.getAtRisk() + 1);
+            }
+            if (riskSnapshot.level() == TenantRiskLevel.HIGH) {
+                summary.setHighRisk(summary.getHighRisk() + 1);
+            }
+            if (riskSnapshot.level() == TenantRiskLevel.CRITICAL) {
+                summary.setCriticalRisk(summary.getCriticalRisk() + 1);
+            }
         }
         return summary;
     }
@@ -576,6 +587,16 @@ public class TenantAdminService {
             view.setDaysToExpire(snapshot.daysToExpire());
         }
         view.setGraceDaysRemaining(snapshot.graceDaysRemaining());
+        TenantRiskSnapshot riskSnapshot = tenantLifecycleService.evaluateRisk(tenant);
+        if (riskSnapshot == null) {
+            view.setRiskScore(0);
+            view.setRiskLevel(TenantRiskLevel.LOW.name());
+            view.setRiskReasons(List.of());
+        } else {
+            view.setRiskScore(riskSnapshot.score());
+            view.setRiskLevel(riskSnapshot.level().name());
+            view.setRiskReasons(riskSnapshot.reasons());
+        }
         return view;
     }
 

@@ -384,6 +384,8 @@ public class AuditLogService {
             case "TENANT_CREATE" -> "创建租户";
             case "TENANT_UPDATE" -> "更新租户";
             case "TENANT_DELETE" -> "删除租户";
+            case "TENANT_LIFECYCLE_EXTEND" -> "续期租户";
+            case "TENANT_LIFECYCLE_REACTIVATE" -> "恢复租户服务";
             case "MODEL_CREATE" -> "创建模型配置";
             case "MODEL_UPDATE" -> "更新模型配置";
             case "MODEL_DELETE" -> "删除模型配置";

@@ -148,7 +148,8 @@ const resetForm = () => {
 const loadTenants = async () => {
   loading.value = true;
   try {
-    tenants.value = await fetchTenants();
+    const list = await fetchTenants();
+    tenants.value = [...list].sort((a, b) => (b.riskScore || 0) - (a.riskScore || 0));
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载租户失败');
   } finally {
@@ -413,6 +414,63 @@ const resolveDaysToExpireText = (days?: number | null) => {
 };
 
 /**
+ * 解析风险等级文本。
+ *
+ * @param level 风险等级
+ * @return 文案
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const resolveRiskText = (level?: string) => {
+  if (!level) {
+    return '低风险';
+  }
+  const map: Record<string, string> = {
+    LOW: '低风险',
+    MEDIUM: '中风险',
+    HIGH: '高风险',
+    CRITICAL: '严重风险'
+  };
+  return map[level] || level;
+};
+
+/**
+ * 解析风险等级标签样式。
+ *
+ * @param level 风险等级
+ * @return 标签类型
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const resolveRiskType = (level?: string) => {
+  if (level === 'CRITICAL') {
+    return 'danger';
+  }
+  if (level === 'HIGH') {
+    return 'warning';
+  }
+  if (level === 'MEDIUM') {
+    return 'info';
+  }
+  return 'success';
+};
+
+/**
+ * 解析风险原因提示。
+ *
+ * @param reasons 风险原因
+ * @return 提示文案
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const resolveRiskReasonText = (reasons?: string[]) => {
+  if (!reasons || reasons.length === 0) {
+    return '经营状态稳定';
+  }
+  return reasons.join('；');
+};
+
+/**
  * 重置生命周期续期表单。
  *
  * @author 余炘洋
@@ -583,6 +641,18 @@ refreshTenantData();
         <div class="summary-label">已停用</div>
         <div class="summary-value">{{ lifecycleSummary?.disabled ?? 0 }}</div>
       </el-card>
+      <el-card shadow="never" class="summary-card">
+        <div class="summary-label">中高风险</div>
+        <div class="summary-value warning">{{ lifecycleSummary?.atRisk ?? 0 }}</div>
+      </el-card>
+      <el-card shadow="never" class="summary-card">
+        <div class="summary-label">高风险</div>
+        <div class="summary-value warning">{{ lifecycleSummary?.highRisk ?? 0 }}</div>
+      </el-card>
+      <el-card shadow="never" class="summary-card">
+        <div class="summary-label">严重风险</div>
+        <div class="summary-value danger">{{ lifecycleSummary?.criticalRisk ?? 0 }}</div>
+      </el-card>
     </div>
 
     <el-card class="card" shadow="never">
@@ -609,6 +679,20 @@ refreshTenantData();
             <el-tag :type="resolveLifecycleType(scope.row.lifecycleState)">
               {{ resolveLifecycleText(scope.row.lifecycleState) }}
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="riskScore" label="风险分" width="90">
+          <template #default="scope">
+            <span class="risk-score">{{ scope.row.riskScore ?? 0 }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="riskLevel" label="流失风险" min-width="120">
+          <template #default="scope">
+            <el-tooltip :content="resolveRiskReasonText(scope.row.riskReasons)" placement="top">
+              <el-tag :type="resolveRiskType(scope.row.riskLevel)">
+                {{ resolveRiskText(scope.row.riskLevel) }}
+              </el-tag>
+            </el-tooltip>
           </template>
         </el-table-column>
         <el-table-column prop="contactName" label="联系人" min-width="120"/>
@@ -771,7 +855,7 @@ refreshTenantData();
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -828,6 +912,11 @@ refreshTenantData();
   font-size: 12px;
   color: #64748b;
   margin-top: 6px;
+}
+
+.risk-score {
+  font-weight: 600;
+  color: #b45309;
 }
 
 @media (max-width: 1200px) {

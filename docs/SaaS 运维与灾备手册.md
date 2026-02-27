@@ -829,6 +829,7 @@ GitHub Actions 已提供手动门禁工作流：`.github/workflows/release-gate.
 - 管理端汇总接口：`GET /api/v1/admin/tenants/lifecycle/summary`
 - 自动冻结任务：`lingsql.tenant-lifecycle.auto-suspend-cron`
 - 到期提醒去重：`lingsql.tenant-lifecycle.reminder-dedupe-ttl`（防止重启后重复提醒）
+- 风险日报任务：`lingsql.tenant-lifecycle.risk-alert-cron`
 
 推荐配置：
 
@@ -845,6 +846,10 @@ lingsql:
     reminder-cron: "0 0 9 * * ?"
     reminder-days: 7,3,1
     reminder-dedupe-ttl: 2d
+    risk-alert-enabled: true
+    risk-alert-cron: "0 30 9 * * ?"
+    risk-alert-threshold: 70
+    risk-alert-top-n: 20
 ```
 
 ---

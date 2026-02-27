@@ -129,6 +129,10 @@ lingsql:
     reminder-cron: "${LINGSQL_TENANT_REMINDER_CRON:0 0 9 * * ?}"
     reminder-days: ${LINGSQL_TENANT_REMINDER_DAYS:7,3,1}
     reminder-dedupe-ttl: ${LINGSQL_TENANT_REMINDER_DEDUPE_TTL:2d}
+    risk-alert-enabled: ${LINGSQL_TENANT_RISK_ALERT_ENABLED:true}
+    risk-alert-cron: "${LINGSQL_TENANT_RISK_ALERT_CRON:0 30 9 * * ?}"
+    risk-alert-threshold: ${LINGSQL_TENANT_RISK_ALERT_THRESHOLD:70}
+    risk-alert-top-n: ${LINGSQL_TENANT_RISK_ALERT_TOP_N:20}
   chat:
     max-question-length: 4000
   ai:

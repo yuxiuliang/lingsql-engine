@@ -40,5 +40,19 @@ public class TenantLifecycleSummaryView {
      * 人工停用租户数。
      */
     private long disabled;
-}
 
+    /**
+     * 中及以上风险租户数。
+     */
+    private long atRisk;
+
+    /**
+     * 高风险租户数。
+     */
+    private long highRisk;
+
+    /**
+     * 严重风险租户数。
+     */
+    private long criticalRisk;
+}

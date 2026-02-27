@@ -896,6 +896,38 @@ public class LingSqlProperties {
          * @date 2026-02-27
          */
         private Duration reminderDedupeTtl = Duration.ofDays(2);
+
+        /**
+         * 是否启用流失风险日报告警。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private boolean riskAlertEnabled = true;
+
+        /**
+         * 流失风险日报告警 Cron。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private String riskAlertCron = "0 30 9 * * ?";
+
+        /**
+         * 流失风险告警阈值（0-100）。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private int riskAlertThreshold = 70;
+
+        /**
+         * 流失风险告警明细 TopN。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private int riskAlertTopN = 20;
     }
 
     /**

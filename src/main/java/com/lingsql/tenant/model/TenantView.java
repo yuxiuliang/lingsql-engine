@@ -3,6 +3,7 @@ package com.lingsql.tenant.model;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 租户视图。
@@ -141,6 +142,30 @@ public class TenantView {
      * @date 2026-02-27
      */
     private Long graceDaysRemaining;
+
+    /**
+     * 流失风险分值（0-100）。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    private Integer riskScore;
+
+    /**
+     * 流失风险等级。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    private String riskLevel;
+
+    /**
+     * 风险原因列表。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    private List<String> riskReasons;
 
     /**
      * 创建时间。

@@ -4,6 +4,8 @@ import com.lingsql.config.LingSqlProperties;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantLifecycleSnapshot;
 import com.lingsql.tenant.model.TenantLifecycleState;
+import com.lingsql.tenant.model.TenantRiskLevel;
+import com.lingsql.tenant.model.TenantRiskSnapshot;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -71,6 +73,38 @@ class TenantLifecycleServiceTest {
 
         assertNotNull(tenant.getExpireTime());
         assertTrue(tenant.getExpireTime().isAfter(LocalDateTime.now().plusDays(13)));
+    }
+
+    @Test
+    void shouldMarkCriticalRiskWhenSuspended() {
+        LingSqlProperties properties = new LingSqlProperties();
+        properties.getTenantLifecycle().setGracePeriod(Duration.ofDays(7));
+        TenantLifecycleService service = new TenantLifecycleService(properties);
+        TenantInfo tenant = buildTenant(0, LocalDateTime.of(2026, 2, 10, 0, 0));
+        tenant.setTenantType("TRIAL");
+        tenant.setServiceLevel("FREE");
+        tenant.setQuotaBalance(0L);
+
+        TenantRiskSnapshot snapshot = service.evaluateRisk(tenant, LocalDateTime.of(2026, 2, 20, 0, 0));
+
+        assertTrue(snapshot.score() >= 90);
+        assertEquals(TenantRiskLevel.CRITICAL, snapshot.level());
+    }
+
+    @Test
+    void shouldMarkLowRiskForStableTenant() {
+        LingSqlProperties properties = new LingSqlProperties();
+        properties.getTenantLifecycle().setExpiringSoonDays(7);
+        TenantLifecycleService service = new TenantLifecycleService(properties);
+        TenantInfo tenant = buildTenant(1, LocalDateTime.of(2026, 3, 20, 0, 0));
+        tenant.setQuotaBalance(5000L);
+        tenant.setServiceLevel("PRO");
+        tenant.setContactEmail("ops@example.com");
+
+        TenantRiskSnapshot snapshot = service.evaluateRisk(tenant, LocalDateTime.of(2026, 2, 20, 0, 0));
+
+        assertTrue(snapshot.score() < 50);
+        assertEquals(TenantRiskLevel.LOW, snapshot.level());
     }
 
     private TenantInfo buildTenant(Integer status, LocalDateTime expireTime) {

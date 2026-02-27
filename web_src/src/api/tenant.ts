@@ -23,6 +23,9 @@ export interface TenantView {
   lifecycleState?: string;
   daysToExpire?: number | null;
   graceDaysRemaining?: number;
+  riskScore?: number;
+  riskLevel?: string;
+  riskReasons?: string[];
   createTime?: string;
   updateTime?: string;
 }
@@ -40,6 +43,9 @@ export interface TenantLifecycleSummaryView {
   gracePeriod: number;
   suspended: number;
   disabled: number;
+  atRisk: number;
+  highRisk: number;
+  criticalRisk: number;
 }
 
 /**
