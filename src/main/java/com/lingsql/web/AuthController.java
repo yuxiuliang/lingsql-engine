@@ -8,11 +8,13 @@ import com.lingsql.rbac.model.UserProfileView;
 import com.lingsql.rbac.security.RbacSecurityConstants;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
+import com.lingsql.rbac.security.RefreshTokenCookieManager;
 import com.lingsql.rbac.service.AuthService;
 import com.lingsql.rbac.service.MenuService;
 import com.lingsql.rbac.service.RefreshTokenService;
 import com.lingsql.rbac.service.TokenService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -44,6 +46,7 @@ public class AuthController {
     private final MenuService menuService;
     private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
+    private final RefreshTokenCookieManager refreshTokenCookieManager;
 
     /**
      * 登录接口。
@@ -55,9 +58,17 @@ public class AuthController {
      */
     @PostMapping("/login")
     public ApiResponse<LoginResponse> login(
-            @Valid @RequestBody LoginRequest request
+            @Valid @RequestBody LoginRequest request,
+            HttpServletRequest servletRequest,
+            HttpServletResponse servletResponse
     ) {
         LoginResponse response = authService.login(request);
+        refreshTokenCookieManager.writeRefreshTokenCookie(
+                servletRequest,
+                servletResponse,
+                response.getRefreshToken(),
+                response.getRefreshExpiresIn()
+        );
         return ApiResponse.success(response);
     }
 
@@ -112,7 +123,8 @@ public class AuthController {
     @PreAuthorize("isAuthenticated()")
     public ApiResponse<String> logout(
             @RequestHeader(value = RbacSecurityConstants.AUTH_HEADER, required = false) String authHeader,
-            HttpServletRequest request
+            HttpServletRequest request,
+            HttpServletResponse response
     ) {
         String token = resolveToken(authHeader);
         if (StringUtils.hasText(token)) {
@@ -123,6 +135,7 @@ public class AuthController {
             RefreshTokenService.RefreshTokenPayload payload = refreshTokenService.verify(refreshToken);
             refreshTokenService.revoke(refreshToken, payload == null ? null : payload.userId());
         }
+        refreshTokenCookieManager.clearRefreshTokenCookie(request, response);
         return ApiResponse.success("已退出登录");
     }
 
@@ -135,13 +148,25 @@ public class AuthController {
      * @date 2026-01-27
      */
     @PostMapping("/refresh")
-    public ApiResponse<LoginResponse> refresh(HttpServletRequest request) {
+    public ApiResponse<LoginResponse> refresh(HttpServletRequest request, HttpServletResponse response) {
         String refreshToken = resolveRefreshToken(request);
         if (!StringUtils.hasText(refreshToken)) {
+            refreshTokenCookieManager.clearRefreshTokenCookie(request, response);
             return ApiResponse.unauthorized("Refresh Token 无效");
         }
-        LoginResponse refreshed = authService.refresh(refreshToken);
-        return ApiResponse.success(refreshed);
+        try {
+            LoginResponse refreshed = authService.refresh(refreshToken);
+            refreshTokenCookieManager.writeRefreshTokenCookie(
+                    request,
+                    response,
+                    refreshed.getRefreshToken(),
+                    refreshed.getRefreshExpiresIn()
+            );
+            return ApiResponse.success(refreshed);
+        } catch (BadCredentialsException ex) {
+            refreshTokenCookieManager.clearRefreshTokenCookie(request, response);
+            throw ex;
+        }
     }
 
     /**
@@ -167,7 +192,7 @@ public class AuthController {
         if (StringUtils.hasText(header)) {
             return header.trim();
         }
-        return null;
+        return refreshTokenCookieManager.resolveRefreshToken(request);
     }
 
     /**

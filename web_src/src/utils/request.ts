@@ -61,13 +61,9 @@ const shouldAttemptRefresh = (
   path: string,
   options: RequestOptions,
   status: number,
-  payload: ApiResponse<unknown> | null,
-  refreshToken: string
+  payload: ApiResponse<unknown> | null
 ): boolean => {
   if (options.skipAuthRefresh) {
-    return false;
-  }
-  if (!refreshToken) {
     return false;
   }
   if (path.startsWith(LOGIN_PATH) || path.startsWith(REFRESH_PATH)) {
@@ -106,20 +102,20 @@ const reportRefreshMetric = (success: boolean, durationMs: number, reason?: stri
   }
 };
 
-const refreshSessionOnce = async (refreshToken: string): Promise<RefreshPayload | null> => {
-  if (!refreshToken) {
-    return null;
-  }
+const refreshSessionOnce = async (refreshToken = ''): Promise<RefreshPayload | null> => {
   if (!refreshPromise) {
     refreshPromise = (async () => {
       const startedAt = Date.now();
       try {
         const headers = new Headers();
         headers.set('Content-Type', 'application/json');
-        headers.set(REFRESH_TOKEN_HEADER, refreshToken);
+        if (refreshToken) {
+          headers.set(REFRESH_TOKEN_HEADER, refreshToken);
+        }
         const response = await fetch(`${BASE_URL}${REFRESH_PATH}`, {
           method: 'POST',
-          headers
+          headers,
+          credentials: 'include'
         });
         const payload = await parseJsonSafely<ApiResponse<RefreshPayload>>(response);
         if (!response.ok) {
@@ -167,10 +163,11 @@ export const request = async <T>(path: string, options: RequestOptions = {}): Pr
   }
   const response = await fetch(`${BASE_URL}${path}`, {
     ...options,
-    headers
+    headers,
+    credentials: options.credentials || 'include'
   });
   const payload = await parseJsonSafely<ApiResponse<T>>(response);
-  if (shouldAttemptRefresh(path, options, response.status, payload as ApiResponse<unknown> | null, authStore.refreshToken)) {
+  if (shouldAttemptRefresh(path, options, response.status, payload as ApiResponse<unknown> | null)) {
     const refreshed = await refreshSessionOnce(authStore.refreshToken);
     if (refreshed) {
       authStore.updateToken(refreshed.token, refreshed.refreshToken || '');

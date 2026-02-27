@@ -575,7 +575,14 @@ public class LingSqlProperties {
          * @author 余炘洋
          * @date 2026-01-23
          */
-        private List<String> allowedHeaders = List.of("Authorization", "Content-Type", "X-Tenant-Id", "X-Request-Id", "X-Trace-Id");
+        private List<String> allowedHeaders = List.of(
+                "Authorization",
+                "Content-Type",
+                "X-Tenant-Id",
+                "X-Request-Id",
+                "X-Trace-Id",
+                "X-Refresh-Token"
+        );
 
         /**
          * 暴露给前端的响应头列表。
@@ -657,6 +664,46 @@ public class LingSqlProperties {
          * @date 2026-01-27
          */
         private Duration refreshTtl = Duration.ofDays(7);
+
+        /**
+         * 是否启用 Refresh Token Cookie。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private boolean refreshCookieEnabled = true;
+
+        /**
+         * Refresh Token Cookie 名称。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private String refreshCookieName = "lingsql_refresh_token";
+
+        /**
+         * Refresh Token Cookie Path。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private String refreshCookiePath = "/api/v1/auth";
+
+        /**
+         * Refresh Token Cookie SameSite 策略。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private String refreshCookieSameSite = "Lax";
+
+        /**
+         * Refresh Token Cookie 是否仅 HTTPS 传输。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private boolean refreshCookieSecure = false;
 
     }
 

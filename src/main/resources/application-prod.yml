@@ -90,7 +90,7 @@ lingsql:
     enabled: ${LINGSQL_CORS_ENABLED:false}
     allowed-origins: ${LINGSQL_CORS_ALLOWED_ORIGINS:}
     allowed-methods: ${LINGSQL_CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS}
-    allowed-headers: ${LINGSQL_CORS_ALLOWED_HEADERS:Authorization,Content-Type,X-Tenant-Id,X-Request-Id,X-Trace-Id}
+    allowed-headers: ${LINGSQL_CORS_ALLOWED_HEADERS:Authorization,Content-Type,X-Tenant-Id,X-Request-Id,X-Trace-Id,X-Refresh-Token}
     exposed-headers: ${LINGSQL_CORS_EXPOSED_HEADERS:X-Request-Id,X-Trace-Id}
     allow-credentials: ${LINGSQL_CORS_ALLOW_CREDENTIALS:true}
     max-age: ${LINGSQL_CORS_MAX_AGE:3600}
@@ -98,6 +98,11 @@ lingsql:
     jwt-secret: ${LINGSQL_JWT_SECRET:}
     jwt-issuer: ${LINGSQL_JWT_ISSUER:lingsql-engine}
     jwt-ttl: ${LINGSQL_JWT_TTL:24h}
+    refresh-cookie-enabled: ${LINGSQL_REFRESH_COOKIE_ENABLED:true}
+    refresh-cookie-name: ${LINGSQL_REFRESH_COOKIE_NAME:lingsql_refresh_token}
+    refresh-cookie-path: ${LINGSQL_REFRESH_COOKIE_PATH:/api/v1/auth}
+    refresh-cookie-same-site: ${LINGSQL_REFRESH_COOKIE_SAME_SITE:Lax}
+    refresh-cookie-secure: ${LINGSQL_REFRESH_COOKIE_SECURE:false}
   admin:
     enabled: ${LINGSQL_ADMIN_ENABLED:false}
     tenant-id: ${LINGSQL_ADMIN_TENANT_ID:}
