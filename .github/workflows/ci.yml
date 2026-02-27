@@ -34,10 +34,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: web_src/package-lock.json
 
@@ -46,4 +46,3 @@ jobs:
 
       - name: Build Admin UI
         run: npm run build
-
