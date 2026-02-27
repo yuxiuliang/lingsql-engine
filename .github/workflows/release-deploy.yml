@@ -1,0 +1,125 @@
+name: LingSQL Release Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment_name:
+        description: "部署环境名称（如 production / uat）"
+        required: true
+        default: "production"
+        type: string
+      base_url:
+        description: "目标环境基础地址（如 https://api.lingsql.com）"
+        required: true
+        type: string
+      prometheus_url:
+        description: "Prometheus 地址（用于发布门禁）"
+        required: false
+        default: "http://127.0.0.1:9090"
+        type: string
+      release_tag:
+        description: "发布版本标签（如 v2026.02.28.1）"
+        required: true
+        type: string
+      run_release_gate:
+        description: "是否执行发布前门禁（冒烟 + SLO）"
+        required: true
+        default: true
+        type: boolean
+      block_on_slo_breach:
+        description: "SLO 预算耗尽时是否阻断发布"
+        required: true
+        default: true
+        type: boolean
+      auto_rollback_on_smoke_fail:
+        description: "发布后冒烟失败时是否自动回滚"
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  build-artifact:
+    name: Build Artifact
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build Backend Package
+        run: mvn -B -ntp clean package -DskipTests -DskipITs
+
+      - name: Prepare Artifact
+        run: |
+          mkdir -p dist
+          ARTIFACT_FILE="$(ls -1 target/lingsql-engine-*.jar | grep -v '\.original$' | head -n 1)"
+          test -n "${ARTIFACT_FILE}"
+          cp "${ARTIFACT_FILE}" dist/lingsql-engine.jar
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingsql-release-jar
+          path: dist/lingsql-engine.jar
+
+  deploy:
+    name: Deploy With Auto Rollback
+    needs: build-artifact
+    runs-on: self-hosted
+    environment: ${{ inputs.environment_name }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lingsql-release-jar
+          path: dist
+
+      - name: Prepare Scripts
+        run: chmod +x scripts/ops/*.sh
+
+      - name: Pre Release Gate
+        if: ${{ inputs.run_release_gate }}
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          PROMETHEUS_URL: ${{ inputs.prometheus_url }}
+          RELEASE_GATE_ENABLE_SMOKE: "true"
+          RELEASE_GATE_ENABLE_SLO: "true"
+          RELEASE_GATE_BLOCK_ON_SLO_BREACH: ${{ inputs.block_on_slo_breach }}
+          RELEASE_GATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
+        run: ./scripts/ops/release_gate.sh
+
+      - name: Deploy And Auto Rollback
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          RELEASE_POST_SMOKE_ENABLED: "true"
+          RELEASE_AUTO_ROLLBACK_ON_SMOKE_FAIL: ${{ inputs.auto_rollback_on_smoke_fail }}
+          RELEASE_NOTIFY_ENABLED: "true"
+          RELEASE_NOTIFY_SCRIPT: ./scripts/ops/notify_release_event.sh
+          RELEASE_NOTIFY_WEBHOOK_URL: ${{ secrets.RELEASE_NOTIFY_WEBHOOK_URL }}
+          RELEASE_NOTIFY_DINGTALK_WEBHOOK_URL: ${{ secrets.RELEASE_NOTIFY_DINGTALK_WEBHOOK_URL }}
+          RELEASE_NOTIFY_WECOM_WEBHOOK_URL: ${{ secrets.RELEASE_NOTIFY_WECOM_WEBHOOK_URL }}
+          RELEASE_NOTIFY_REQUIRE_ALL_CHANNELS: "false"
+          LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
+          LINGSQL_SWITCH_HOOK: ${{ vars.LINGSQL_SWITCH_HOOK }}
+        run: ./scripts/ops/release_with_auto_rollback.sh ./dist/lingsql-engine.jar "${{ inputs.release_tag }}"
+
+      - name: Upload Gate Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-deploy-gate-report
+          path: reports/release_gate_slo.md
+          if-no-files-found: ignore

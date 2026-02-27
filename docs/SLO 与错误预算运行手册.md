@@ -80,6 +80,7 @@ RELEASE_GATE_BLOCK_ON_SLO_BREACH=true \
 ```
 
 如需在平台侧执行，可直接触发 GitHub Actions 工作流 `.github/workflows/release-gate.yml`。
+正式发布场景可使用 `.github/workflows/release-deploy.yml`，其中会在部署前按输入参数执行同一套门禁策略。
 
 ---
 

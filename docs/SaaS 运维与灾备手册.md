@@ -798,6 +798,29 @@ RELEASE_GATE_SLO_REPORT_FILE=./reports/release_gate_slo.md \
 
 GitHub Actions 已提供手动门禁工作流：`.github/workflows/release-gate.yml`。建议在每次生产发布前先执行该工作流，门禁通过后再执行蓝绿发布。
 
+### 7.8 一键发布与自动回滚流水线
+
+仓库已内置工作流：`.github/workflows/release-deploy.yml`，流程如下：
+- GitHub Actions 构建后端制品（`lingsql-engine.jar`）
+- 进入自托管 Runner 执行发布前门禁（可配置开关）
+- 调用 `scripts/ops/release_with_auto_rollback.sh` 执行蓝绿发布
+- 发布后冒烟失败时自动执行 `scripts/ops/release_rollback.sh`
+- 通过 `scripts/ops/notify_release_event.sh` 发送发布事件通知
+
+关键前置配置：
+- Repository Variables:
+  - `LINGSQL_DEPLOY_BASE`（例：`/opt/lingsql`）
+  - `LINGSQL_SWITCH_HOOK`（例：`/opt/lingsql/scripts/ops/switch_traffic.sh`）
+- Repository Secrets（可选）:
+  - `RELEASE_NOTIFY_WEBHOOK_URL`
+  - `RELEASE_NOTIFY_DINGTALK_WEBHOOK_URL`
+  - `RELEASE_NOTIFY_WECOM_WEBHOOK_URL`
+
+建议生产发布策略：
+- `run_release_gate=true`
+- `block_on_slo_breach=true`
+- `auto_rollback_on_smoke_fail=true`
+
 ---
 
 ## 8. 容量规划
