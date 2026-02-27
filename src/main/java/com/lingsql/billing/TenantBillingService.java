@@ -9,7 +9,9 @@ import com.lingsql.billing.model.BillingPolicySnapshot;
 import com.lingsql.billing.model.BillingQuote;
 import com.lingsql.billing.repository.TenantBillingOverrideRepository;
 import com.lingsql.tenant.entity.TenantInfo;
+import com.lingsql.tenant.model.TenantLifecycleSnapshot;
 import com.lingsql.tenant.repository.TenantRepository;
+import com.lingsql.tenant.service.TenantLifecycleService;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +51,7 @@ public class TenantBillingService {
     private final TenantBillingOverrideRepository tenantBillingOverrideRepository;
     private final BillingLedgerService billingLedgerService;
     private final BillingBalanceService billingBalanceService;
+    private final TenantLifecycleService tenantLifecycleService;
 
     /**
      * 校验租户是否允许继续调用。
@@ -65,6 +68,10 @@ public class TenantBillingService {
         TenantInfo tenant = tenantRepository.findByTenantIdAndIsDeleted(tenantId, NOT_DELETED).orElse(null);
         if (tenant == null || !ACTIVE_STATUS.equals(tenant.getStatus())) {
             return BillingCheckResult.deny(MESSAGE_UPGRADE);
+        }
+        TenantLifecycleSnapshot lifecycle = tenantLifecycleService.evaluate(tenant);
+        if (!lifecycle.accessAllowed()) {
+            return BillingCheckResult.deny(tenantLifecycleService.resolveDenyMessage(lifecycle));
         }
         long balance = resolveBalance(tenant.getQuotaBalance());
         long cachedBalance = billingBalanceService.getAvailableBalance(tenantId, balance);

@@ -821,6 +821,27 @@ GitHub Actions 已提供手动门禁工作流：`.github/workflows/release-gate.
 - `block_on_slo_breach=true`
 - `auto_rollback_on_smoke_fail=true`
 
+### 7.9 无支付版租户生命周期治理
+
+对于“不接支付”的商业版本，建议使用“到期 + 宽限 + 自动冻结”机制保证客户生命周期可运营：
+
+- 生命周期判定：`ACTIVE` / `EXPIRING_SOON` / `GRACE_PERIOD` / `SUSPENDED` / `DISABLED`
+- 管理端汇总接口：`GET /api/v1/admin/tenants/lifecycle/summary`
+- 自动冻结任务：`lingsql.tenant-lifecycle.auto-suspend-cron`
+
+推荐配置：
+
+```yaml
+lingsql:
+  tenant-lifecycle:
+    enabled: true
+    grace-period: 7d
+    expiring-soon-days: 7
+    trial-default-days: 14
+    auto-suspend-enabled: true
+    auto-suspend-cron: "0 0/30 * * * ?"
+```
+
 ---
 
 ## 8. 容量规划
@@ -979,6 +1000,7 @@ redis-cli SET lingsql:billing:balance:${TENANT_ID} ${DB_BALANCE}
 | Redis 内存 | `redis-cli info memory` | used_memory < 80% |
 | 计费积压 | `SELECT COUNT(*) WHERE status=0` | < 100 |
 | SLO 预算状态 | `./scripts/ops/slo_error_budget_report.sh` | 状态不为 `BREACHED` |
+| 生命周期异常租户 | `GET /api/v1/admin/tenants/lifecycle/summary` | `suspended` 趋势可控 |
 
 ### 10.2 每周检查
 

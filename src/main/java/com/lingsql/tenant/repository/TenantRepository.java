@@ -50,6 +50,17 @@ public interface TenantRepository extends JpaRepository<TenantInfo, Long> {
     Optional<TenantInfo> findByTenantIdAndIsDeleted(String tenantId, Integer isDeleted);
 
     /**
+     * 查询带到期时间的活跃租户。
+     *
+     * @param isDeleted 删除标记
+     * @param status    状态
+     * @return 租户列表
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    List<TenantInfo> findByIsDeletedAndStatusAndExpireTimeIsNotNull(Integer isDeleted, Integer status);
+
+    /**
      * 判断租户ID是否存在。
      *
      * @param tenantId  租户ID

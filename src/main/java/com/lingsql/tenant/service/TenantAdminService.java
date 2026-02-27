@@ -20,6 +20,9 @@ import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantCreateRequest;
+import com.lingsql.tenant.model.TenantLifecycleSnapshot;
+import com.lingsql.tenant.model.TenantLifecycleState;
+import com.lingsql.tenant.model.TenantLifecycleSummaryView;
 import com.lingsql.tenant.model.TenantUpdateRequest;
 import com.lingsql.tenant.model.TenantView;
 import com.lingsql.tenant.repository.TenantRepository;
@@ -72,6 +75,7 @@ public class TenantAdminService {
     private final RbacUserRepository userRepository;
     private final SqlTaskTracker sqlTaskTracker;
     private final BillingBalanceService billingBalanceService;
+    private final TenantLifecycleService tenantLifecycleService;
 
     /**
      * 查询租户列表。
@@ -84,6 +88,41 @@ public class TenantAdminService {
         return tenantRepository.findByIsDeleted(NOT_DELETED).stream()
                 .map(this::toView)
                 .toList();
+    }
+
+    /**
+     * 查询租户生命周期汇总。
+     *
+     * @return 生命周期汇总
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    public TenantLifecycleSummaryView lifecycleSummary() {
+        List<TenantInfo> tenants = tenantRepository.findByIsDeleted(NOT_DELETED);
+        TenantLifecycleSummaryView summary = new TenantLifecycleSummaryView();
+        summary.setTotal(tenants.size());
+        LocalDateTime now = LocalDateTime.now();
+        for (TenantInfo tenant : tenants) {
+            TenantLifecycleSnapshot snapshot = tenantLifecycleService.evaluate(tenant, now);
+            if (snapshot.state() == TenantLifecycleState.ACTIVE) {
+                summary.setActive(summary.getActive() + 1);
+                continue;
+            }
+            if (snapshot.state() == TenantLifecycleState.EXPIRING_SOON) {
+                summary.setExpiringSoon(summary.getExpiringSoon() + 1);
+                continue;
+            }
+            if (snapshot.state() == TenantLifecycleState.GRACE_PERIOD) {
+                summary.setGracePeriod(summary.getGracePeriod() + 1);
+                continue;
+            }
+            if (snapshot.state() == TenantLifecycleState.SUSPENDED) {
+                summary.setSuspended(summary.getSuspended() + 1);
+                continue;
+            }
+            summary.setDisabled(summary.getDisabled() + 1);
+        }
+        return summary;
     }
 
     /**
@@ -117,6 +156,7 @@ public class TenantAdminService {
         tenant.setQuotaBalance(resolveQuotaBalance(request.getQuotaBalance()));
         tenant.setServiceLevel(resolveServiceLevel(request.getServiceLevel()));
         tenant.setTenantType(resolveTenantType(request.getTenantType()));
+        tenantLifecycleService.applyDefaultExpireTimeForTrial(tenant);
         tenant.setIsDeleted(NOT_DELETED);
         tenant.setCreateTime(LocalDateTime.now());
         tenant.setUpdateTime(LocalDateTime.now());
@@ -449,6 +489,14 @@ public class TenantAdminService {
         view.setTenantType(tenant.getTenantType());
         view.setCreateTime(tenant.getCreateTime());
         view.setUpdateTime(tenant.getUpdateTime());
+        TenantLifecycleSnapshot snapshot = tenantLifecycleService.evaluate(tenant);
+        view.setLifecycleState(snapshot.state().name());
+        if (snapshot.daysToExpire() == Long.MAX_VALUE) {
+            view.setDaysToExpire(null);
+        } else {
+            view.setDaysToExpire(snapshot.daysToExpire());
+        }
+        view.setGraceDaysRemaining(snapshot.graceDaysRemaining());
         return view;
     }
 

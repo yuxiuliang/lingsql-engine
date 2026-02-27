@@ -5,6 +5,7 @@ import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.model.TenantCreateRequest;
+import com.lingsql.tenant.model.TenantLifecycleSummaryView;
 import com.lingsql.tenant.model.TenantUpdateRequest;
 import com.lingsql.tenant.model.TenantView;
 import com.lingsql.tenant.service.TenantAdminService;
@@ -50,6 +51,22 @@ public class TenantAdminController {
             return ApiResponse.forbidden("无权限访问");
         }
         return ApiResponse.success(tenantAdminService.listTenants());
+    }
+
+    /**
+     * 查询租户生命周期汇总。
+     *
+     * @return 生命周期汇总
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @GetMapping("/lifecycle/summary")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
+    public ApiResponse<TenantLifecycleSummaryView> lifecycleSummary() {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return ApiResponse.success(tenantAdminService.lifecycleSummary());
     }
 
     /**

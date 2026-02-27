@@ -808,6 +808,64 @@ public class LingSqlProperties {
     }
 
     /**
+     * 租户生命周期配置。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @Data
+    public static class TenantLifecycle {
+        /**
+         * 是否启用生命周期治理。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private boolean enabled = true;
+
+        /**
+         * 到期后的宽限期时长。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private Duration gracePeriod = Duration.ofDays(7);
+
+        /**
+         * 触发“即将到期”状态的提前天数。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private int expiringSoonDays = 7;
+
+        /**
+         * 试用租户默认有效期（天）。
+         * 当租户类型=TRIAL 且未显式设置 expireTime 时生效。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private int trialDefaultDays = 14;
+
+        /**
+         * 是否启用到期自动冻结。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private boolean autoSuspendEnabled = true;
+
+        /**
+         * 自动冻结任务 Cron。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private String autoSuspendCron = "0 0/30 * * * ?";
+    }
+
+    /**
      * 超级管理员初始化配置。
      *
      * @author 余炘洋
@@ -927,6 +985,14 @@ public class LingSqlProperties {
      * @date 2026-02-27
      */
     private Alert alert = new Alert();
+
+    /**
+     * 租户生命周期配置。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    private TenantLifecycle tenantLifecycle = new TenantLifecycle();
 
     /**
      * 模型资源池配置。

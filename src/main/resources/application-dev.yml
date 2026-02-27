@@ -118,6 +118,13 @@ lingsql:
     cooldown: ${LINGSQL_ALERT_COOLDOWN:5m}
     connect-timeout: ${LINGSQL_ALERT_CONNECT_TIMEOUT:3s}
     read-timeout: ${LINGSQL_ALERT_READ_TIMEOUT:5s}
+  tenant-lifecycle:
+    enabled: ${LINGSQL_TENANT_LIFECYCLE_ENABLED:true}
+    grace-period: ${LINGSQL_TENANT_GRACE_PERIOD:7d}
+    expiring-soon-days: ${LINGSQL_TENANT_EXPIRING_SOON_DAYS:7}
+    trial-default-days: ${LINGSQL_TENANT_TRIAL_DEFAULT_DAYS:14}
+    auto-suspend-enabled: ${LINGSQL_TENANT_AUTO_SUSPEND_ENABLED:true}
+    auto-suspend-cron: "${LINGSQL_TENANT_AUTO_SUSPEND_CRON:0 0/30 * * * ?}"
   chat:
     max-question-length: 4000
   ai:

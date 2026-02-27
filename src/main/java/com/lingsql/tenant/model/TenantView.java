@@ -118,6 +118,31 @@ public class TenantView {
     private String tenantType;
 
     /**
+     * 生命周期状态。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    private String lifecycleState;
+
+    /**
+     * 距离到期天数（已到期为负数）。
+     * 无到期时间时为 null。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    private Long daysToExpire;
+
+    /**
+     * 宽限期剩余天数。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    private Long graceDaysRemaining;
+
+    /**
      * 创建时间。
      *
      * @author 余炘洋
