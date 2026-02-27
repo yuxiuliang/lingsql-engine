@@ -675,6 +675,89 @@ flowchart TD
 - [ ] 更新变更记录
 - [ ] 通知相关方
 
+### 7.4 蓝绿发布自动化（推荐）
+
+仓库内置脚本：`scripts/ops/release_blue_green.sh`
+可选切流脚本：`scripts/ops/switch_traffic.sh`
+
+```bash
+# 示例：发布本次构建产物并标记版本号
+LINGSQL_DEPLOY_BASE=/opt/lingsql \
+LINGSQL_SWITCH_HOOK="/opt/lingsql/scripts/ops/switch_traffic.sh" \
+./scripts/ops/release_blue_green.sh ./target/lingsql-engine.jar v2026.02.27.1
+```
+
+发布脚本默认行为：
+- 自动识别当前活跃槽位（`blue/green`），将新版本发布到另一侧槽位。
+- 先启动目标槽位并执行 `readiness` 健康检查，通过后再切流。
+- 发布记录写入：`/opt/lingsql/run/release_history.log`。
+- 自动保留最近 `LINGSQL_KEEP_RELEASES` 个发布包，清理更老版本。
+
+关键参数：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `LINGSQL_DEPLOY_BASE` | `/opt/lingsql` | 部署根目录 |
+| `LINGSQL_BLUE_SERVICE` | `lingsql-blue` | 蓝槽位 systemd 服务名 |
+| `LINGSQL_GREEN_SERVICE` | `lingsql-green` | 绿槽位 systemd 服务名 |
+| `LINGSQL_BLUE_PORT` | `18080` | 蓝槽位监听端口 |
+| `LINGSQL_GREEN_PORT` | `28080` | 绿槽位监听端口 |
+| `LINGSQL_HEALTH_PATH` | `/actuator/health/readiness` | 健康检查路径 |
+| `LINGSQL_HEALTH_RETRIES` | `30` | 健康检查重试次数 |
+| `LINGSQL_HEALTH_INTERVAL_SECONDS` | `2` | 健康检查重试间隔（秒） |
+| `LINGSQL_SWITCH_HOOK` | 空 | 切流钩子命令，脚本会附加参数 `<slot> <port>` |
+| `LINGSQL_STOP_OLD_SLOT` | `false` | 发布成功后是否停止旧槽位 |
+| `LINGSQL_START_CMD_TEMPLATE` | 空 | 非 systemd 场景启动模板 |
+
+`switch_traffic.sh` 默认写入 `NGINX_UPSTREAM_CONF=/etc/nginx/conf.d/lingsql-upstream.conf`，并执行 `nginx -t + reload`。如生产环境使用网关/Ingress，请替换为自有切流命令并通过 `LINGSQL_SWITCH_HOOK` 接入。
+
+### 7.5 回滚与冒烟验收自动化
+
+仓库内置脚本：
+- 回滚：`scripts/ops/release_rollback.sh`
+- 冒烟：`scripts/ops/release_smoke_test.sh`
+
+```bash
+# 1) 发布后执行冒烟验收
+BASE_URL=https://api.lingsql.com ./scripts/ops/release_smoke_test.sh
+
+# 2) 若冒烟失败，自动回滚到另一槽位
+LINGSQL_DEPLOY_BASE=/opt/lingsql \
+LINGSQL_SWITCH_HOOK="/opt/lingsql/scripts/ops/switch_traffic.sh" \
+./scripts/ops/release_rollback.sh
+```
+
+回滚脚本默认行为：
+- 不带参数时回滚到当前活跃槽位的另一侧。
+- 先启动回滚槽位并通过健康检查，再执行切流。
+- 回滚记录写入：`/opt/lingsql/run/rollback_history.log`。
+
+冒烟脚本默认校验项：
+- `GET /actuator/health` 返回 200
+- `GET /actuator/health/readiness` 返回 200
+- `GET /admin/index.html` 返回 200
+- `GET /login` 返回 200
+- `GET /api/v1/auth/me`（未登录）返回 401
+- `GET /actuator/prometheus` 返回 401/403（必须受保护）
+
+### 7.6 发布窗口标准执行顺序
+
+```bash
+# Step 1. 构建
+mvn clean package -DskipTests
+
+# Step 2. 蓝绿发布
+./scripts/ops/release_blue_green.sh ./target/lingsql-engine.jar v2026.02.27.1
+
+# Step 3. 冒烟验收
+BASE_URL=https://api.lingsql.com ./scripts/ops/release_smoke_test.sh
+
+# Step 4. 验收失败则回滚
+./scripts/ops/release_rollback.sh
+```
+
+建议每月至少执行一次“发布 + 回滚”演练，并将演练编号记录到变更单，确保值班团队在故障窗口内可 5 分钟内完成回滚。
+
 ---
 
 ## 8. 容量规划
