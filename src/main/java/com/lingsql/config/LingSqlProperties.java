@@ -705,6 +705,15 @@ public class LingSqlProperties {
          */
         private boolean refreshCookieSecure = false;
 
+        /**
+         * 是否启用单设备会话。
+         * 开启后同账号再次登录会让历史会话失效。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private boolean singleSessionEnabled = true;
+
     }
 
     /**

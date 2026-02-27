@@ -41,6 +41,14 @@ public final class RbacSecurityConstants {
     public static final String TOKEN_EXPIRED_ATTRIBUTE = "TOKEN_EXPIRED";
 
     /**
+     * Token 被替换（异地登录）标记。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    public static final String TOKEN_REVOKED_ATTRIBUTE = "TOKEN_REVOKED";
+
+    /**
      * Redis Token 前缀。
      *
      * @author 余炘洋

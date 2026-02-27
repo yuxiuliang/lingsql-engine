@@ -34,6 +34,9 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
     }
 
     private ApiResponse<Void> resolvePayload(HttpServletRequest request) {
+        if (request != null && Boolean.TRUE.equals(request.getAttribute(RbacSecurityConstants.TOKEN_REVOKED_ATTRIBUTE))) {
+            return ApiResponse.unauthorized("账号已在其他设备登录，请重新登录");
+        }
         if (request != null && Boolean.TRUE.equals(request.getAttribute(RbacSecurityConstants.TOKEN_EXPIRED_ATTRIBUTE))) {
             return ApiResponse.unauthorized(RbacSecurityConstants.TOKEN_EXPIRED_MESSAGE);
         }

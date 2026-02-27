@@ -104,6 +104,10 @@ public class AuthService {
         if (user.getStatus() != null && user.getStatus() == 0) {
             throw loginFailure();
         }
+        if (isSingleSessionEnabled()) {
+            tokenService.revokeUserTokens(user.getId());
+            refreshTokenService.revokeByUserId(user.getId());
+        }
         RbacUserSession session = buildSessionForUser(user);
         String token = tokenService.createToken(session);
         String refreshToken = null;
@@ -149,6 +153,9 @@ public class AuthService {
                 && StringUtils.hasText(user.getTenantId())
                 && !result.payload().tenantId().equalsIgnoreCase(user.getTenantId())) {
             throw new BadCredentialsException("账号不存在");
+        }
+        if (isSingleSessionEnabled()) {
+            tokenService.revokeUserTokens(user.getId());
         }
         RbacUserSession session = buildSessionForUser(user);
         String token = tokenService.createToken(session);
@@ -460,6 +467,11 @@ public class AuthService {
             return auth.getRefreshTtl();
         }
         return Duration.ofDays(7);
+    }
+
+    private boolean isSingleSessionEnabled() {
+        LingSqlProperties.Auth auth = properties.getAuth();
+        return auth == null || auth.isSingleSessionEnabled();
     }
 
     /**

@@ -59,6 +59,9 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                 if (parseResult.status() == TokenService.TokenStatus.EXPIRED) {
                     request.setAttribute(RbacSecurityConstants.TOKEN_EXPIRED_ATTRIBUTE, Boolean.TRUE);
                 }
+                if (parseResult.status() == TokenService.TokenStatus.REVOKED) {
+                    request.setAttribute(RbacSecurityConstants.TOKEN_REVOKED_ATTRIBUTE, Boolean.TRUE);
+                }
                 RbacUserSession session = parseResult.session();
                 if (session != null) {
                     if (session.getUserId() == null) {
