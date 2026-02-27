@@ -89,6 +89,14 @@ lingsql:
     retry-batch-size: ${LINGSQL_AUDIT_RETRY_BATCH_SIZE:100}
     retry-max-attempts: ${LINGSQL_AUDIT_RETRY_MAX_ATTEMPTS:3}
     retry-delay-ms: ${LINGSQL_AUDIT_RETRY_DELAY_MS:60000}
+  alert:
+    enabled: ${LINGSQL_ALERT_ENABLED:false}
+    webhook-url: ${LINGSQL_ALERT_WEBHOOK_URL:}
+    pool-check-interval-ms: ${LINGSQL_ALERT_POOL_CHECK_INTERVAL_MS:60000}
+    tenant-pool-utilization-threshold: ${LINGSQL_ALERT_POOL_UTILIZATION_THRESHOLD:0.9}
+    cooldown: ${LINGSQL_ALERT_COOLDOWN:5m}
+    connect-timeout: ${LINGSQL_ALERT_CONNECT_TIMEOUT:3s}
+    read-timeout: ${LINGSQL_ALERT_READ_TIMEOUT:5s}
   chat:
     max-question-length: 4000
   ai:

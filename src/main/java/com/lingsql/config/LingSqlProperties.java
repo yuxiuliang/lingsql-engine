@@ -717,6 +717,71 @@ public class LingSqlProperties {
     }
 
     /**
+     * 运维告警配置。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @Data
+    public static class Alert {
+        /**
+         * 是否启用告警。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private boolean enabled = false;
+
+        /**
+         * 告警 Webhook 地址。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private String webhookUrl;
+
+        /**
+         * 告警轮询间隔（毫秒）。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private long poolCheckIntervalMs = 60000L;
+
+        /**
+         * 连接池使用率告警阈值，范围 (0,1]。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private double tenantPoolUtilizationThreshold = 0.9D;
+
+        /**
+         * 同类告警冷却时长。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private Duration cooldown = Duration.ofMinutes(5);
+
+        /**
+         * 告警请求连接超时。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private Duration connectTimeout = Duration.ofSeconds(3);
+
+        /**
+         * 告警请求读取超时。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private Duration readTimeout = Duration.ofSeconds(5);
+    }
+
+    /**
      * 超级管理员初始化配置。
      *
      * @author 余炘洋
@@ -828,6 +893,14 @@ public class LingSqlProperties {
      * @date 2026-01-28
      */
     private Audit audit = new Audit();
+
+    /**
+     * 运维告警配置。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    private Alert alert = new Alert();
 
     /**
      * 模型资源池配置。
