@@ -6,6 +6,7 @@ import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.model.TenantCreateRequest;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
+import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
 import com.lingsql.tenant.model.TenantUpdateRequest;
 import com.lingsql.tenant.model.TenantView;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -68,6 +70,23 @@ public class TenantAdminController {
             return ApiResponse.forbidden("无权限访问");
         }
         return ApiResponse.success(tenantAdminService.lifecycleSummary());
+    }
+
+    /**
+     * 查询租户生命周期运营工作台。
+     *
+     * @param limit 返回条数上限
+     * @return 工作台结果
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @GetMapping("/lifecycle/workbench")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
+    public ApiResponse<TenantLifecycleWorkbenchView> lifecycleWorkbench(@RequestParam(required = false) Integer limit) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return ApiResponse.success(tenantAdminService.lifecycleWorkbench(limit));
     }
 
     /**

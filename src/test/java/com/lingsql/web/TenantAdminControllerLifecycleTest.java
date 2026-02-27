@@ -4,6 +4,7 @@ import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
+import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
 import com.lingsql.tenant.model.TenantView;
 import com.lingsql.tenant.service.TenantAdminService;
 import org.junit.jupiter.api.AfterEach;
@@ -118,6 +119,31 @@ class TenantAdminControllerLifecycleTest {
         );
     }
 
+    @Test
+    void workbenchShouldReturnForbiddenWhenNotSysAdmin() {
+        bindSession(List.of("TENANT_ADMIN"));
+
+        ApiResponse<TenantLifecycleWorkbenchView> response = controller.lifecycleWorkbench(20);
+
+        assertEquals(403, response.getCode());
+        assertEquals("无权限访问", response.getMessage());
+        verifyNoInteractions(tenantAdminService);
+    }
+
+    @Test
+    void workbenchShouldSucceedForSysAdmin() {
+        bindSession(List.of("SYS_ADMIN"));
+        TenantLifecycleWorkbenchView workbench = new TenantLifecycleWorkbenchView();
+        workbench.setTotalTasks(2);
+        when(tenantAdminService.lifecycleWorkbench(20)).thenReturn(workbench);
+
+        ApiResponse<TenantLifecycleWorkbenchView> response = controller.lifecycleWorkbench(20);
+
+        assertEquals(200, response.getCode());
+        assertEquals(2, response.getData().getTotalTasks());
+        verify(tenantAdminService, times(1)).lifecycleWorkbench(20);
+    }
+
     private void mockAuditExecute() {
         when(auditOperationExecutor.execute(anyString(), anyString(), any(), any(), any()))
                 .thenAnswer(invocation -> {
@@ -136,4 +162,3 @@ class TenantAdminControllerLifecycleTest {
         );
     }
 }
-

@@ -21,9 +21,11 @@ import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantCreateRequest;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
+import com.lingsql.tenant.model.TenantLifecycleOpsTaskView;
 import com.lingsql.tenant.model.TenantLifecycleSnapshot;
 import com.lingsql.tenant.model.TenantLifecycleState;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
+import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
 import com.lingsql.tenant.model.TenantRiskLevel;
 import com.lingsql.tenant.model.TenantRiskSnapshot;
 import com.lingsql.tenant.model.TenantUpdateRequest;
@@ -38,6 +40,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -58,6 +61,11 @@ public class TenantAdminService {
     private static final Integer ACTIVE_STATUS = 1;
     private static final Integer INACTIVE_STATUS = 0;
     private static final String TENANT_ADMIN_ROLE_CODE = "TENANT_ADMIN";
+    private static final int DEFAULT_WORKBENCH_LIMIT = 50;
+    private static final int MAX_WORKBENCH_LIMIT = 200;
+    private static final String PRIORITY_P0 = "P0";
+    private static final String PRIORITY_P1 = "P1";
+    private static final String PRIORITY_P2 = "P2";
 
     private static final List<String> BASE_PERMISSION_CODES = List.of(
             "MENU:CHAT",
@@ -135,6 +143,44 @@ public class TenantAdminService {
             }
         }
         return summary;
+    }
+
+    /**
+     * 查询租户生命周期运营工作台。
+     *
+     * @param limit 返回任务条数上限
+     * @return 运营工作台
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    public TenantLifecycleWorkbenchView lifecycleWorkbench(Integer limit) {
+        int resolvedLimit = resolveWorkbenchLimit(limit);
+        LocalDateTime now = LocalDateTime.now();
+        List<TenantLifecycleOpsTaskView> tasks = new ArrayList<>();
+        for (TenantInfo tenant : tenantRepository.findByIsDeleted(NOT_DELETED)) {
+            TenantLifecycleSnapshot snapshot = tenantLifecycleService.evaluate(tenant, now);
+            TenantRiskSnapshot riskSnapshot = tenantLifecycleService.evaluateRisk(tenant, now);
+            TenantLifecycleOpsTaskView task = buildOpsTask(tenant, snapshot, riskSnapshot);
+            if (task != null) {
+                tasks.add(task);
+            }
+        }
+        tasks.sort(
+                Comparator.comparingInt((TenantLifecycleOpsTaskView item) -> priorityWeight(item.getPriority())).reversed()
+                        .thenComparing((TenantLifecycleOpsTaskView item) -> item.getRiskScore() == null ? 0 : item.getRiskScore(), Comparator.reverseOrder())
+                        .thenComparingLong(item -> item.getDaysToExpire() == null ? Long.MAX_VALUE : item.getDaysToExpire())
+        );
+        List<TenantLifecycleOpsTaskView> limitedTasks = tasks.stream()
+                .limit(resolvedLimit)
+                .toList();
+        TenantLifecycleWorkbenchView workbench = new TenantLifecycleWorkbenchView();
+        workbench.setGeneratedAt(now);
+        workbench.setTotalTasks(limitedTasks.size());
+        workbench.setP0Count((int) limitedTasks.stream().filter(task -> PRIORITY_P0.equals(task.getPriority())).count());
+        workbench.setP1Count((int) limitedTasks.stream().filter(task -> PRIORITY_P1.equals(task.getPriority())).count());
+        workbench.setP2Count((int) limitedTasks.stream().filter(task -> PRIORITY_P2.equals(task.getPriority())).count());
+        workbench.setTasks(limitedTasks);
+        return workbench;
     }
 
     /**
@@ -598,6 +644,104 @@ public class TenantAdminService {
             view.setRiskReasons(riskSnapshot.reasons());
         }
         return view;
+    }
+
+    private TenantLifecycleOpsTaskView buildOpsTask(TenantInfo tenant,
+                                                    TenantLifecycleSnapshot lifecycleSnapshot,
+                                                    TenantRiskSnapshot riskSnapshot) {
+        if (tenant == null || lifecycleSnapshot == null || riskSnapshot == null) {
+            return null;
+        }
+        String priority;
+        String suggestedAction;
+        int slaHours;
+        if (lifecycleSnapshot.state() == TenantLifecycleState.SUSPENDED
+                || riskSnapshot.level() == TenantRiskLevel.CRITICAL) {
+            priority = PRIORITY_P0;
+            suggestedAction = "立即联系客户并确认续期，必要时执行恢复服务";
+            slaHours = 4;
+        } else if (lifecycleSnapshot.state() == TenantLifecycleState.GRACE_PERIOD
+                || lifecycleSnapshot.state() == TenantLifecycleState.DISABLED
+                || riskSnapshot.level() == TenantRiskLevel.HIGH
+                || (lifecycleSnapshot.daysToExpire() != Long.MAX_VALUE && lifecycleSnapshot.daysToExpire() <= 1)) {
+            priority = PRIORITY_P1;
+            suggestedAction = "今日完成续期沟通并确认服务恢复计划";
+            slaHours = 24;
+        } else if (lifecycleSnapshot.state() == TenantLifecycleState.EXPIRING_SOON
+                || riskSnapshot.level() == TenantRiskLevel.MEDIUM
+                || (lifecycleSnapshot.daysToExpire() != Long.MAX_VALUE && lifecycleSnapshot.daysToExpire() <= 7)) {
+            priority = PRIORITY_P2;
+            suggestedAction = "发送续期提醒并安排客户回访";
+            slaHours = 48;
+        } else {
+            return null;
+        }
+        TenantLifecycleOpsTaskView task = new TenantLifecycleOpsTaskView();
+        task.setTenantId(tenant.getTenantId());
+        task.setTenantName(tenant.getTenantName());
+        task.setLifecycleState(lifecycleSnapshot.state().name());
+        task.setRiskLevel(riskSnapshot.level().name());
+        task.setRiskScore(riskSnapshot.score());
+        task.setPriority(priority);
+        task.setSuggestedAction(suggestedAction);
+        task.setSlaHours(slaHours);
+        if (lifecycleSnapshot.daysToExpire() != Long.MAX_VALUE) {
+            task.setDaysToExpire(lifecycleSnapshot.daysToExpire());
+        } else {
+            task.setDaysToExpire(null);
+        }
+        task.setTriggerReason(resolveTriggerReason(lifecycleSnapshot, riskSnapshot));
+        task.setContactName(tenant.getContactName());
+        task.setContactPhone(tenant.getContactPhone());
+        task.setContactEmail(tenant.getContactEmail());
+        return task;
+    }
+
+    private String resolveTriggerReason(TenantLifecycleSnapshot lifecycleSnapshot, TenantRiskSnapshot riskSnapshot) {
+        List<String> reasons = new ArrayList<>();
+        if (lifecycleSnapshot.state() == TenantLifecycleState.SUSPENDED) {
+            reasons.add("租户已超宽限期并被冻结");
+        } else if (lifecycleSnapshot.state() == TenantLifecycleState.GRACE_PERIOD) {
+            reasons.add("租户处于宽限期");
+        } else if (lifecycleSnapshot.state() == TenantLifecycleState.EXPIRING_SOON) {
+            reasons.add("租户进入即将到期阶段");
+        } else if (lifecycleSnapshot.state() == TenantLifecycleState.DISABLED) {
+            reasons.add("租户当前处于停用状态");
+        }
+        Long daysToExpire = lifecycleSnapshot.daysToExpire() == Long.MAX_VALUE ? null : lifecycleSnapshot.daysToExpire();
+        if (daysToExpire != null) {
+            if (daysToExpire < 0) {
+                reasons.add("已逾期 " + Math.abs(daysToExpire) + " 天");
+            } else if (daysToExpire <= 3) {
+                reasons.add("距离到期不足 3 天");
+            } else if (daysToExpire <= 7) {
+                reasons.add("距离到期不足 7 天");
+            }
+        }
+        if (riskSnapshot.reasons() != null && !riskSnapshot.reasons().isEmpty()) {
+            reasons.add(riskSnapshot.reasons().get(0));
+        }
+        if (reasons.isEmpty()) {
+            reasons.add("建议执行常规客户回访");
+        }
+        return String.join("；", reasons);
+    }
+
+    private int resolveWorkbenchLimit(Integer limit) {
+        if (limit == null || limit <= 0) {
+            return DEFAULT_WORKBENCH_LIMIT;
+        }
+        return Math.min(limit, MAX_WORKBENCH_LIMIT);
+    }
+
+    private int priorityWeight(String priority) {
+        if (PRIORITY_P0.equalsIgnoreCase(priority)) {
+            return 3;
+        }
+        if (PRIORITY_P1.equalsIgnoreCase(priority)) {
+            return 2;
+        }
+        return 1;
     }
 
     /**

@@ -49,6 +49,43 @@ export interface TenantLifecycleSummaryView {
 }
 
 /**
+ * 生命周期运营任务。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+export interface TenantLifecycleOpsTaskView {
+  tenantId: string;
+  tenantName: string;
+  lifecycleState: string;
+  riskLevel: string;
+  riskScore: number;
+  daysToExpire?: number | null;
+  priority: string;
+  suggestedAction: string;
+  triggerReason: string;
+  slaHours: number;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+}
+
+/**
+ * 生命周期运营工作台。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+export interface TenantLifecycleWorkbenchView {
+  generatedAt?: string;
+  totalTasks: number;
+  p0Count: number;
+  p1Count: number;
+  p2Count: number;
+  tasks: TenantLifecycleOpsTaskView[];
+}
+
+/**
  * 租户创建请求。
  *
  * @author 余炘洋
@@ -172,6 +209,18 @@ export const deleteTenant = async (id: number): Promise<string> => {
  */
 export const fetchTenantLifecycleSummary = async (): Promise<TenantLifecycleSummaryView> => {
   return request<TenantLifecycleSummaryView>('/api/v1/admin/tenants/lifecycle/summary');
+};
+
+/**
+ * 查询生命周期运营工作台。
+ *
+ * @param limit 返回任务上限
+ * @return 工作台结果
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+export const fetchTenantLifecycleWorkbench = async (limit = 50): Promise<TenantLifecycleWorkbenchView> => {
+  return request<TenantLifecycleWorkbenchView>(`/api/v1/admin/tenants/lifecycle/workbench?limit=${limit}`);
 };
 
 /**

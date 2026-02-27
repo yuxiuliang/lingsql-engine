@@ -12,11 +12,13 @@ import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
+import com.lingsql.tenant.model.TenantLifecycleOpsTaskView;
 import com.lingsql.tenant.model.TenantLifecycleSnapshot;
 import com.lingsql.tenant.model.TenantLifecycleState;
 import com.lingsql.tenant.model.TenantRiskLevel;
 import com.lingsql.tenant.model.TenantRiskSnapshot;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
+import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
 import com.lingsql.tenant.model.TenantView;
 import com.lingsql.tenant.repository.TenantRepository;
 import org.junit.jupiter.api.Test;
@@ -127,6 +129,45 @@ class TenantAdminServiceLifecycleOpsTest {
         assertEquals(1, summary.getSuspended());
         assertEquals(1, summary.getAtRisk());
         assertEquals(1, summary.getCriticalRisk());
+    }
+
+    @Test
+    void shouldBuildLifecycleWorkbenchWithPriority() {
+        TenantRepository tenantRepository = Mockito.mock(TenantRepository.class);
+        TenantDbConfigRepository configRepository = Mockito.mock(TenantDbConfigRepository.class);
+        TenantLifecycleService lifecycleService = Mockito.mock(TenantLifecycleService.class);
+        TenantAdminService service = buildService(tenantRepository, configRepository, lifecycleService);
+        TenantInfo suspended = new TenantInfo();
+        suspended.setTenantId("t-001");
+        suspended.setTenantName("冻结租户");
+        TenantInfo expiring = new TenantInfo();
+        expiring.setTenantId("t-002");
+        expiring.setTenantName("即将到期租户");
+
+        when(tenantRepository.findByIsDeleted(0)).thenReturn(List.of(suspended, expiring));
+        when(lifecycleService.evaluate(any(TenantInfo.class), any(LocalDateTime.class))).thenAnswer(invocation -> {
+            TenantInfo tenant = invocation.getArgument(0);
+            if ("t-001".equals(tenant.getTenantId())) {
+                return new TenantLifecycleSnapshot(TenantLifecycleState.SUSPENDED, -5, 0);
+            }
+            return new TenantLifecycleSnapshot(TenantLifecycleState.EXPIRING_SOON, 3, 0);
+        });
+        when(lifecycleService.evaluateRisk(any(TenantInfo.class), any(LocalDateTime.class))).thenAnswer(invocation -> {
+            TenantInfo tenant = invocation.getArgument(0);
+            if ("t-001".equals(tenant.getTenantId())) {
+                return new TenantRiskSnapshot(96, TenantRiskLevel.CRITICAL, List.of("已冻结"));
+            }
+            return new TenantRiskSnapshot(62, TenantRiskLevel.MEDIUM, List.of("即将到期"));
+        });
+
+        TenantLifecycleWorkbenchView workbench = service.lifecycleWorkbench(10);
+
+        assertEquals(2, workbench.getTotalTasks());
+        assertEquals(1, workbench.getP0Count());
+        assertEquals(1, workbench.getP2Count());
+        TenantLifecycleOpsTaskView first = workbench.getTasks().get(0);
+        assertEquals("t-001", first.getTenantId());
+        assertEquals("P0", first.getPriority());
     }
 
     private TenantAdminService buildService(TenantRepository tenantRepository,

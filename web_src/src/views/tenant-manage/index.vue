@@ -5,12 +5,15 @@ import {
   createTenant,
   deleteTenant,
   extendTenantLifecycle,
+  fetchTenantLifecycleWorkbench,
   fetchTenants,
   fetchTenantLifecycleSummary,
   reactivateTenant,
   TenantCreateRequest,
   TenantLifecycleExtendRequest,
+  TenantLifecycleOpsTaskView,
   TenantLifecycleSummaryView,
+  TenantLifecycleWorkbenchView,
   TenantUpdateRequest,
   TenantView,
   updateTenant
@@ -21,7 +24,9 @@ import {useAuthStore} from '@/store/auth';
 const authStore = useAuthStore();
 const tenants = ref<TenantView[]>([]);
 const lifecycleSummary = ref<TenantLifecycleSummaryView | null>(null);
+const lifecycleWorkbench = ref<TenantLifecycleWorkbenchView | null>(null);
 const loading = ref(false);
+const workbenchLoading = ref(false);
 const planList = ref<BillingPlanView[]>([]);
 const dialogVisible = ref(false);
 const lifecycleDialogVisible = ref(false);
@@ -172,6 +177,23 @@ const loadLifecycleSummary = async () => {
 };
 
 /**
+ * 加载生命周期运营工作台。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const loadLifecycleWorkbench = async () => {
+  workbenchLoading.value = true;
+  try {
+    lifecycleWorkbench.value = await fetchTenantLifecycleWorkbench(50);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载运营任务失败');
+  } finally {
+    workbenchLoading.value = false;
+  }
+};
+
+/**
  * 加载套餐列表。
  *
  * @author 余炘洋
@@ -194,7 +216,8 @@ const loadPlans = async () => {
 const refreshTenantData = async () => {
   await Promise.all([
     loadTenants(),
-    loadLifecycleSummary()
+    loadLifecycleSummary(),
+    loadLifecycleWorkbench()
   ]);
 };
 
@@ -471,6 +494,70 @@ const resolveRiskReasonText = (reasons?: string[]) => {
 };
 
 /**
+ * 解析任务优先级文案。
+ *
+ * @param priority 优先级
+ * @return 文案
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const resolvePriorityText = (priority?: string) => {
+  if (priority === 'P0') {
+    return 'P0 紧急';
+  }
+  if (priority === 'P1') {
+    return 'P1 高';
+  }
+  return 'P2 中';
+};
+
+/**
+ * 解析任务优先级标签样式。
+ *
+ * @param priority 优先级
+ * @return 标签类型
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const resolvePriorityType = (priority?: string) => {
+  if (priority === 'P0') {
+    return 'danger';
+  }
+  if (priority === 'P1') {
+    return 'warning';
+  }
+  return 'info';
+};
+
+/**
+ * 执行运营任务。
+ *
+ * @param task 运营任务
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const handleProcessTask = async (task: TenantLifecycleOpsTaskView) => {
+  const tenant = tenants.value.find((item) => item.tenantId === task.tenantId);
+  if (!tenant) {
+    ElMessage.warning('租户不在当前列表，请先刷新');
+    return;
+  }
+  if (tenant.lifecycleState === 'SUSPENDED' || tenant.lifecycleState === 'DISABLED' || tenant.status !== 1) {
+    await handleReactivate(tenant);
+    return;
+  }
+  openLifecycleDialog(tenant);
+  if (task.priority === 'P0') {
+    lifecycleForm.extendDays = 90;
+  } else if (task.priority === 'P1') {
+    lifecycleForm.extendDays = 60;
+  } else {
+    lifecycleForm.extendDays = 30;
+  }
+  lifecycleForm.activate = true;
+};
+
+/**
  * 重置生命周期续期表单。
  *
  * @author 余炘洋
@@ -654,6 +741,61 @@ refreshTenantData();
         <div class="summary-value danger">{{ lifecycleSummary?.criticalRisk ?? 0 }}</div>
       </el-card>
     </div>
+
+    <el-card class="card workbench-card" shadow="never">
+      <template #header>
+        <div class="workbench-header">
+          <span>运营任务清单</span>
+          <span class="workbench-time">更新时间：{{ lifecycleWorkbench?.generatedAt || '--' }}</span>
+        </div>
+      </template>
+      <div class="workbench-metrics">
+        <el-tag type="danger">P0 {{ lifecycleWorkbench?.p0Count ?? 0 }}</el-tag>
+        <el-tag type="warning">P1 {{ lifecycleWorkbench?.p1Count ?? 0 }}</el-tag>
+        <el-tag type="info">P2 {{ lifecycleWorkbench?.p2Count ?? 0 }}</el-tag>
+        <span class="workbench-total">共 {{ lifecycleWorkbench?.totalTasks ?? 0 }} 条</span>
+      </div>
+      <el-empty v-if="(lifecycleWorkbench?.tasks || []).length === 0" description="暂无待处理运营任务"/>
+      <el-table
+        v-else
+        :data="lifecycleWorkbench?.tasks || []"
+        border
+        size="small"
+        v-loading="workbenchLoading"
+        max-height="360"
+      >
+        <el-table-column prop="priority" label="优先级" width="90">
+          <template #default="scope">
+            <el-tag :type="resolvePriorityType(scope.row.priority)">
+              {{ resolvePriorityText(scope.row.priority) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="tenantName" label="租户" min-width="140"/>
+        <el-table-column prop="lifecycleState" label="生命周期" width="120">
+          <template #default="scope">
+            <el-tag :type="resolveLifecycleType(scope.row.lifecycleState)">
+              {{ resolveLifecycleText(scope.row.lifecycleState) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="riskLevel" label="风险" width="140">
+          <template #default="scope">
+            <el-tag :type="resolveRiskType(scope.row.riskLevel)">
+              {{ resolveRiskText(scope.row.riskLevel) }}({{ scope.row.riskScore }})
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="suggestedAction" label="建议动作" min-width="220"/>
+        <el-table-column prop="triggerReason" label="触发原因" min-width="220"/>
+        <el-table-column prop="slaHours" label="SLA(h)" width="80"/>
+        <el-table-column label="操作" width="100">
+          <template #default="scope">
+            <el-button type="primary" link @click="handleProcessTask(scope.row)">处理</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
 
     <el-card class="card" shadow="never">
       <div class="toolbar">
@@ -890,6 +1032,35 @@ refreshTenantData();
 
 .card {
   border-radius: 12px;
+}
+
+.workbench-card {
+  margin-bottom: 16px;
+}
+
+.workbench-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+}
+
+.workbench-time {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 400;
+}
+
+.workbench-metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.workbench-total {
+  color: #475569;
+  font-size: 13px;
 }
 
 .toolbar {
