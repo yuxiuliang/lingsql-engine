@@ -58,8 +58,13 @@
 
 - `run_commercial_gate`：是否执行商用四块门禁。
 - `billing_readiness_url`：计费验收接口地址（可留空并基于 `base_url` 自动拼接）。
-- `allow_skip_billing_readiness`：未配置计费接口时是否允许跳过。
+- `allow_skip_billing_readiness`：未配置计费接口时是否允许跳过（默认 `false`，严格模式）。
 - `commercial_require_slo`：商用门禁内未配置 Prometheus 时是否阻断。
+
+严格模式下（`run_commercial_gate=true` 且 `allow_skip_billing_readiness=false`）：
+
+- 必须在仓库 Secrets 配置 `RELEASE_GATE_BILLING_TOKEN`。
+- 若未配置该 Secret，工作流会在发布门禁前直接失败，避免静默跳过计费验收。
 
 流程包含：
 

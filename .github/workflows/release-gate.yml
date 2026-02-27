@@ -40,7 +40,7 @@ on:
       allow_skip_billing_readiness:
         description: "未配置计费验收接口时是否允许跳过"
         required: true
-        default: true
+        default: false
         type: boolean
       commercial_require_slo:
         description: "商用总门禁中未配置 Prometheus 时是否阻断"
@@ -70,6 +70,16 @@ jobs:
 
       - name: Prepare Scripts
         run: chmod +x scripts/ops/*.sh
+
+      - name: Validate Billing Gate Token
+        if: ${{ inputs.run_commercial_gate && !inputs.allow_skip_billing_readiness }}
+        env:
+          RELEASE_GATE_BILLING_TOKEN: ${{ secrets.RELEASE_GATE_BILLING_TOKEN }}
+        run: |
+          if [ -z "${RELEASE_GATE_BILLING_TOKEN}" ]; then
+            echo "::error::已启用严格计费门禁（allow_skip_billing_readiness=false），但未配置 secret RELEASE_GATE_BILLING_TOKEN。"
+            exit 1
+          fi
 
       - name: Run Release Gate
         env:

@@ -8,7 +8,7 @@
 # 可选环境变量:
 #   BASE_URL=https://api.example.com
 #   BILLING_AUTH_TOKEN=<token>
-#   BILLING_ALLOW_SKIP=true
+#   BILLING_ALLOW_SKIP=false
 #   REPORT_FILE=./reports/billing_readiness.md
 
 set -euo pipefail
@@ -16,7 +16,7 @@ set -euo pipefail
 BILLING_READINESS_URL="${BILLING_READINESS_URL:-}"
 BILLING_AUTH_HEADER="${BILLING_AUTH_HEADER:-}"
 BILLING_AUTH_TOKEN="${BILLING_AUTH_TOKEN:-}"
-BILLING_ALLOW_SKIP="${BILLING_ALLOW_SKIP:-true}"
+BILLING_ALLOW_SKIP="${BILLING_ALLOW_SKIP:-false}"
 REPORT_FILE="${REPORT_FILE:-}"
 
 log_info() {
