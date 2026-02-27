@@ -934,6 +934,7 @@ redis-cli SET lingsql:billing:balance:${TENANT_ID} ${DB_BALANCE}
 | MySQL 复制 | `SHOW SLAVE STATUS\G` | Seconds_Behind_Master < 10 |
 | Redis 内存 | `redis-cli info memory` | used_memory < 80% |
 | 计费积压 | `SELECT COUNT(*) WHERE status=0` | < 100 |
+| SLO 预算状态 | `./scripts/ops/slo_error_budget_report.sh` | 状态不为 `BREACHED` |
 
 ### 10.2 每周检查
 
