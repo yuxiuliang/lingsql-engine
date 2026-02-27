@@ -20,6 +20,7 @@ import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantCreateRequest;
+import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleSnapshot;
 import com.lingsql.tenant.model.TenantLifecycleState;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
@@ -254,6 +255,70 @@ public class TenantAdminService {
     }
 
     /**
+     * 续期租户生命周期。
+     *
+     * @param id      租户ID
+     * @param request 续期请求
+     * @return 租户视图
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @Transactional
+    public TenantView extendTenantLifecycle(Long id, TenantLifecycleExtendRequest request) {
+        TenantInfo tenant = tenantRepository.findByIdAndIsDeleted(id, NOT_DELETED)
+                .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime targetExpire = null;
+        if (request != null) {
+            targetExpire = parseDateTime(request.getExpireTime());
+        }
+        if (targetExpire == null) {
+            int extendDays = resolveExtendDays(request);
+            LocalDateTime base = tenant.getExpireTime();
+            if (base == null || base.isBefore(now)) {
+                base = now;
+            }
+            targetExpire = base.plusDays(extendDays);
+        }
+        if (targetExpire.isBefore(now)) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "到期时间不能早于当前时间");
+        }
+        tenant.setExpireTime(targetExpire);
+        if (resolveActivate(request)) {
+            tenant.setStatus(ACTIVE_STATUS);
+            activateTenantConfig(tenant.getTenantId());
+        }
+        tenant.setUpdateTime(now);
+        TenantInfo saved = tenantRepository.save(tenant);
+        return toView(saved);
+    }
+
+    /**
+     * 恢复租户服务。
+     * 若租户已过期，则默认续期 30 天后再恢复。
+     *
+     * @param id 租户ID
+     * @return 租户视图
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @Transactional
+    public TenantView reactivateTenant(Long id) {
+        TenantInfo tenant = tenantRepository.findByIdAndIsDeleted(id, NOT_DELETED)
+                .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime expireTime = tenant.getExpireTime();
+        if (expireTime == null || expireTime.isBefore(now)) {
+            tenant.setExpireTime(now.plusDays(30));
+        }
+        tenant.setStatus(ACTIVE_STATUS);
+        tenant.setUpdateTime(now);
+        activateTenantConfig(tenant.getTenantId());
+        TenantInfo saved = tenantRepository.save(tenant);
+        return toView(saved);
+    }
+
+    /**
      * 删除租户（软删除）。
      *
      * @param id 租户ID
@@ -446,6 +511,20 @@ public class TenantAdminService {
     }
 
     /**
+     * 恢复租户数据源配置。
+     *
+     * @param tenantId 租户ID
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    private void activateTenantConfig(String tenantId) {
+        tenantDbConfigRepository.findByTenantId(tenantId).ifPresent(config -> {
+            config.setStatus(ACTIVE_STATUS);
+            tenantDbConfigRepository.save(config);
+        });
+    }
+
+    /**
      * 获取基础权限集合。
      *
      * @return 权限列表
@@ -603,5 +682,19 @@ public class TenantAdminService {
      */
     private Integer resolveStatus(Integer status) {
         return status == null ? ACTIVE_STATUS : status;
+    }
+
+    private int resolveExtendDays(TenantLifecycleExtendRequest request) {
+        if (request == null || request.getExtendDays() == null) {
+            return 30;
+        }
+        return Math.max(request.getExtendDays(), 1);
+    }
+
+    private boolean resolveActivate(TenantLifecycleExtendRequest request) {
+        if (request == null || request.getActivate() == null) {
+            return true;
+        }
+        return request.getActivate();
     }
 }

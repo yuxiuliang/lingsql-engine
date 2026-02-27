@@ -863,6 +863,39 @@ public class LingSqlProperties {
          * @date 2026-02-27
          */
         private String autoSuspendCron = "0 0/30 * * * ?";
+
+        /**
+         * 是否启用到期提醒。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private boolean reminderEnabled = true;
+
+        /**
+         * 到期提醒任务 Cron。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private String reminderCron = "0 0 9 * * ?";
+
+        /**
+         * 到期提醒天数列表（如 7/3/1）。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private List<Integer> reminderDays = new ArrayList<>(List.of(7, 3, 1));
+
+        /**
+         * 到期提醒去重 TTL。
+         * 用于防止服务重启后重复发送同日提醒。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private Duration reminderDedupeTtl = Duration.ofDays(2);
     }
 
     /**

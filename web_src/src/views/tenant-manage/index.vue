@@ -4,8 +4,13 @@ import {ElMessage, ElMessageBox} from 'element-plus';
 import {
   createTenant,
   deleteTenant,
+  extendTenantLifecycle,
   fetchTenants,
+  fetchTenantLifecycleSummary,
+  reactivateTenant,
   TenantCreateRequest,
+  TenantLifecycleExtendRequest,
+  TenantLifecycleSummaryView,
   TenantUpdateRequest,
   TenantView,
   updateTenant
@@ -15,9 +20,12 @@ import {useAuthStore} from '@/store/auth';
 
 const authStore = useAuthStore();
 const tenants = ref<TenantView[]>([]);
+const lifecycleSummary = ref<TenantLifecycleSummaryView | null>(null);
 const loading = ref(false);
 const planList = ref<BillingPlanView[]>([]);
 const dialogVisible = ref(false);
+const lifecycleDialogVisible = ref(false);
+const lifecycleTargetTenant = ref<TenantView | null>(null);
 const editingId = ref<number | null>(null);
 const initConfig = ref(false);
 const planOptions = computed(() => {
@@ -78,6 +86,26 @@ const form = reactive<TenantForm>({
 });
 
 /**
+ * 生命周期续期表单定义。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+interface TenantLifecycleForm {
+  mode: 'days' | 'date';
+  extendDays: number;
+  expireTime: string;
+  activate: boolean;
+}
+
+const lifecycleForm = reactive<TenantLifecycleForm>({
+  mode: 'days',
+  extendDays: 30,
+  expireTime: '',
+  activate: true
+});
+
+/**
  * 判断是否系统管理员。
  *
  * @author 余炘洋
@@ -129,6 +157,20 @@ const loadTenants = async () => {
 };
 
 /**
+ * 加载生命周期汇总。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const loadLifecycleSummary = async () => {
+  try {
+    lifecycleSummary.value = await fetchTenantLifecycleSummary();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载生命周期汇总失败');
+  }
+};
+
+/**
  * 加载套餐列表。
  *
  * @author 余炘洋
@@ -140,6 +182,19 @@ const loadPlans = async () => {
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载套餐失败');
   }
+};
+
+/**
+ * 刷新租户数据与生命周期看板。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const refreshTenantData = async () => {
+  await Promise.all([
+    loadTenants(),
+    loadLifecycleSummary()
+  ]);
 };
 
 /**
@@ -246,7 +301,7 @@ const handleSave = async () => {
       ElMessage.success('租户已创建');
     }
     dialogVisible.value = false;
-    await loadTenants();
+    await refreshTenantData();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '保存失败');
   }
@@ -264,7 +319,7 @@ const handleDelete = async (row: TenantView) => {
     await ElMessageBox.confirm('确认删除该租户？', '提示', {type: 'warning'});
     await deleteTenant(row.id);
     ElMessage.success('租户已删除');
-    await loadTenants();
+    await refreshTenantData();
   } catch (error) {
     if (!isMessageBoxCancel(error)) {
       ElMessage.error(error instanceof Error ? error.message : '删除失败');
@@ -297,6 +352,193 @@ const resolveStatusType = (status?: number) => {
 };
 
 /**
+ * 解析生命周期状态文本。
+ *
+ * @param state 生命周期状态
+ * @return 文案
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const resolveLifecycleText = (state?: string) => {
+  if (!state) {
+    return '未知';
+  }
+  const map: Record<string, string> = {
+    ACTIVE: '正常',
+    EXPIRING_SOON: '即将到期',
+    GRACE_PERIOD: '宽限期',
+    SUSPENDED: '已冻结',
+    DISABLED: '已停用'
+  };
+  return map[state] || state;
+};
+
+/**
+ * 解析生命周期状态标签样式。
+ *
+ * @param state 生命周期状态
+ * @return 标签类型
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const resolveLifecycleType = (state?: string) => {
+  if (state === 'ACTIVE') {
+    return 'success';
+  }
+  if (state === 'EXPIRING_SOON' || state === 'GRACE_PERIOD') {
+    return 'warning';
+  }
+  if (state === 'SUSPENDED' || state === 'DISABLED') {
+    return 'danger';
+  }
+  return 'info';
+};
+
+/**
+ * 解析剩余到期天数显示。
+ *
+ * @param days 天数
+ * @return 文案
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const resolveDaysToExpireText = (days?: number | null) => {
+  if (days === null || days === undefined) {
+    return '--';
+  }
+  if (days >= 0) {
+    return `${days} 天`;
+  }
+  return `已过期 ${Math.abs(days)} 天`;
+};
+
+/**
+ * 重置生命周期续期表单。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const resetLifecycleForm = () => {
+  lifecycleForm.mode = 'days';
+  lifecycleForm.extendDays = 30;
+  lifecycleForm.expireTime = '';
+  lifecycleForm.activate = true;
+};
+
+/**
+ * 打开自定义续期弹窗。
+ *
+ * @param row 租户信息
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const openLifecycleDialog = (row: TenantView) => {
+  lifecycleTargetTenant.value = row;
+  resetLifecycleForm();
+  lifecycleDialogVisible.value = true;
+};
+
+/**
+ * 执行自定义续期。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const handleCustomExtend = async () => {
+  if (!lifecycleTargetTenant.value) {
+    return;
+  }
+  const payload: TenantLifecycleExtendRequest = {
+    activate: lifecycleForm.activate
+  };
+  if (lifecycleForm.mode === 'days') {
+    const days = Math.floor(Number(lifecycleForm.extendDays));
+    if (!Number.isFinite(days) || days < 1) {
+      ElMessage.warning('续期天数必须大于 0');
+      return;
+    }
+    payload.extendDays = days;
+  } else {
+    if (!lifecycleForm.expireTime) {
+      ElMessage.warning('请选择目标到期时间');
+      return;
+    }
+    payload.expireTime = lifecycleForm.expireTime;
+  }
+  try {
+    await extendTenantLifecycle(lifecycleTargetTenant.value.id, payload);
+    ElMessage.success('租户续期成功');
+    closeLifecycleDialog();
+    await refreshTenantData();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '续期失败');
+  }
+};
+
+/**
+ * 关闭续期弹窗。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const closeLifecycleDialog = () => {
+  lifecycleDialogVisible.value = false;
+  lifecycleTargetTenant.value = null;
+};
+
+/**
+ * 快捷续期 30 天并恢复服务。
+ *
+ * @param row 租户信息
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const handleExtend30Days = async (row: TenantView) => {
+  try {
+    await extendTenantLifecycle(row.id, {
+      extendDays: 30,
+      activate: true
+    });
+    ElMessage.success('已续期 30 天并恢复服务');
+    await refreshTenantData();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '续期失败');
+  }
+};
+
+/**
+ * 快捷恢复服务。
+ *
+ * @param row 租户信息
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const handleReactivate = async (row: TenantView) => {
+  try {
+    await reactivateTenant(row.id);
+    ElMessage.success('租户服务已恢复');
+    await refreshTenantData();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '恢复失败');
+  }
+};
+
+/**
+ * 是否展示“恢复服务”按钮。
+ *
+ * @param row 租户信息
+ * @return 是否显示
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+const shouldShowReactivate = (row: TenantView) => {
+  if (row.status !== 1) {
+    return true;
+  }
+  return row.lifecycleState === 'SUSPENDED' || row.lifecycleState === 'DISABLED';
+};
+
+/**
  * 判断是否为弹窗取消。
  *
  * @param error 异常对象
@@ -309,19 +551,45 @@ const isMessageBoxCancel = (error: unknown) => {
 };
 
 loadPlans();
-loadTenants();
+refreshTenantData();
 </script>
 
 <template>
   <div class="page">
     <div class="page-title">租户管理</div>
     <div class="page-desc">维护租户信息并执行初始化配置。</div>
+    <div class="summary-grid">
+      <el-card shadow="never" class="summary-card">
+        <div class="summary-label">总租户</div>
+        <div class="summary-value">{{ lifecycleSummary?.total ?? 0 }}</div>
+      </el-card>
+      <el-card shadow="never" class="summary-card">
+        <div class="summary-label">正常</div>
+        <div class="summary-value success">{{ lifecycleSummary?.active ?? 0 }}</div>
+      </el-card>
+      <el-card shadow="never" class="summary-card">
+        <div class="summary-label">即将到期</div>
+        <div class="summary-value warning">{{ lifecycleSummary?.expiringSoon ?? 0 }}</div>
+      </el-card>
+      <el-card shadow="never" class="summary-card">
+        <div class="summary-label">宽限期</div>
+        <div class="summary-value warning">{{ lifecycleSummary?.gracePeriod ?? 0 }}</div>
+      </el-card>
+      <el-card shadow="never" class="summary-card">
+        <div class="summary-label">已冻结</div>
+        <div class="summary-value danger">{{ lifecycleSummary?.suspended ?? 0 }}</div>
+      </el-card>
+      <el-card shadow="never" class="summary-card">
+        <div class="summary-label">已停用</div>
+        <div class="summary-value">{{ lifecycleSummary?.disabled ?? 0 }}</div>
+      </el-card>
+    </div>
 
     <el-card class="card" shadow="never">
       <div class="toolbar">
         <div class="toolbar-actions">
           <el-button type="primary" :disabled="!isSysAdmin" @click="handleCreate">新增租户</el-button>
-          <el-button @click="loadTenants">刷新</el-button>
+          <el-button @click="refreshTenantData">刷新</el-button>
         </div>
         <div class="toolbar-tip" v-if="!isSysAdmin">仅系统管理员可管理租户。</div>
       </div>
@@ -331,6 +599,18 @@ loadTenants();
         <el-table-column prop="tenantName" label="租户名称" min-width="160"/>
         <el-table-column prop="planName" label="套餐" min-width="120"/>
         <el-table-column prop="expireTime" label="到期时间" min-width="160"/>
+        <el-table-column prop="daysToExpire" label="剩余天数" width="120">
+          <template #default="scope">
+            <span>{{ resolveDaysToExpireText(scope.row.daysToExpire) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="lifecycleState" label="生命周期" min-width="120">
+          <template #default="scope">
+            <el-tag :type="resolveLifecycleType(scope.row.lifecycleState)">
+              {{ resolveLifecycleText(scope.row.lifecycleState) }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="contactName" label="联系人" min-width="120"/>
         <el-table-column prop="status" label="状态" width="90">
           <template #default="scope">
@@ -340,9 +620,20 @@ loadTenants();
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="180"/>
-        <el-table-column label="操作" width="160">
+        <el-table-column label="操作" width="420">
           <template #default="scope">
             <el-button size="small" :disabled="!isSysAdmin" @click="handleEdit(scope.row)">编辑</el-button>
+            <el-button size="small" type="warning" :disabled="!isSysAdmin" @click="handleExtend30Days(scope.row)">续期30天</el-button>
+            <el-button size="small" type="primary" :disabled="!isSysAdmin" @click="openLifecycleDialog(scope.row)">自定义续期</el-button>
+            <el-button
+              v-if="shouldShowReactivate(scope.row)"
+              size="small"
+              type="success"
+              :disabled="!isSysAdmin"
+              @click="handleReactivate(scope.row)"
+            >
+              恢复服务
+            </el-button>
             <el-button size="small" type="danger" :disabled="!isSysAdmin" @click="handleDelete(scope.row)">删除</el-button>
           </template>
         </el-table-column>
@@ -425,6 +716,40 @@ loadTenants();
         <el-button type="primary" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="lifecycleDialogVisible" title="租户续期" width="520px" :close-on-click-modal="false">
+      <el-form label-width="120px">
+        <el-form-item label="租户">
+          <span>{{ lifecycleTargetTenant?.tenantName || '--' }}（{{ lifecycleTargetTenant?.tenantId || '--' }}）</span>
+        </el-form-item>
+        <el-form-item label="续期方式">
+          <el-radio-group v-model="lifecycleForm.mode">
+            <el-radio-button label="days">按天数续期</el-radio-button>
+            <el-radio-button label="date">指定到期时间</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="lifecycleForm.mode === 'days'" label="续期天数">
+          <el-input-number v-model="lifecycleForm.extendDays" :min="1" :max="3650" :step="1"/>
+          <div class="form-tip">默认 30 天，可按合同手动调整。</div>
+        </el-form-item>
+        <el-form-item v-else label="目标到期时间">
+          <el-date-picker
+            v-model="lifecycleForm.expireTime"
+            type="datetime"
+            placeholder="请选择目标到期时间"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+          />
+        </el-form-item>
+        <el-form-item label="恢复服务">
+          <el-switch v-model="lifecycleForm.activate"/>
+          <div class="form-tip">关闭后仅调整到期时间，不变更当前启停状态。</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="closeLifecycleDialog">取消</el-button>
+        <el-button type="primary" @click="handleCustomExtend">确认续期</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -442,6 +767,41 @@ loadTenants();
 .page-desc {
   color: #64748b;
   margin-bottom: 16px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.summary-card {
+  border-radius: 10px;
+}
+
+.summary-label {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.summary-value {
+  margin-top: 6px;
+  font-size: 24px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.summary-value.success {
+  color: #059669;
+}
+
+.summary-value.warning {
+  color: #d97706;
+}
+
+.summary-value.danger {
+  color: #dc2626;
 }
 
 .card {
@@ -468,5 +828,17 @@ loadTenants();
   font-size: 12px;
   color: #64748b;
   margin-top: 6px;
+}
+
+@media (max-width: 1200px) {
+  .summary-grid {
+    grid-template-columns: repeat(3, minmax(120px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
 }
 </style>

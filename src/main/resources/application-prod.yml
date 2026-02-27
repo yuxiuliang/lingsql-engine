@@ -107,6 +107,10 @@ lingsql:
     trial-default-days: ${LINGSQL_TENANT_TRIAL_DEFAULT_DAYS:14}
     auto-suspend-enabled: ${LINGSQL_TENANT_AUTO_SUSPEND_ENABLED:true}
     auto-suspend-cron: "${LINGSQL_TENANT_AUTO_SUSPEND_CRON:0 0/30 * * * ?}"
+    reminder-enabled: ${LINGSQL_TENANT_REMINDER_ENABLED:true}
+    reminder-cron: "${LINGSQL_TENANT_REMINDER_CRON:0 0 9 * * ?}"
+    reminder-days: ${LINGSQL_TENANT_REMINDER_DAYS:7,3,1}
+    reminder-dedupe-ttl: ${LINGSQL_TENANT_REMINDER_DEDUPE_TTL:2d}
   chat:
     max-question-length: 4000
   ai:

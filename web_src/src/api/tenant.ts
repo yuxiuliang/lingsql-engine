@@ -20,8 +20,26 @@ export interface TenantView {
   quotaBalance?: number;
   serviceLevel?: string;
   tenantType?: string;
+  lifecycleState?: string;
+  daysToExpire?: number | null;
+  graceDaysRemaining?: number;
   createTime?: string;
   updateTime?: string;
+}
+
+/**
+ * 租户生命周期汇总视图。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+export interface TenantLifecycleSummaryView {
+  total: number;
+  active: number;
+  expiringSoon: number;
+  gracePeriod: number;
+  suspended: number;
+  disabled: number;
 }
 
 /**
@@ -69,6 +87,18 @@ export interface TenantUpdateRequest {
   contactEmail?: string;
   expireTime?: string;
   planName?: string;
+}
+
+/**
+ * 租户续期请求。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+export interface TenantLifecycleExtendRequest {
+  expireTime?: string;
+  extendDays?: number;
+  activate?: boolean;
 }
 
 /**
@@ -124,5 +154,46 @@ export const updateTenant = async (id: number, payload: TenantUpdateRequest): Pr
 export const deleteTenant = async (id: number): Promise<string> => {
   return request<string>(`/api/v1/admin/tenants/${id}`, {
     method: 'DELETE'
+  });
+};
+
+/**
+ * 查询租户生命周期汇总。
+ *
+ * @return 汇总结果
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+export const fetchTenantLifecycleSummary = async (): Promise<TenantLifecycleSummaryView> => {
+  return request<TenantLifecycleSummaryView>('/api/v1/admin/tenants/lifecycle/summary');
+};
+
+/**
+ * 续期租户生命周期。
+ *
+ * @param id 租户ID
+ * @param payload 续期请求
+ * @return 更新后的租户
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+export const extendTenantLifecycle = async (id: number, payload: TenantLifecycleExtendRequest): Promise<TenantView> => {
+  return request<TenantView>(`/api/v1/admin/tenants/${id}/lifecycle/extend`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 恢复租户服务。
+ *
+ * @param id 租户ID
+ * @return 更新后的租户
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+export const reactivateTenant = async (id: number): Promise<TenantView> => {
+  return request<TenantView>(`/api/v1/admin/tenants/${id}/lifecycle/reactivate`, {
+    method: 'POST'
   });
 };

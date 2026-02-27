@@ -1,0 +1,139 @@
+package com.lingsql.web;
+
+import com.lingsql.audit.service.AuditOperationExecutor;
+import com.lingsql.common.result.ApiResponse;
+import com.lingsql.rbac.security.RbacUserSession;
+import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
+import com.lingsql.tenant.model.TenantView;
+import com.lingsql.tenant.service.TenantAdminService;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.util.List;
+import java.util.function.Supplier;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
+class TenantAdminControllerLifecycleTest {
+
+    private TenantAdminService tenantAdminService;
+    private AuditOperationExecutor auditOperationExecutor;
+    private TenantAdminController controller;
+
+    @BeforeEach
+    void setUp() {
+        tenantAdminService = Mockito.mock(TenantAdminService.class);
+        auditOperationExecutor = Mockito.mock(AuditOperationExecutor.class);
+        controller = new TenantAdminController(tenantAdminService, auditOperationExecutor);
+    }
+
+    @AfterEach
+    void clearContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void extendShouldReturnForbiddenWhenNotSysAdmin() {
+        bindSession(List.of("TENANT_ADMIN"));
+        TenantLifecycleExtendRequest request = new TenantLifecycleExtendRequest();
+
+        ApiResponse<TenantView> response = controller.extendTenantLifecycle(1L, request, new MockHttpServletRequest());
+
+        assertEquals(403, response.getCode());
+        assertEquals("无权限访问", response.getMessage());
+        verifyNoInteractions(tenantAdminService);
+        verifyNoInteractions(auditOperationExecutor);
+    }
+
+    @Test
+    void extendShouldSucceedForSysAdmin() {
+        bindSession(List.of("SYS_ADMIN"));
+        TenantLifecycleExtendRequest request = new TenantLifecycleExtendRequest();
+        request.setExtendDays(45);
+        request.setActivate(true);
+        TenantView view = new TenantView();
+        view.setId(1L);
+        view.setTenantId("t-001");
+        when(tenantAdminService.extendTenantLifecycle(1L, request)).thenReturn(view);
+        mockAuditExecute();
+
+        ApiResponse<TenantView> response = controller.extendTenantLifecycle(1L, request, new MockHttpServletRequest());
+
+        assertEquals(200, response.getCode());
+        assertEquals("t-001", response.getData().getTenantId());
+        verify(tenantAdminService, times(1)).extendTenantLifecycle(1L, request);
+        verify(auditOperationExecutor, times(1)).execute(
+                eq("TENANT_LIFECYCLE_EXTEND"),
+                eq("TENANT"),
+                eq(request),
+                any(),
+                any()
+        );
+    }
+
+    @Test
+    void reactivateShouldReturnForbiddenWhenNotSysAdmin() {
+        bindSession(List.of("TENANT_ADMIN"));
+
+        ApiResponse<TenantView> response = controller.reactivateTenant(2L, new MockHttpServletRequest());
+
+        assertEquals(403, response.getCode());
+        assertEquals("无权限访问", response.getMessage());
+        verifyNoInteractions(tenantAdminService);
+        verifyNoInteractions(auditOperationExecutor);
+    }
+
+    @Test
+    void reactivateShouldSucceedForSysAdmin() {
+        bindSession(List.of("SUPER_ADMIN"));
+        TenantView view = new TenantView();
+        view.setId(2L);
+        view.setTenantId("t-002");
+        when(tenantAdminService.reactivateTenant(2L)).thenReturn(view);
+        mockAuditExecute();
+
+        ApiResponse<TenantView> response = controller.reactivateTenant(2L, new MockHttpServletRequest());
+
+        assertEquals(200, response.getCode());
+        assertEquals("t-002", response.getData().getTenantId());
+        verify(tenantAdminService, times(1)).reactivateTenant(2L);
+        verify(auditOperationExecutor, times(1)).execute(
+                eq("TENANT_LIFECYCLE_REACTIVATE"),
+                eq("TENANT"),
+                eq("id=2"),
+                any(),
+                any()
+        );
+    }
+
+    private void mockAuditExecute() {
+        when(auditOperationExecutor.execute(anyString(), anyString(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    Supplier<?> supplier = invocation.getArgument(4);
+                    return ApiResponse.success(supplier.get());
+                });
+    }
+
+    private void bindSession(List<String> roles) {
+        RbacUserSession session = new RbacUserSession();
+        session.setUserId(1L);
+        session.setTenantId("SYS");
+        session.setRoles(roles);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(session, "token", List.of())
+        );
+    }
+}
+

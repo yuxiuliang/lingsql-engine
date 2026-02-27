@@ -828,6 +828,7 @@ GitHub Actions 已提供手动门禁工作流：`.github/workflows/release-gate.
 - 生命周期判定：`ACTIVE` / `EXPIRING_SOON` / `GRACE_PERIOD` / `SUSPENDED` / `DISABLED`
 - 管理端汇总接口：`GET /api/v1/admin/tenants/lifecycle/summary`
 - 自动冻结任务：`lingsql.tenant-lifecycle.auto-suspend-cron`
+- 到期提醒去重：`lingsql.tenant-lifecycle.reminder-dedupe-ttl`（防止重启后重复提醒）
 
 推荐配置：
 
@@ -840,6 +841,10 @@ lingsql:
     trial-default-days: 14
     auto-suspend-enabled: true
     auto-suspend-cron: "0 0/30 * * * ?"
+    reminder-enabled: true
+    reminder-cron: "0 0 9 * * ?"
+    reminder-days: 7,3,1
+    reminder-dedupe-ttl: 2d
 ```
 
 ---

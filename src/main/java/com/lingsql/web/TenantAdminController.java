@@ -5,6 +5,7 @@ import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.model.TenantCreateRequest;
+import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
 import com.lingsql.tenant.model.TenantUpdateRequest;
 import com.lingsql.tenant.model.TenantView;
@@ -67,6 +68,57 @@ public class TenantAdminController {
             return ApiResponse.forbidden("无权限访问");
         }
         return ApiResponse.success(tenantAdminService.lifecycleSummary());
+    }
+
+    /**
+     * 续期租户生命周期。
+     *
+     * @param id      租户ID
+     * @param request 续期请求
+     * @param http    请求
+     * @return 租户视图
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @PostMapping("/{id}/lifecycle/extend")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
+    public ApiResponse<TenantView> extendTenantLifecycle(@PathVariable Long id,
+                                                         @RequestBody(required = false) TenantLifecycleExtendRequest request,
+                                                         HttpServletRequest http) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return auditOperationExecutor.execute(
+                "TENANT_LIFECYCLE_EXTEND",
+                "TENANT",
+                request,
+                http,
+                () -> tenantAdminService.extendTenantLifecycle(id, request)
+        );
+    }
+
+    /**
+     * 恢复租户服务。
+     *
+     * @param id   租户ID
+     * @param http 请求
+     * @return 租户视图
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @PostMapping("/{id}/lifecycle/reactivate")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
+    public ApiResponse<TenantView> reactivateTenant(@PathVariable Long id, HttpServletRequest http) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return auditOperationExecutor.execute(
+                "TENANT_LIFECYCLE_REACTIVATE",
+                "TENANT",
+                "id=" + id,
+                http,
+                () -> tenantAdminService.reactivateTenant(id)
+        );
     }
 
     /**
