@@ -92,6 +92,9 @@ lingsql:
   alert:
     enabled: ${LINGSQL_ALERT_ENABLED:false}
     webhook-url: ${LINGSQL_ALERT_WEBHOOK_URL:}
+    ding-talk-webhook-url: ${LINGSQL_ALERT_DINGTALK_WEBHOOK_URL:}
+    we-com-webhook-url: ${LINGSQL_ALERT_WECOM_WEBHOOK_URL:}
+    require-all-channels: ${LINGSQL_ALERT_REQUIRE_ALL_CHANNELS:false}
     pool-check-interval-ms: ${LINGSQL_ALERT_POOL_CHECK_INTERVAL_MS:60000}
     tenant-pool-utilization-threshold: ${LINGSQL_ALERT_POOL_UTILIZATION_THRESHOLD:0.9}
     cooldown: ${LINGSQL_ALERT_COOLDOWN:5m}

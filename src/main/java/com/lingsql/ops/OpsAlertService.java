@@ -15,7 +15,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -44,7 +47,11 @@ public class OpsAlertService {
      */
     public boolean sendAlert(String title, String message, Map<String, Object> details) {
         LingSqlProperties.Alert alert = properties.getAlert();
-        if (alert == null || !alert.isEnabled() || !StringUtils.hasText(alert.getWebhookUrl())) {
+        if (alert == null || !alert.isEnabled()) {
+            return false;
+        }
+        List<AlertTarget> targets = resolveTargets(alert);
+        if (targets.isEmpty()) {
             return false;
         }
         try {
@@ -53,10 +60,31 @@ public class OpsAlertService {
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(connectTimeout)
                     .build();
-            Map<String, Object> payload = buildPayload(title, message, details);
+            boolean anySuccess = false;
+            boolean allSuccess = true;
+            for (AlertTarget target : targets) {
+                boolean success = sendToTarget(client, readTimeout, target, title, message, details);
+                anySuccess = anySuccess || success;
+                allSuccess = allSuccess && success;
+            }
+            return alert.isRequireAllChannels() ? allSuccess : anySuccess;
+        } catch (Exception ex) {
+            log.warn("告警发送异常: {}", ex.getMessage());
+            return false;
+        }
+    }
+
+    private boolean sendToTarget(HttpClient client,
+                                 Duration readTimeout,
+                                 AlertTarget target,
+                                 String title,
+                                 String message,
+                                 Map<String, Object> details) {
+        try {
+            Map<String, Object> payload = buildPayloadByChannel(target.channel(), title, message, details);
             String body = objectMapper.writeValueAsString(payload);
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(alert.getWebhookUrl().trim()))
+                    .uri(URI.create(target.url()))
                     .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                     .timeout(readTimeout)
                     .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -66,23 +94,110 @@ public class OpsAlertService {
             if (statusCode >= 200 && statusCode < 300) {
                 return true;
             }
-            log.warn("告警发送失败: status={}, body={}", statusCode, response.body());
+            log.warn("告警发送失败: channel={}, status={}, body={}", target.channel(), statusCode, response.body());
             return false;
         } catch (Exception ex) {
-            log.warn("告警发送异常: {}", ex.getMessage());
+            log.warn("告警发送异常: channel={}, message={}", target.channel(), ex.getMessage());
             return false;
         }
     }
 
-    private Map<String, Object> buildPayload(String title, String message, Map<String, Object> details) {
+    private List<AlertTarget> resolveTargets(LingSqlProperties.Alert alert) {
+        List<AlertTarget> targets = new ArrayList<>();
+        addTargetIfPresent(targets, "webhook", alert.getWebhookUrl());
+        addTargetIfPresent(targets, "dingtalk", alert.getDingTalkWebhookUrl());
+        addTargetIfPresent(targets, "wecom", alert.getWeComWebhookUrl());
+        return targets;
+    }
+
+    private void addTargetIfPresent(List<AlertTarget> targets, String channel, String url) {
+        if (!StringUtils.hasText(url)) {
+            return;
+        }
+        targets.add(new AlertTarget(channel, url.trim()));
+    }
+
+    private Map<String, Object> buildPayloadByChannel(String channel,
+                                                      String title,
+                                                      String message,
+                                                      Map<String, Object> details) {
+        return switch (channel) {
+            case "dingtalk" -> buildDingTalkPayload(title, message, details);
+            case "wecom" -> buildWeComPayload(title, message, details);
+            default -> buildGenericPayload(title, message, details);
+        };
+    }
+
+    private Map<String, Object> buildGenericPayload(String title, String message, Map<String, Object> details) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("app", "lingsql-engine");
         payload.put("title", StringUtils.hasText(title) ? title : "LingSQL 告警");
         payload.put("message", StringUtils.hasText(message) ? message : "系统告警");
         payload.put("level", "WARN");
         payload.put("timestamp", Instant.now().toString());
-        payload.put("details", details == null ? Map.of() : details);
+        payload.put("details", details == null ? Collections.emptyMap() : details);
         return payload;
+    }
+
+    private Map<String, Object> buildDingTalkPayload(String title, String message, Map<String, Object> details) {
+        String resolvedTitle = StringUtils.hasText(title) ? title : "LingSQL 告警";
+        String resolvedMessage = StringUtils.hasText(message) ? message : "系统告警";
+        String timestamp = Instant.now().toString();
+        String detailMarkdown = renderDetailMarkdown(details, "> - ");
+        String text = """
+                ### %s
+                
+                %s
+                
+                > 时间: %s
+                > 详情:
+                %s
+                """.formatted(resolvedTitle, resolvedMessage, timestamp, detailMarkdown);
+
+        Map<String, Object> markdown = new LinkedHashMap<>();
+        markdown.put("title", resolvedTitle);
+        markdown.put("text", text);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("msgtype", "markdown");
+        payload.put("markdown", markdown);
+        return payload;
+    }
+
+    private Map<String, Object> buildWeComPayload(String title, String message, Map<String, Object> details) {
+        String resolvedTitle = StringUtils.hasText(title) ? title : "LingSQL 告警";
+        String resolvedMessage = StringUtils.hasText(message) ? message : "系统告警";
+        String timestamp = Instant.now().toString();
+        String detailMarkdown = renderDetailMarkdown(details, "- ");
+        String content = """
+                **%s**
+                %s
+                
+                > 时间: %s
+                > 详情:
+                %s
+                """.formatted(resolvedTitle, resolvedMessage, timestamp, detailMarkdown);
+
+        Map<String, Object> markdown = new LinkedHashMap<>();
+        markdown.put("content", content);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("msgtype", "markdown");
+        payload.put("markdown", markdown);
+        return payload;
+    }
+
+    private String renderDetailMarkdown(Map<String, Object> details, String linePrefix) {
+        if (details == null || details.isEmpty()) {
+            return linePrefix + "无";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (Map.Entry<String, Object> entry : details.entrySet()) {
+            builder.append(linePrefix)
+                    .append(entry.getKey())
+                    .append(": ")
+                    .append(entry.getValue())
+                    .append(System.lineSeparator());
+        }
+        return builder.toString().trim();
     }
 
     private Duration resolveDuration(Duration source, Duration fallback) {
@@ -91,5 +206,7 @@ public class OpsAlertService {
         }
         return source;
     }
-}
 
+    private record AlertTarget(String channel, String url) {
+    }
+}

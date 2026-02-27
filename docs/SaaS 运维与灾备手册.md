@@ -227,7 +227,26 @@ groups:
 | P2 重要 | 钉钉 + 邮件 | 4 小时 | 值班工程师 |
 | P3 一般 | 邮件 | 24 小时 | 白班处理 |
 
-### 2.5 Grafana 仪表盘
+### 2.5 多通道告警配置
+
+LingSQL 支持单通道或多通道并发告警，已内置以下配置：
+
+```yaml
+lingsql:
+  alert:
+    enabled: true
+    webhook-url: ${LINGSQL_ALERT_WEBHOOK_URL:}
+    ding-talk-webhook-url: ${LINGSQL_ALERT_DINGTALK_WEBHOOK_URL:}
+    we-com-webhook-url: ${LINGSQL_ALERT_WECOM_WEBHOOK_URL:}
+    require-all-channels: ${LINGSQL_ALERT_REQUIRE_ALL_CHANNELS:false}
+```
+
+策略说明：
+- `require-all-channels=false`：任意通道发送成功即视为告警成功（推荐，容错更高）。
+- `require-all-channels=true`：所有已配置通道都发送成功才视为成功（适合强一致审计场景）。
+- 未配置任何通道时，告警任务不会外发通知。
+
+### 2.6 Grafana 仪表盘
 
 **推荐仪表盘**：
 

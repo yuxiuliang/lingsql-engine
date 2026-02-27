@@ -741,6 +741,32 @@ public class LingSqlProperties {
         private String webhookUrl;
 
         /**
+         * 钉钉机器人 Webhook 地址。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private String dingTalkWebhookUrl;
+
+        /**
+         * 企业微信机器人 Webhook 地址。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private String weComWebhookUrl;
+
+        /**
+         * 多通道发送策略：
+         * true 表示所有已配置通道都必须发送成功；
+         * false 表示任意通道成功即可。
+         *
+         * @author 余炘洋
+         * @date 2026-02-27
+         */
+        private boolean requireAllChannels = false;
+
+        /**
          * 告警轮询间隔（毫秒）。
          *
          * @author 余炘洋
