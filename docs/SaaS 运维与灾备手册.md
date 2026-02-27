@@ -388,6 +388,16 @@ else
 fi
 ```
 
+> 生产建议直接使用仓库脚本：`scripts/ops/mysql_backup.sh`  
+> 支持参数：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASES`、`BACKUP_DIR`、`RETENTION_DAYS`。
+
+**crontab 示例**：
+
+```bash
+# 每天凌晨 2 点执行全量备份
+0 2 * * * MYSQL_USER=backup MYSQL_PASSWORD=*** MYSQL_DATABASES=lingsql_engine_db /opt/lingsql/scripts/ops/mysql_backup.sh >> /var/log/lingsql/backup.log 2>&1
+```
+
 ### 4.3 恢复流程
 
 #### 4.3.1 MySQL 全量恢复
@@ -409,6 +419,13 @@ echo "Restoring ${BACKUP_FILE} to ${TARGET_DB}..."
 gunzip -c ${BACKUP_FILE} | mysql -h ${MYSQL_HOST} -u ${MYSQL_USER} -p${MYSQL_PASS} ${TARGET_DB}
 
 echo "Restore completed."
+```
+
+> 生产建议直接使用仓库脚本：`scripts/ops/mysql_restore.sh`  
+> 用法：
+
+```bash
+MYSQL_USER=root MYSQL_PASSWORD=*** ./scripts/ops/mysql_restore.sh ./backups/mysql/20260227_020000/lingsql_engine_db.sql.gz lingsql_engine_db
 ```
 
 #### 4.3.2 Redis 缓存重建
