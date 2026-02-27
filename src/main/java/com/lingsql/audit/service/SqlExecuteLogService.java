@@ -1,6 +1,10 @@
 package com.lingsql.audit.service;
 
 import com.lingsql.audit.entity.SqlExecuteLog;
+import com.lingsql.audit.model.TokenAuditDimensionStat;
+import com.lingsql.audit.model.TokenAuditOverviewView;
+import com.lingsql.audit.model.TokenAuditQuery;
+import com.lingsql.audit.model.TokenAuditTrendPoint;
 import com.lingsql.audit.model.SqlExecuteLogCommand;
 import com.lingsql.audit.model.SqlExecuteLogQuery;
 import com.lingsql.audit.model.SqlExecuteLogView;
@@ -18,6 +22,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * SQL 执行审计日志服务。
@@ -37,6 +43,9 @@ public class SqlExecuteLogService {
      * @date 2026-01-27
      */
     private static final long SLOW_EXECUTE_THRESHOLD_MS = 1000L;
+    private static final int DEFAULT_TOKEN_AUDIT_DAYS = 30;
+    private static final int DEFAULT_TOP_N = 10;
+    private static final int MAX_TOP_N = 50;
 
     private final SqlExecuteLogRepository repository;
     private final PageParamResolver pageParamResolver;
@@ -110,6 +119,83 @@ public class SqlExecuteLogService {
         return queryInternal(query, param);
     }
 
+    /**
+     * 查询 Token 审计总览。
+     *
+     * @param query              查询条件
+     * @param includeTenantStats 是否返回租户维度排行
+     * @return Token 审计总览
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    public TokenAuditOverviewView tokenOverview(TokenAuditQuery query, boolean includeTenantStats) {
+        TokenAuditQuery safeQuery = query == null ? new TokenAuditQuery() : query;
+        TimeRange range = resolveTimeRange(safeQuery.getStartTime(), safeQuery.getEndTime());
+        int topN = resolveTopN(safeQuery.getTopN());
+
+        String tenantId = normalizeText(safeQuery.getTenantId());
+        Long userId = safeQuery.getUserId();
+        String question = normalizeText(safeQuery.getQuestion());
+        String requestSource = normalizeText(safeQuery.getRequestSource());
+
+        TokenAuditOverviewView view = new TokenAuditOverviewView();
+        view.setStartTime(range.start());
+        view.setEndTime(range.end());
+
+        SqlExecuteLogRepository.TokenAuditSummaryProjection summary = repository.findTokenAuditSummary(
+                tenantId,
+                userId,
+                question,
+                requestSource,
+                range.start(),
+                range.end()
+        );
+        applySummary(view, summary);
+
+        List<TokenAuditDimensionStat> modelStats = repository.findTokenAuditModelStats(
+                        tenantId,
+                        userId,
+                        question,
+                        requestSource,
+                        range.start(),
+                        range.end(),
+                        topN
+                ).stream()
+                .map(this::toDimensionStat)
+                .toList();
+        view.setModelStats(modelStats);
+
+        if (includeTenantStats) {
+            List<TokenAuditDimensionStat> tenantStats = repository.findTokenAuditTenantStats(
+                            tenantId,
+                            userId,
+                            question,
+                            requestSource,
+                            range.start(),
+                            range.end(),
+                            topN
+                    ).stream()
+                    .map(this::toDimensionStat)
+                    .toList();
+            view.setTenantStats(tenantStats);
+        } else {
+            view.setTenantStats(Collections.emptyList());
+        }
+
+        List<TokenAuditTrendPoint> trend = repository.findTokenAuditTrend(
+                        tenantId,
+                        userId,
+                        question,
+                        requestSource,
+                        range.start(),
+                        range.end()
+                ).stream()
+                .map(this::toTrendPoint)
+                .toList();
+        view.setTrend(trend);
+        return view;
+    }
+
     private PageResult<SqlExecuteLogView> queryInternal(SqlExecuteLogQuery query, PageParam param) {
         SqlExecuteLogQuery safeQuery = query == null ? new SqlExecuteLogQuery() : query;
         Specification<SqlExecuteLog> specification = (root, criteriaQuery, criteriaBuilder) -> {
@@ -143,6 +229,121 @@ public class SqlExecuteLogService {
                 param.page(),
                 param.size()
         );
+    }
+
+    private void applySummary(TokenAuditOverviewView view, SqlExecuteLogRepository.TokenAuditSummaryProjection summary) {
+        long totalCount = summary == null ? 0L : resolveLong(summary.getTotalCount());
+        long successCount = summary == null ? 0L : resolveLong(summary.getSuccessCount());
+        long failureCount = summary == null ? 0L : resolveLong(summary.getFailureCount());
+        long totalTokens = summary == null ? 0L : resolveLong(summary.getTotalTokens());
+        long totalCost = summary == null ? 0L : resolveLong(summary.getTotalCost());
+
+        view.setTotalCount(totalCount);
+        view.setSuccessCount(successCount);
+        view.setFailureCount(failureCount);
+        view.setSuccessRate(calculateRate(successCount, totalCount));
+        view.setTotalTokens(totalTokens);
+        view.setTotalCost(totalCost);
+
+        if (summary == null) {
+            view.setAvgTokensPerRequest(0d);
+            view.setAvgCostPerRequest(0d);
+            return;
+        }
+        view.setAvgTokensPerRequest(round2(resolveDouble(summary.getAvgTokensPerRequest())));
+        view.setAvgCostPerRequest(round2(resolveDouble(summary.getAvgCostPerRequest())));
+    }
+
+    private TokenAuditDimensionStat toDimensionStat(SqlExecuteLogRepository.TokenAuditDimensionProjection projection) {
+        TokenAuditDimensionStat stat = new TokenAuditDimensionStat();
+        long totalCount = resolveLong(projection.getTotalCount());
+        long successCount = resolveLong(projection.getSuccessCount());
+        long failureCount = resolveLong(projection.getFailureCount());
+        long totalTokens = resolveLong(projection.getTotalTokens());
+        long totalCost = resolveLong(projection.getTotalCost());
+
+        stat.setDimensionKey(normalizeDimensionKey(projection.getDimensionKey()));
+        stat.setTotalCount(totalCount);
+        stat.setSuccessCount(successCount);
+        stat.setFailureCount(failureCount);
+        stat.setSuccessRate(calculateRate(successCount, totalCount));
+        stat.setTotalTokens(totalTokens);
+        stat.setTotalCost(totalCost);
+        stat.setAvgTokensPerRequest(calculateAvg(totalTokens, totalCount));
+        stat.setAvgCostPerRequest(calculateAvg(totalCost, totalCount));
+        return stat;
+    }
+
+    private TokenAuditTrendPoint toTrendPoint(SqlExecuteLogRepository.TokenAuditTrendProjection projection) {
+        TokenAuditTrendPoint point = new TokenAuditTrendPoint();
+        long totalCount = resolveLong(projection.getTotalCount());
+        long successCount = resolveLong(projection.getSuccessCount());
+        long failureCount = resolveLong(projection.getFailureCount());
+
+        point.setStatDate(projection.getStatDate() == null ? null : projection.getStatDate().toLocalDate());
+        point.setTotalCount(totalCount);
+        point.setSuccessCount(successCount);
+        point.setFailureCount(failureCount);
+        point.setSuccessRate(calculateRate(successCount, totalCount));
+        point.setTotalTokens(resolveLong(projection.getTotalTokens()));
+        point.setTotalCost(resolveLong(projection.getTotalCost()));
+        return point;
+    }
+
+    private TimeRange resolveTimeRange(LocalDateTime startTime, LocalDateTime endTime) {
+        LocalDateTime safeEnd = endTime == null ? LocalDateTime.now() : endTime;
+        LocalDateTime safeStart = startTime == null ? safeEnd.minusDays(DEFAULT_TOKEN_AUDIT_DAYS) : startTime;
+        if (safeStart.isAfter(safeEnd)) {
+            return new TimeRange(safeEnd, safeStart);
+        }
+        return new TimeRange(safeStart, safeEnd);
+    }
+
+    private int resolveTopN(Integer topN) {
+        if (topN == null || topN <= 0) {
+            return DEFAULT_TOP_N;
+        }
+        return Math.min(topN, MAX_TOP_N);
+    }
+
+    private String normalizeText(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private String normalizeDimensionKey(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "UNKNOWN";
+        }
+        return value.trim();
+    }
+
+    private long resolveLong(Long value) {
+        return value == null ? 0L : value;
+    }
+
+    private double resolveDouble(Double value) {
+        return value == null ? 0d : value;
+    }
+
+    private double calculateRate(long numerator, long denominator) {
+        if (denominator <= 0) {
+            return 0d;
+        }
+        return round2((numerator * 100d) / denominator);
+    }
+
+    private double calculateAvg(long numerator, long denominator) {
+        if (denominator <= 0) {
+            return 0d;
+        }
+        return round2(numerator * 1.0d / denominator);
+    }
+
+    private double round2(double value) {
+        return Math.round(value * 100d) / 100d;
     }
 
     /**
@@ -207,5 +408,8 @@ public class SqlExecuteLogService {
                 logEntity.getTenantId(),
                 logEntity.getUserId(),
                 logEntity.getExecuteCostMs());
+    }
+
+    private record TimeRange(LocalDateTime start, LocalDateTime end) {
     }
 }

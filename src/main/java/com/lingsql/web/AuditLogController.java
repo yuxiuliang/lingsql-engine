@@ -4,6 +4,8 @@ import com.lingsql.audit.model.AuditLogQuery;
 import com.lingsql.audit.model.AuditLogView;
 import com.lingsql.audit.model.SqlExecuteLogQuery;
 import com.lingsql.audit.model.SqlExecuteLogView;
+import com.lingsql.audit.model.TokenAuditOverviewView;
+import com.lingsql.audit.model.TokenAuditQuery;
 import com.lingsql.audit.service.AuditLogService;
 import com.lingsql.audit.service.SqlExecuteLogService;
 import com.lingsql.common.pagination.PageParamResolver;
@@ -112,6 +114,44 @@ public class AuditLogController {
         query.setStartTime(startTime);
         query.setEndTime(endTime);
         return ApiResponse.success(sqlExecuteLogService.query(query, page, size));
+    }
+
+    /**
+     * 查询 Token 审计总览。
+     *
+     * @param tenantId      租户ID
+     * @param userId        用户ID
+     * @param question      问题关键词
+     * @param requestSource 请求来源
+     * @param startTime     开始时间
+     * @param endTime       结束时间
+     * @param topN          TopN 数量
+     * @return Token 审计总览
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @GetMapping("/token-overview")
+    @PreAuthorize("hasAuthority('ADMIN:SQLLOG:READ')")
+    public ApiResponse<TokenAuditOverviewView> tokenOverview(
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) String question,
+            @RequestParam(required = false) String requestSource,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
+            @RequestParam(defaultValue = "10") int topN
+    ) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        TokenAuditQuery query = new TokenAuditQuery();
+        query.setTenantId(sysAdmin ? tenantId : session.getTenantId());
+        query.setUserId(userId);
+        query.setQuestion(question);
+        query.setRequestSource(requestSource);
+        query.setStartTime(startTime);
+        query.setEndTime(endTime);
+        query.setTopN(topN);
+        return ApiResponse.success(sqlExecuteLogService.tokenOverview(query, sysAdmin));
     }
 
     /**

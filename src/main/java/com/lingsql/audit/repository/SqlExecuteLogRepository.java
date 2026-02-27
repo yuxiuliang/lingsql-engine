@@ -52,6 +52,163 @@ public interface SqlExecuteLogRepository extends JpaRepository<SqlExecuteLog, Lo
     );
 
     /**
+     * 查询 Token 审计汇总。
+     *
+     * @param tenantId      租户ID
+     * @param userId        用户ID
+     * @param question      问题关键词
+     * @param requestSource 请求来源
+     * @param start         开始时间
+     * @param end           结束时间
+     * @return 汇总结果
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @Query(value = """
+            SELECT COUNT(*) AS totalCount,
+                   SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS successCount,
+                   SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failureCount,
+                   IFNULL(SUM(IFNULL(token_count, 0)), 0) AS totalTokens,
+                   IFNULL(SUM(IFNULL(cost_amount, 0)), 0) AS totalCost,
+                   IFNULL(ROUND(SUM(IFNULL(token_count, 0)) / NULLIF(COUNT(*), 0), 2), 0) AS avgTokensPerRequest,
+                   IFNULL(ROUND(SUM(IFNULL(cost_amount, 0)) / NULLIF(COUNT(*), 0), 2), 0) AS avgCostPerRequest
+              FROM t_lingsql_engine_sql_execute_log
+             WHERE create_time BETWEEN :start AND :end
+               AND (:tenantId IS NULL OR :tenantId = '' OR tenant_id = :tenantId)
+               AND (:userId IS NULL OR user_id = :userId)
+               AND (:requestSource IS NULL OR :requestSource = '' OR request_source = :requestSource)
+               AND (:question IS NULL OR :question = '' OR question LIKE CONCAT('%', :question, '%'))
+            """, nativeQuery = true)
+    TokenAuditSummaryProjection findTokenAuditSummary(
+            @Param("tenantId") String tenantId,
+            @Param("userId") Long userId,
+            @Param("question") String question,
+            @Param("requestSource") String requestSource,
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end
+    );
+
+    /**
+     * 查询模型维度 Token 统计。
+     *
+     * @param tenantId      租户ID
+     * @param userId        用户ID
+     * @param question      问题关键词
+     * @param requestSource 请求来源
+     * @param start         开始时间
+     * @param end           结束时间
+     * @param limit         TopN
+     * @return 模型统计
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @Query(value = """
+            SELECT COALESCE(NULLIF(model_name, ''), 'UNKNOWN') AS dimensionKey,
+                   COUNT(*) AS totalCount,
+                   SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS successCount,
+                   SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failureCount,
+                   IFNULL(SUM(IFNULL(token_count, 0)), 0) AS totalTokens,
+                   IFNULL(SUM(IFNULL(cost_amount, 0)), 0) AS totalCost
+              FROM t_lingsql_engine_sql_execute_log
+             WHERE create_time BETWEEN :start AND :end
+               AND (:tenantId IS NULL OR :tenantId = '' OR tenant_id = :tenantId)
+               AND (:userId IS NULL OR user_id = :userId)
+               AND (:requestSource IS NULL OR :requestSource = '' OR request_source = :requestSource)
+               AND (:question IS NULL OR :question = '' OR question LIKE CONCAT('%', :question, '%'))
+             GROUP BY COALESCE(NULLIF(model_name, ''), 'UNKNOWN')
+             ORDER BY totalTokens DESC, totalCost DESC
+             LIMIT :limit
+            """, nativeQuery = true)
+    List<TokenAuditDimensionProjection> findTokenAuditModelStats(
+            @Param("tenantId") String tenantId,
+            @Param("userId") Long userId,
+            @Param("question") String question,
+            @Param("requestSource") String requestSource,
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end,
+            @Param("limit") int limit
+    );
+
+    /**
+     * 查询租户维度 Token 统计。
+     *
+     * @param tenantId      租户ID
+     * @param userId        用户ID
+     * @param question      问题关键词
+     * @param requestSource 请求来源
+     * @param start         开始时间
+     * @param end           结束时间
+     * @param limit         TopN
+     * @return 租户统计
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @Query(value = """
+            SELECT tenant_id AS dimensionKey,
+                   COUNT(*) AS totalCount,
+                   SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS successCount,
+                   SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failureCount,
+                   IFNULL(SUM(IFNULL(token_count, 0)), 0) AS totalTokens,
+                   IFNULL(SUM(IFNULL(cost_amount, 0)), 0) AS totalCost
+              FROM t_lingsql_engine_sql_execute_log
+             WHERE create_time BETWEEN :start AND :end
+               AND (:tenantId IS NULL OR :tenantId = '' OR tenant_id = :tenantId)
+               AND (:userId IS NULL OR user_id = :userId)
+               AND (:requestSource IS NULL OR :requestSource = '' OR request_source = :requestSource)
+               AND (:question IS NULL OR :question = '' OR question LIKE CONCAT('%', :question, '%'))
+             GROUP BY tenant_id
+             ORDER BY totalTokens DESC, totalCost DESC
+             LIMIT :limit
+            """, nativeQuery = true)
+    List<TokenAuditDimensionProjection> findTokenAuditTenantStats(
+            @Param("tenantId") String tenantId,
+            @Param("userId") Long userId,
+            @Param("question") String question,
+            @Param("requestSource") String requestSource,
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end,
+            @Param("limit") int limit
+    );
+
+    /**
+     * 查询 Token 审计趋势。
+     *
+     * @param tenantId      租户ID
+     * @param userId        用户ID
+     * @param question      问题关键词
+     * @param requestSource 请求来源
+     * @param start         开始时间
+     * @param end           结束时间
+     * @return 趋势列表
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @Query(value = """
+            SELECT DATE(create_time) AS statDate,
+                   COUNT(*) AS totalCount,
+                   SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS successCount,
+                   SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failureCount,
+                   IFNULL(SUM(IFNULL(token_count, 0)), 0) AS totalTokens,
+                   IFNULL(SUM(IFNULL(cost_amount, 0)), 0) AS totalCost
+              FROM t_lingsql_engine_sql_execute_log
+             WHERE create_time BETWEEN :start AND :end
+               AND (:tenantId IS NULL OR :tenantId = '' OR tenant_id = :tenantId)
+               AND (:userId IS NULL OR user_id = :userId)
+               AND (:requestSource IS NULL OR :requestSource = '' OR request_source = :requestSource)
+               AND (:question IS NULL OR :question = '' OR question LIKE CONCAT('%', :question, '%'))
+             GROUP BY DATE(create_time)
+             ORDER BY DATE(create_time)
+            """, nativeQuery = true)
+    List<TokenAuditTrendProjection> findTokenAuditTrend(
+            @Param("tenantId") String tenantId,
+            @Param("userId") Long userId,
+            @Param("question") String question,
+            @Param("requestSource") String requestSource,
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end
+    );
+
+    /**
      * 统计算力消耗最高的问题。
      *
      * @param start 开始时间
@@ -174,5 +331,67 @@ public interface SqlExecuteLogRepository extends JpaRepository<SqlExecuteLog, Lo
         Long getTotalCost();
 
         Long getTotalCount();
+    }
+
+    /**
+     * Token 审计汇总投影。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    interface TokenAuditSummaryProjection {
+        Long getTotalCount();
+
+        Long getSuccessCount();
+
+        Long getFailureCount();
+
+        Long getTotalTokens();
+
+        Long getTotalCost();
+
+        Double getAvgTokensPerRequest();
+
+        Double getAvgCostPerRequest();
+    }
+
+    /**
+     * Token 审计维度投影。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    interface TokenAuditDimensionProjection {
+        String getDimensionKey();
+
+        Long getTotalCount();
+
+        Long getSuccessCount();
+
+        Long getFailureCount();
+
+        Long getTotalTokens();
+
+        Long getTotalCost();
+    }
+
+    /**
+     * Token 审计趋势投影。
+     *
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    interface TokenAuditTrendProjection {
+        java.sql.Date getStatDate();
+
+        Long getTotalCount();
+
+        Long getSuccessCount();
+
+        Long getFailureCount();
+
+        Long getTotalTokens();
+
+        Long getTotalCost();
     }
 }

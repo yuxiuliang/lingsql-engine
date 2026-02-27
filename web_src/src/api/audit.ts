@@ -51,10 +51,68 @@ export interface SqlExecuteLogView {
   modelProvider?: string;
   modelName?: string;
   modelVersion?: string;
+  tokenCount?: number;
+  costAmount?: number;
   executeCostMs?: number;
   resultRows?: number;
   requestSource?: string;
   createTime?: string;
+}
+
+/**
+ * Token 审计维度统计。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+export interface TokenAuditDimensionStat {
+  dimensionKey: string;
+  totalCount: number;
+  successCount: number;
+  failureCount: number;
+  successRate: number;
+  totalTokens: number;
+  totalCost: number;
+  avgTokensPerRequest: number;
+  avgCostPerRequest: number;
+}
+
+/**
+ * Token 审计趋势点。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+export interface TokenAuditTrendPoint {
+  statDate: string;
+  totalCount: number;
+  successCount: number;
+  failureCount: number;
+  successRate: number;
+  totalTokens: number;
+  totalCost: number;
+}
+
+/**
+ * Token 审计总览。
+ *
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+export interface TokenAuditOverviewView {
+  startTime: string;
+  endTime: string;
+  totalCount: number;
+  successCount: number;
+  failureCount: number;
+  successRate: number;
+  totalTokens: number;
+  totalCost: number;
+  avgTokensPerRequest: number;
+  avgCostPerRequest: number;
+  modelStats: TokenAuditDimensionStat[];
+  tenantStats: TokenAuditDimensionStat[];
+  trend: TokenAuditTrendPoint[];
 }
 
 /**
@@ -177,4 +235,48 @@ export const exportSqlLogs = async (params: {
   const queryString = query.toString();
   const path = queryString ? `/api/v1/admin/audit/sql-logs/export?${queryString}` : '/api/v1/admin/audit/sql-logs/export';
   return request<SqlExecuteLogView[]>(path);
+};
+
+/**
+ * 查询 Token 审计总览。
+ *
+ * @param params 查询参数
+ * @return 总览数据
+ * @author 余炘洋
+ * @date 2026-02-27
+ */
+export const fetchTokenAuditOverview = async (params: {
+  tenantId?: string;
+  userId?: number;
+  question?: string;
+  requestSource?: string;
+  startTime?: string;
+  endTime?: string;
+  topN?: number;
+}): Promise<TokenAuditOverviewView> => {
+  const query = new URLSearchParams();
+  if (params.tenantId) {
+    query.set('tenantId', params.tenantId);
+  }
+  if (params.userId !== undefined && params.userId !== null) {
+    query.set('userId', String(params.userId));
+  }
+  if (params.question) {
+    query.set('question', params.question);
+  }
+  if (params.requestSource) {
+    query.set('requestSource', params.requestSource);
+  }
+  if (params.startTime) {
+    query.set('startTime', params.startTime);
+  }
+  if (params.endTime) {
+    query.set('endTime', params.endTime);
+  }
+  if (params.topN !== undefined && params.topN !== null) {
+    query.set('topN', String(params.topN));
+  }
+  const queryString = query.toString();
+  const path = queryString ? `/api/v1/admin/audit/token-overview?${queryString}` : '/api/v1/admin/audit/token-overview';
+  return request<TokenAuditOverviewView>(path);
 };
