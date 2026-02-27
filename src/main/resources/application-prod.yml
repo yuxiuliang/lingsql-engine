@@ -46,6 +46,8 @@ lingsql:
       sensitive-max-requests: ${LINGSQL_SECURITY_RATE_SENSITIVE_MAX_REQUESTS:60}
       sensitive-window: ${LINGSQL_SECURITY_RATE_SENSITIVE_WINDOW:1m}
       sensitive-block: ${LINGSQL_SECURITY_RATE_SENSITIVE_BLOCK:5m}
+      trust-proxy-headers: ${LINGSQL_SECURITY_RATE_TRUST_PROXY_HEADERS:false}
+      trusted-proxy-ips: ${LINGSQL_SECURITY_RATE_TRUSTED_PROXY_IPS:}
   cache:
     schema-ttl: 24h
     comment-ttl: 168h

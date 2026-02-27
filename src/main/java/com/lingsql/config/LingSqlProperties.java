@@ -187,6 +187,24 @@ public class LingSqlProperties {
              * @date 2026-01-28
              */
             private Duration sensitiveBlock = Duration.ofMinutes(5);
+
+            /**
+             * 是否信任代理头中的客户端IP。
+             * 默认关闭，避免客户端伪造 X-Forwarded-For 绕过限流。
+             *
+             * @author 余炘洋
+             * @date 2026-02-27
+             */
+            private boolean trustProxyHeaders = false;
+
+            /**
+             * 受信代理 IP 白名单。
+             * 仅当 remoteAddr 命中白名单时才会解析代理头。
+             *
+             * @author 余炘洋
+             * @date 2026-02-27
+             */
+            private List<String> trustedProxyIps = new ArrayList<>();
         }
 
         /**

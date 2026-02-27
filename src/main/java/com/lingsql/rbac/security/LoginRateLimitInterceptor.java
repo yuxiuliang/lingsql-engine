@@ -30,8 +30,6 @@ import java.util.Optional;
 public class LoginRateLimitInterceptor implements HandlerInterceptor {
 
     private static final String PREFIX = "lingsql:ratelimit:login:";
-    private static final String HEADER_X_FORWARDED_FOR = "X-Forwarded-For";
-    private static final String HEADER_X_REAL_IP = "X-Real-IP";
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
@@ -46,7 +44,7 @@ public class LoginRateLimitInterceptor implements HandlerInterceptor {
         if (config == null || !config.isEnabled()) {
             return true;
         }
-        String clientIp = resolveClientIp(request);
+        String clientIp = RateLimitClientIpResolver.resolve(request, config);
         if (!StringUtils.hasText(clientIp)) {
             clientIp = "unknown";
         }
@@ -86,20 +84,5 @@ public class LoginRateLimitInterceptor implements HandlerInterceptor {
         ApiResponse<Void> payload = ApiResponse.tooManyRequests(message);
         response.getWriter().write(objectMapper.writeValueAsString(payload));
         return false;
-    }
-
-    private String resolveClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader(HEADER_X_FORWARDED_FOR);
-        if (StringUtils.hasText(forwarded)) {
-            String[] parts = forwarded.split(",");
-            if (parts.length > 0 && StringUtils.hasText(parts[0])) {
-                return parts[0].trim();
-            }
-        }
-        String realIp = request.getHeader(HEADER_X_REAL_IP);
-        if (StringUtils.hasText(realIp)) {
-            return realIp.trim();
-        }
-        return request.getRemoteAddr();
     }
 }
