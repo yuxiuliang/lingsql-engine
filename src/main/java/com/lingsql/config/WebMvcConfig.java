@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 
 import java.util.List;
 
@@ -97,5 +98,18 @@ public class WebMvcConfig implements WebMvcConfigurer {
         } else {
             mapping.allowedOrigins(allowedOrigins.toArray(new String[0]));
         }
+    }
+
+    /**
+     * 增加管理端前端资源别名，兼容 SPA 路由刷新后静态资源加载路径。
+     *
+     * @param registry 资源映射注册器
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        registry.addResourceHandler("/assets/**")
+                .addResourceLocations("classpath:/static/admin/assets/");
     }
 }

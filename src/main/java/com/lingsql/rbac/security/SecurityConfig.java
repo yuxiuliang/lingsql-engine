@@ -31,6 +31,28 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+    private static final String[] ADMIN_SPA_ROUTES = {
+            "/",
+            "/login",
+            "/layout",
+            "/chat",
+            "/dashboard",
+            "/model",
+            "/tenant",
+            "/plan",
+            "/billing",
+            "/datasource",
+            "/lexicon",
+            "/join-rule",
+            "/metadata",
+            "/experience",
+            "/user",
+            "/role",
+            "/permission",
+            "/audit",
+            "/sql-log"
+    };
+
     private final TokenAuthenticationFilter tokenAuthenticationFilter;
     private final LingSqlProperties properties;
     private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
@@ -54,7 +76,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
-                        .requestMatchers("/error", "/favicon.ico", "/static/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, ADMIN_SPA_ROUTES).permitAll()
+                        .requestMatchers("/error", "/favicon.ico", "/admin/**", "/assets/**", "/static/**").permitAll()
                         .anyRequest().authenticated())
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .exceptionHandling(exception -> exception
