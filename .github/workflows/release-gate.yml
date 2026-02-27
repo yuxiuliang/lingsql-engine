@@ -27,6 +27,26 @@ on:
         required: true
         default: true
         type: boolean
+      run_commercial_gate:
+        description: "是否执行商用验收总门禁（计费/可靠性/合规/值守）"
+        required: true
+        default: true
+        type: boolean
+      billing_readiness_url:
+        description: "计费验收接口地址（留空则基于 base_url 自动拼接）"
+        required: false
+        default: ""
+        type: string
+      allow_skip_billing_readiness:
+        description: "未配置计费验收接口时是否允许跳过"
+        required: true
+        default: true
+        type: boolean
+      commercial_require_slo:
+        description: "商用总门禁中未配置 Prometheus 时是否阻断"
+        required: true
+        default: false
+        type: boolean
       slo_window:
         description: "SLO 统计窗口（例如 30d）"
         required: false
@@ -57,8 +77,14 @@ jobs:
           PROMETHEUS_URL: ${{ inputs.prometheus_url }}
           RELEASE_GATE_ENABLE_SMOKE: ${{ inputs.run_smoke }}
           RELEASE_GATE_ENABLE_SLO: ${{ inputs.run_slo }}
+          RELEASE_GATE_ENABLE_COMMERCIAL: ${{ inputs.run_commercial_gate }}
           RELEASE_GATE_BLOCK_ON_SLO_BREACH: ${{ inputs.block_on_slo_breach }}
           RELEASE_GATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
+          RELEASE_GATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
+          BILLING_READINESS_URL: ${{ inputs.billing_readiness_url }}
+          BILLING_ALLOW_SKIP: ${{ inputs.allow_skip_billing_readiness }}
+          BILLING_AUTH_TOKEN: ${{ secrets.RELEASE_GATE_BILLING_TOKEN }}
+          COMMERCIAL_REQUIRE_SLO: ${{ inputs.commercial_require_slo }}
           SLO_WINDOW: ${{ inputs.slo_window }}
           SLO_TARGET: ${{ inputs.slo_target }}
         run: ./scripts/ops/release_gate.sh
@@ -71,3 +97,10 @@ jobs:
           path: reports/release_gate_slo.md
           if-no-files-found: ignore
 
+      - name: Upload Commercial Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gate-commercial-reports
+          path: reports/
+          if-no-files-found: ignore

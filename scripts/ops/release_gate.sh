@@ -8,16 +8,20 @@
 # 可选环境变量:
 #   RELEASE_GATE_ENABLE_SMOKE=true
 #   RELEASE_GATE_ENABLE_SLO=true
+#   RELEASE_GATE_ENABLE_COMMERCIAL=true
 #   RELEASE_GATE_BLOCK_ON_SLO_BREACH=true
 #   RELEASE_GATE_SLO_REPORT_FILE=./reports/release_gate_slo.md
+#   RELEASE_GATE_COMMERCIAL_REPORT_FILE=./reports/commercial_acceptance.md
 #   以及 release_smoke_test.sh / slo_error_budget_report.sh 支持的参数
 
 set -euo pipefail
 
 RELEASE_GATE_ENABLE_SMOKE="${RELEASE_GATE_ENABLE_SMOKE:-true}"
 RELEASE_GATE_ENABLE_SLO="${RELEASE_GATE_ENABLE_SLO:-true}"
+RELEASE_GATE_ENABLE_COMMERCIAL="${RELEASE_GATE_ENABLE_COMMERCIAL:-false}"
 RELEASE_GATE_BLOCK_ON_SLO_BREACH="${RELEASE_GATE_BLOCK_ON_SLO_BREACH:-true}"
 RELEASE_GATE_SLO_REPORT_FILE="${RELEASE_GATE_SLO_REPORT_FILE:-}"
+RELEASE_GATE_COMMERCIAL_REPORT_FILE="${RELEASE_GATE_COMMERCIAL_REPORT_FILE:-}"
 
 log_info() {
   echo "[INFO] $*"
@@ -81,17 +85,33 @@ run_slo_gate() {
   return 1
 }
 
+run_commercial_gate() {
+  if ! is_true "${RELEASE_GATE_ENABLE_COMMERCIAL}"; then
+    log_info "已跳过商用验收门禁（RELEASE_GATE_ENABLE_COMMERCIAL=${RELEASE_GATE_ENABLE_COMMERCIAL}）"
+    return 0
+  fi
+  if [[ -n "${RELEASE_GATE_COMMERCIAL_REPORT_FILE}" ]]; then
+    export COMMERCIAL_REPORT_FILE="${RELEASE_GATE_COMMERCIAL_REPORT_FILE}"
+  fi
+  log_info "开始执行商用验收总门禁"
+  ./scripts/ops/commercial_acceptance_gate.sh
+}
+
 main() {
   local failed=0
 
   log_info "发布门禁开始"
-  log_info "参数: smoke=${RELEASE_GATE_ENABLE_SMOKE}, slo=${RELEASE_GATE_ENABLE_SLO}, blockOnBreach=${RELEASE_GATE_BLOCK_ON_SLO_BREACH}"
+  log_info "参数: smoke=${RELEASE_GATE_ENABLE_SMOKE}, slo=${RELEASE_GATE_ENABLE_SLO}, commercial=${RELEASE_GATE_ENABLE_COMMERCIAL}, blockOnBreach=${RELEASE_GATE_BLOCK_ON_SLO_BREACH}"
 
   if ! run_smoke_gate; then
     failed=1
   fi
 
   if ! run_slo_gate; then
+    failed=1
+  fi
+
+  if ! run_commercial_gate; then
     failed=1
   fi
 
@@ -104,4 +124,3 @@ main() {
 }
 
 main "$@"
-

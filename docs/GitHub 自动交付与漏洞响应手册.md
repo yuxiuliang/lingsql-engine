@@ -54,6 +54,13 @@
 ./scripts/ops/commercial_acceptance_gate.sh
 ```
 
+在 GitHub 手动工作流中，`release-gate.yml` 与 `release-deploy.yml` 现已支持以下商用验收输入：
+
+- `run_commercial_gate`：是否执行商用四块门禁。
+- `billing_readiness_url`：计费验收接口地址（可留空并基于 `base_url` 自动拼接）。
+- `allow_skip_billing_readiness`：未配置计费接口时是否允许跳过。
+- `commercial_require_slo`：商用门禁内未配置 Prometheus 时是否阻断。
+
 流程包含：
 
 1. 后端测试

@@ -6,6 +6,8 @@
 #   ./scripts/ops/billing_readiness_guard.sh
 #
 # 可选环境变量:
+#   BASE_URL=https://api.example.com
+#   BILLING_AUTH_TOKEN=<token>
 #   BILLING_ALLOW_SKIP=true
 #   REPORT_FILE=./reports/billing_readiness.md
 
@@ -13,6 +15,7 @@ set -euo pipefail
 
 BILLING_READINESS_URL="${BILLING_READINESS_URL:-}"
 BILLING_AUTH_HEADER="${BILLING_AUTH_HEADER:-}"
+BILLING_AUTH_TOKEN="${BILLING_AUTH_TOKEN:-}"
 BILLING_ALLOW_SKIP="${BILLING_ALLOW_SKIP:-true}"
 REPORT_FILE="${REPORT_FILE:-}"
 
@@ -40,6 +43,13 @@ is_true() {
 main() {
   require_cmd curl
   require_cmd jq
+
+  if [[ -z "${BILLING_READINESS_URL}" && -n "${BASE_URL:-}" ]]; then
+    BILLING_READINESS_URL="${BASE_URL%/}/api/v1/admin/billing/readiness/snapshot"
+  fi
+  if [[ -z "${BILLING_AUTH_HEADER}" && -n "${BILLING_AUTH_TOKEN}" ]]; then
+    BILLING_AUTH_HEADER="Authorization: Bearer ${BILLING_AUTH_TOKEN}"
+  fi
 
   if [[ -z "${BILLING_READINESS_URL}" ]]; then
     if is_true "${BILLING_ALLOW_SKIP}"; then
