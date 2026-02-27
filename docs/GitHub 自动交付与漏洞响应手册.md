@@ -64,6 +64,7 @@
 严格模式下（`run_commercial_gate=true` 且 `allow_skip_billing_readiness=false`）：
 
 - 必须在仓库 Secrets 配置 `RELEASE_GATE_BILLING_TOKEN`。
+- `billing_readiness_url` 与 `base_url` 不能同时为空，否则工作流会在门禁前直接失败。
 - 若未配置该 Secret，工作流会在发布门禁前直接失败，避免静默跳过计费验收。
 
 流程包含：

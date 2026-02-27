@@ -41,9 +41,6 @@ is_true() {
 }
 
 main() {
-  require_cmd curl
-  require_cmd jq
-
   if [[ -z "${BILLING_READINESS_URL}" && -n "${BASE_URL:-}" ]]; then
     BILLING_READINESS_URL="${BASE_URL%/}/api/v1/admin/billing/readiness/snapshot"
   fi
@@ -56,9 +53,16 @@ main() {
       log_info "未配置 BILLING_READINESS_URL，跳过计费商用验收检查。"
       exit 0
     fi
-    log_error "未配置 BILLING_READINESS_URL，无法执行计费商用验收。"
+    if [[ -z "${BASE_URL:-}" ]]; then
+      log_error "未配置 BILLING_READINESS_URL 且 BASE_URL 为空，无法自动拼接计费验收地址。"
+    else
+      log_error "未配置 BILLING_READINESS_URL，无法执行计费商用验收。"
+    fi
     exit 1
   fi
+
+  require_cmd curl
+  require_cmd jq
 
   log_info "开始调用计费商用验收接口: ${BILLING_READINESS_URL}"
   local response

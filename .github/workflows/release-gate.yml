@@ -71,6 +71,19 @@ jobs:
       - name: Prepare Scripts
         run: chmod +x scripts/ops/*.sh
 
+      - name: Validate Billing Readiness Endpoint
+        if: ${{ inputs.run_commercial_gate && !inputs.allow_skip_billing_readiness }}
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          BILLING_READINESS_URL: ${{ inputs.billing_readiness_url }}
+        run: |
+          BASE_URL_TRIMMED="$(printf '%s' "${BASE_URL}" | xargs)"
+          BILLING_URL_TRIMMED="$(printf '%s' "${BILLING_READINESS_URL}" | xargs)"
+          if [ -z "${BILLING_URL_TRIMMED}" ] && [ -z "${BASE_URL_TRIMMED}" ]; then
+            echo "::error::已启用严格计费门禁，但 billing_readiness_url 与 base_url 同时为空，无法确定计费验收地址。"
+            exit 1
+          fi
+
       - name: Validate Billing Gate Token
         if: ${{ inputs.run_commercial_gate && !inputs.allow_skip_billing_readiness }}
         env:
