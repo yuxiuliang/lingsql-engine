@@ -777,6 +777,27 @@ BASE_URL=https://api.lingsql.com ./scripts/ops/release_smoke_test.sh
 
 建议每月至少执行一次“发布 + 回滚”演练，并将演练编号记录到变更单，确保值班团队在故障窗口内可 5 分钟内完成回滚。
 
+### 7.7 发布前门禁（冒烟 + SLO）
+
+仓库内置门禁脚本：`scripts/ops/release_gate.sh`
+
+```bash
+BASE_URL=https://api.lingsql.com \
+PROMETHEUS_URL=http://prometheus.lingsql.svc:9090 \
+RELEASE_GATE_ENABLE_SMOKE=true \
+RELEASE_GATE_ENABLE_SLO=true \
+RELEASE_GATE_BLOCK_ON_SLO_BREACH=true \
+RELEASE_GATE_SLO_REPORT_FILE=./reports/release_gate_slo.md \
+./scripts/ops/release_gate.sh
+```
+
+门禁策略：
+- 冒烟门禁失败：直接阻断发布。
+- SLO 门禁失败：直接阻断发布。
+- SLO 预算耗尽（`BREACHED`）时，是否阻断由 `RELEASE_GATE_BLOCK_ON_SLO_BREACH` 决定（生产建议为 `true`）。
+
+GitHub Actions 已提供手动门禁工作流：`.github/workflows/release-gate.yml`。建议在每次生产发布前先执行该工作流，门禁通过后再执行蓝绿发布。
+
 ---
 
 ## 8. 容量规划

@@ -1,0 +1,73 @@
+name: LingSQL Release Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "待发布环境基础地址（例如 https://api.lingsql.com）"
+        required: true
+        type: string
+      prometheus_url:
+        description: "Prometheus 地址（例如 http://prometheus:9090）"
+        required: false
+        default: "http://127.0.0.1:9090"
+        type: string
+      run_smoke:
+        description: "是否执行冒烟门禁"
+        required: true
+        default: true
+        type: boolean
+      run_slo:
+        description: "是否执行 SLO 门禁"
+        required: true
+        default: true
+        type: boolean
+      block_on_slo_breach:
+        description: "SLO 预算耗尽时是否阻断发布"
+        required: true
+        default: true
+        type: boolean
+      slo_window:
+        description: "SLO 统计窗口（例如 30d）"
+        required: false
+        default: "30d"
+        type: string
+      slo_target:
+        description: "SLO 目标（例如 99.9）"
+        required: false
+        default: "99.9"
+        type: string
+
+jobs:
+  release-gate:
+    name: Release Gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare Scripts
+        run: chmod +x scripts/ops/*.sh
+
+      - name: Run Release Gate
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          PROMETHEUS_URL: ${{ inputs.prometheus_url }}
+          RELEASE_GATE_ENABLE_SMOKE: ${{ inputs.run_smoke }}
+          RELEASE_GATE_ENABLE_SLO: ${{ inputs.run_slo }}
+          RELEASE_GATE_BLOCK_ON_SLO_BREACH: ${{ inputs.block_on_slo_breach }}
+          RELEASE_GATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
+          SLO_WINDOW: ${{ inputs.slo_window }}
+          SLO_TARGET: ${{ inputs.slo_target }}
+        run: ./scripts/ops/release_gate.sh
+
+      - name: Upload SLO Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gate-slo-report
+          path: reports/release_gate_slo.md
+          if-no-files-found: ignore
+

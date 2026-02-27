@@ -66,6 +66,21 @@ REPORT_FILE=./reports/slo_$(date +%Y%m%d).md \
 - `2`: 执行成功，但预算已耗尽（`BREACHED`）
 - 其他非 0：脚本执行失败（配置或依赖异常）
 
+### 3.4 发布前门禁联动
+
+可通过 `scripts/ops/release_gate.sh` 将 SLO 预算检查与冒烟检查串联：
+
+```bash
+BASE_URL=https://api.lingsql.com \
+PROMETHEUS_URL=http://prometheus.lingsql.svc:9090 \
+RELEASE_GATE_ENABLE_SMOKE=true \
+RELEASE_GATE_ENABLE_SLO=true \
+RELEASE_GATE_BLOCK_ON_SLO_BREACH=true \
+./scripts/ops/release_gate.sh
+```
+
+如需在平台侧执行，可直接触发 GitHub Actions 工作流 `.github/workflows/release-gate.yml`。
+
 ---
 
 ## 4. 预算状态与发布策略
@@ -107,4 +122,3 @@ SLO_TOTAL_QUERY='sum(increase(http_server_requests_seconds_count{tenant_id="t001
 SLO_ERROR_QUERY='sum(increase(http_server_requests_seconds_count{tenant_id="t001",status=~"5.."}[30d]))' \
 ./scripts/ops/slo_error_budget_report.sh
 ```
-
