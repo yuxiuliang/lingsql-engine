@@ -76,6 +76,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.GET, ADMIN_SPA_ROUTES).permitAll()
                         .requestMatchers("/error", "/favicon.ico", "/admin/**", "/assets/**", "/static/**").permitAll()
                         .anyRequest().authenticated())

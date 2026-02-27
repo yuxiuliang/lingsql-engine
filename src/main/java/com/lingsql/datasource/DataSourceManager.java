@@ -120,6 +120,47 @@ public class DataSourceManager {
         }
     }
 
+    /**
+     * 当前活跃租户连接池数量。
+     *
+     * @return 活跃连接池数量
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    public int activeTenantPoolCount() {
+        return dataSourceMap.size();
+    }
+
+    /**
+     * 租户连接池配置上限。
+     *
+     * @return 最大连接池数量
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    public int maxTenantPoolSize() {
+        return resolveMaxTenantPools();
+    }
+
+    /**
+     * 连接池使用率（活跃池数/上限）。
+     *
+     * @return 使用率，范围 [0, 1]
+     * @author 余炘洋
+     * @date 2026-02-27
+     */
+    public double tenantPoolUtilization() {
+        int max = resolveMaxTenantPools();
+        if (max <= 0) {
+            return 0D;
+        }
+        double ratio = (double) dataSourceMap.size() / (double) max;
+        if (ratio < 0D) {
+            return 0D;
+        }
+        return Math.min(ratio, 1D);
+    }
+
     @org.springframework.scheduling.annotation.Scheduled(
             fixedDelayString = "${lingsql.hikari.tenant-cache-clean-interval-ms:300000}")
     public void evictExpiredSources() {

@@ -19,6 +19,8 @@ spring:
       host: ${LINGSQL_REDIS_HOST:localhost}
       port: ${LINGSQL_REDIS_PORT:6379}
       password: ${LINGSQL_REDIS_PASSWORD:}
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
 
 logging:
   level:
@@ -28,6 +30,23 @@ logging:
 
 server:
   port: ${SERVER_PORT:8000}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
 
 lingsql:
   security:
