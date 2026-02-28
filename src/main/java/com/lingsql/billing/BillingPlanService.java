@@ -36,6 +36,7 @@ public class BillingPlanService {
     private static final Integer INACTIVE_STATUS = 0;
     private static final String PLAN_CODE_PREFIX = "PLAN";
     private static final int MAX_GENERATE_ATTEMPTS = 5;
+    private static final long DEFAULT_QUOTA_BALANCE = 0L;
 
     private final BillingPlanRepository planRepository;
     private final TenantRepository tenantRepository;
@@ -93,7 +94,7 @@ public class BillingPlanService {
         plan.setStatus(resolveStatus(request.getStatus()));
         plan.setServiceLevel(normalizeOptional(request.getServiceLevel()));
         plan.setTenantType(normalizeOptional(request.getTenantType()));
-        plan.setDefaultQuotaBalance(request.getDefaultQuotaBalance());
+        plan.setDefaultQuotaBalance(resolveDefaultQuotaBalance(request.getDefaultQuotaBalance()));
         plan.setRemark(request.getRemark());
         plan.setIsDeleted(NOT_DELETED);
         LocalDateTime now = LocalDateTime.now();
@@ -158,7 +159,7 @@ public class BillingPlanService {
             plan.setTenantType(normalizeOptional(request.getTenantType()));
         }
         if (request.getDefaultQuotaBalance() != null) {
-            plan.setDefaultQuotaBalance(request.getDefaultQuotaBalance());
+            plan.setDefaultQuotaBalance(resolveDefaultQuotaBalance(request.getDefaultQuotaBalance()));
         }
         if (request.getRemark() != null) {
             plan.setRemark(request.getRemark());
@@ -236,6 +237,16 @@ public class BillingPlanService {
             throw new BizException(ErrorCode.INVALID_PARAM, "状态值非法");
         }
         return status;
+    }
+
+    private long resolveDefaultQuotaBalance(Long defaultQuotaBalance) {
+        if (defaultQuotaBalance == null) {
+            return DEFAULT_QUOTA_BALANCE;
+        }
+        if (defaultQuotaBalance < 0) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "默认余额不能为负数");
+        }
+        return defaultQuotaBalance;
     }
 
     private String generatePlanCode() {

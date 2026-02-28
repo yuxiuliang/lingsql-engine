@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# LingSQL 商用验收总门禁脚本（四块能力）
+# LingSQL 商用验收总门禁脚本（含工程基线的五块能力）
 # 用法:
 #   BASE_URL=http://127.0.0.1:8000 \
 #   PROMETHEUS_URL=http://127.0.0.1:9090 \
@@ -52,6 +52,13 @@ main() {
   trap "rm -f '${tmp_status}'" EXIT
 
   log_info "开始执行商用验收总门禁"
+
+  # 0) 工程基线：Schema 漂移检查
+  if run_step "工程基线-Schema漂移" bash "${SCRIPT_DIR}/schema_drift_guard.sh"; then
+    true
+  else
+    true
+  fi >> "${tmp_status}"
 
   # 1) 商业闭环：计费商用验收快照
   if run_step "商业闭环-计费验收" bash "${SCRIPT_DIR}/billing_readiness_guard.sh"; then

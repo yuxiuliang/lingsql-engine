@@ -1,0 +1,81 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: lingsql-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --max_connections=500
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-lingsql_engine_db}
+      TZ: Asia/Shanghai
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - lingsql_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: lingsql-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - lingsql_redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lingsql-engine:local
+    container_name: lingsql-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8000
+      LINGSQL_DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-lingsql_engine_db}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+      LINGSQL_DB_USERNAME: root
+      LINGSQL_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      LINGSQL_REDIS_HOST: redis
+      LINGSQL_REDIS_PORT: 6379
+      LINGSQL_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      LINGSQL_JWT_SECRET: ${LINGSQL_JWT_SECRET}
+      LINGSQL_DATA_ENCRYPTION_KEY: ${LINGSQL_DATA_ENCRYPTION_KEY}
+      LINGSQL_ADMIN_ENABLED: ${LINGSQL_ADMIN_ENABLED:-true}
+      LINGSQL_ADMIN_TENANT_ID: ${LINGSQL_ADMIN_TENANT_ID:-sys_tenant}
+      LINGSQL_ADMIN_TENANT_NAME: ${LINGSQL_ADMIN_TENANT_NAME:-系统租户}
+      LINGSQL_ADMIN_USERNAME: ${LINGSQL_ADMIN_USERNAME:-admin}
+      LINGSQL_ADMIN_PASSWORD: ${LINGSQL_ADMIN_PASSWORD}
+      LINGSQL_ADMIN_NICKNAME: ${LINGSQL_ADMIN_NICKNAME:-系统管理员}
+      LINGSQL_ALERT_ENABLED: ${LINGSQL_ALERT_ENABLED:-false}
+      LINGSQL_CORS_ENABLED: ${LINGSQL_CORS_ENABLED:-false}
+      LINGSQL_RETENTION_ENABLED: ${LINGSQL_RETENTION_ENABLED:-true}
+      LINGSQL_RETENTION_DRY_RUN: ${LINGSQL_RETENTION_DRY_RUN:-true}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+
+volumes:
+  lingsql_mysql_data:
+  lingsql_redis_data:
+

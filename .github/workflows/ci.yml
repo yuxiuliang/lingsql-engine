@@ -27,6 +27,9 @@ jobs:
           java-version: "21"
           cache: maven
 
+      - name: Schema Drift Guard
+        run: bash scripts/ops/schema_drift_guard.sh
+
       - name: Run Maven Tests
         run: mvn -B -ntp test -DskipITs
 

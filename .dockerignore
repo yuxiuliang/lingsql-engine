@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.vscode
+target
+web_src/node_modules
+web_src/dist
+reports
+backups
+*.log
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db
+
