@@ -57,20 +57,6 @@ validate_non_negative_number() {
   fi
 }
 
-request_once() {
-  local url="$1"
-  local timeout="$2"
-  local start_ms end_ms elapsed code
-  start_ms="$(date +%s%3N)"
-  code="$(curl -sS -m "${timeout}" -o /dev/null -w "%{http_code}" "${url}" || true)"
-  if [[ -z "${code}" ]]; then
-    code="000"
-  fi
-  end_ms="$(date +%s%3N)"
-  elapsed=$((end_ms - start_ms))
-  echo "${elapsed},${code}"
-}
-
 main() {
   require_cmd curl
   require_cmd awk
@@ -87,10 +73,21 @@ main() {
   local tmp_file sorted_file
   tmp_file="$(mktemp)"
   sorted_file="$(mktemp)"
-  trap 'rm -f "${tmp_file}" "${sorted_file}"' EXIT
+  trap "rm -f '${tmp_file}' '${sorted_file}'" EXIT
 
   log_info "开始执行可靠性基线压测: url=${url}, requests=${TOTAL_REQUESTS}, concurrency=${CONCURRENCY}"
-  seq "${TOTAL_REQUESTS}" | xargs -P "${CONCURRENCY}" -I{} bash -c 'request_once "$0" "$1"' "${url}" "${TIMEOUT_SECONDS}" > "${tmp_file}"
+  seq "${TOTAL_REQUESTS}" | xargs -P "${CONCURRENCY}" -I{} bash -c '
+    url="$1"
+    timeout="$2"
+    start_ms="$(date +%s%3N)"
+    code="$(curl -s -m "${timeout}" -o /dev/null -w "%{http_code}" "${url}" || true)"
+    if [[ -z "${code}" ]]; then
+      code="000"
+    fi
+    end_ms="$(date +%s%3N)"
+    elapsed=$((end_ms - start_ms))
+    echo "${elapsed},${code}"
+  ' _ "${url}" "${TIMEOUT_SECONDS}" > "${tmp_file}"
 
   local total success fail success_rate avg_ms p95_ms max_ms min_ms
   total="$(wc -l < "${tmp_file}" | tr -d ' ')"

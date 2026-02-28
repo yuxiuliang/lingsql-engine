@@ -39,12 +39,39 @@
 
 - Maven 与 NPM 每周自动检查依赖更新并创建 PR。
 
+### 2.5 `auto-remediation.yml`（失败自愈 + 自动提 PR）
+
+- 触发条件：
+  - `LingSQL CI / Security / CodeQL` 在 `master` 失败后自动触发。
+  - 每日定时巡检触发。
+  - 手动触发。
+- 执行动作：
+  - 执行 `scripts/ops/github_auto_remediate.sh`。
+  - 自动尝试 `npm audit fix --omit=dev`。
+  - 自动重跑 `scripts/ops/github_guard.sh` 门禁。
+  - 若仓库存在改动，自动创建修复 PR（`chore/auto-remediation`）。
+
+### 2.6 `dependabot-auto-merge.yml`（依赖 PR 自动合并）
+
+- 触发条件：Dependabot 打开的依赖升级 PR。
+- 执行动作：
+  - 自动审批 Dependabot PR。
+  - 启用 Auto-Merge（`squash`）。
+- 安全边界：
+  - 仍受分支保护规则与必需状态检查约束，门禁未通过不会合并。
+
 ## 3. 本地一键自检
 
 执行以下命令可本地模拟 GitHub 门禁：
 
 ```bash
 ./scripts/ops/github_guard.sh
+```
+
+执行以下命令可本地模拟自动修复流程：
+
+```bash
+./scripts/ops/github_auto_remediate.sh
 ```
 
 商用阶段建议追加：

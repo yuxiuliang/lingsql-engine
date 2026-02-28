@@ -1,0 +1,93 @@
+name: LingSQL Auto Remediation
+
+on:
+  workflow_run:
+    workflows:
+      - LingSQL CI
+      - LingSQL Security
+      - LingSQL CodeQL
+    types: [completed]
+  schedule:
+    - cron: "31 2 * * *"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "手动触发原因（可选）"
+        required: false
+        default: "manual"
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: lingsql-auto-remediation
+  cancel-in-progress: true
+
+jobs:
+  auto-remediate:
+    name: Auto Remediate & Create PR
+    # workflow_run 仅在 master 失败时触发自动修复；定时与手动触发默认执行。
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.head_branch == 'master') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Prepare Scripts
+        run: chmod +x scripts/ops/*.sh
+
+      - name: Run Auto Remediation Script
+        id: remediate
+        continue-on-error: true
+        env:
+          AUTO_REMEDIATE_ALLOW_NPM_AUDIT_FIX: "true"
+        run: ./scripts/ops/github_auto_remediate.sh
+
+      - name: Create Remediation Pull Request
+        id: create-pr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: chore/auto-remediation
+          delete-branch: true
+          commit-message: "ci(auto): 自动修复门禁失败与依赖漏洞"
+          title: "ci: 自动修复 GitHub 门禁失败与漏洞"
+          body: |
+            ## 自动修复说明
+            - 触发事件: `${{ github.event_name }}`
+            - 触发工作流: `${{ github.event.workflow_run.name || 'N/A' }}`
+            - 触发结论: `${{ github.event.workflow_run.conclusion || 'N/A' }}`
+            - 自动修复步骤:
+              1. 尝试执行 `npm audit fix --omit=dev`
+              2. 重新执行 `scripts/ops/github_guard.sh`
+            - 若本 PR 合并后仍失败，请查看失败日志并人工介入。
+          labels: |
+            automated
+            security
+            dependencies
+
+      - name: Print Remediation Result
+        if: always()
+        run: |
+          echo "remediate_outcome=${{ steps.remediate.outcome }}"
+          echo "pull_request_number=${{ steps.create-pr.outputs.pull-request-number }}"
+          if [ -z "${{ steps.create-pr.outputs.pull-request-number }}" ]; then
+            echo "没有生成修复 PR（可能无可提交改动）。"
+          fi

@@ -41,6 +41,11 @@ is_true() {
 }
 
 main() {
+  if [[ -z "${BILLING_READINESS_URL}" ]] && is_true "${BILLING_ALLOW_SKIP}"; then
+    log_info "BILLING_ALLOW_SKIP=true 且未显式配置 BILLING_READINESS_URL，跳过计费商用验收检查。"
+    exit 0
+  fi
+
   if [[ -z "${BILLING_READINESS_URL}" && -n "${BASE_URL:-}" ]]; then
     BILLING_READINESS_URL="${BASE_URL%/}/api/v1/admin/billing/readiness/snapshot"
   fi

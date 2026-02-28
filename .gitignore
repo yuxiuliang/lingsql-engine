@@ -13,3 +13,4 @@ target/
 **/.env.production
 /src/main/resources/static/admin/
 **/dist/
+/reports/

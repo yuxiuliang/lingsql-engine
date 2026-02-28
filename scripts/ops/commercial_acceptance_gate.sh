@@ -49,7 +49,7 @@ main() {
   mkdir -p "$(dirname "${COMMERCIAL_REPORT_FILE}")"
   local tmp_status
   tmp_status="$(mktemp)"
-  trap 'rm -f "${tmp_status}"' EXIT
+  trap "rm -f '${tmp_status}'" EXIT
 
   log_info "开始执行商用验收总门禁"
 
