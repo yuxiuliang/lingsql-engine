@@ -188,6 +188,18 @@ const handleTenantSelect = (tenant: TenantView) => {
 };
 
 /**
+ * 解析租户表格行主键。
+ *
+ * @param row 租户行数据
+ * @return 行主键
+ * @author 余炘洋
+ * @date 2026-02-28
+ */
+const resolveTenantRowKey = (row: TenantView) => {
+  return row.tenantId;
+};
+
+/**
  * 处理权限树搜索过滤。
  *
  * @param keyword 过滤关键字
@@ -382,7 +394,7 @@ loadTenants();
             :data="tenants"
             v-loading="tenantLoading"
             highlight-current-row
-            :row-key="(row) => row.tenantId"
+            :row-key="resolveTenantRowKey"
             :current-row-key="poolForm.tenantId"
             @row-click="handleTenantSelect"
           >
