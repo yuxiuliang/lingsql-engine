@@ -70,8 +70,8 @@ lingsql:
   security:
     default-limit: 100
     data-encryption-enabled: ${LINGSQL_DATA_ENCRYPTION_ENABLED:true}
-    data-encryption-key: ${LINGSQL_DATA_ENCRYPTION_KEY:d033e22ae348aeb5660fc2122ae348aeb56640aec35850c4da997}
-    data-encryption-migrate: ${LINGSQL_DATA_ENCRYPTION_MIGRATE:true}
+    data-encryption-key: ${LINGSQL_DATA_ENCRYPTION_KEY:}
+    data-encryption-migrate: ${LINGSQL_DATA_ENCRYPTION_MIGRATE:false}
     prompt-injection-keywords:
       - "忽略规则"
       - "绕过"
@@ -194,7 +194,7 @@ lingsql:
     refresh-cookie-secure: ${LINGSQL_REFRESH_COOKIE_SECURE:false}
     single-session-enabled: ${LINGSQL_AUTH_SINGLE_SESSION_ENABLED:true}
   admin:
-    enabled: ${LINGSQL_ADMIN_ENABLED:true}
+    enabled: ${LINGSQL_ADMIN_ENABLED:false}
     tenant-id: ${LINGSQL_ADMIN_TENANT_ID:1}
     tenant-name: ${LINGSQL_ADMIN_TENANT_NAME:1}
     username: ${LINGSQL_ADMIN_USERNAME:admin}

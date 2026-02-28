@@ -5,6 +5,7 @@ import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
+import com.lingsql.executor.SqlTaskTracker;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,7 @@ public class DataSourceManager {
 
     private final TenantDbConfigRepository repository;
     private final LingSqlProperties properties;
+    private final SqlTaskTracker sqlTaskTracker;
 
     /**
      * 缓存租户 ID 与对应的 HikariDataSource。
@@ -171,6 +173,9 @@ public class DataSourceManager {
         }
         for (Map.Entry<String, CachedDataSource> entry : dataSourceMap.entrySet()) {
             CachedDataSource cached = entry.getValue();
+            if (sqlTaskTracker.hasRunning(entry.getKey())) {
+                continue;
+            }
             if (cached != null && isExpired(cached, now)) {
                 if (dataSourceMap.remove(entry.getKey(), cached)) {
                     closeDataSource(cached);
@@ -192,6 +197,9 @@ public class DataSourceManager {
         for (Map.Entry<String, CachedDataSource> entry : entries) {
             if (dataSourceMap.size() <= maxPools) {
                 return;
+            }
+            if (sqlTaskTracker.hasRunning(entry.getKey())) {
+                continue;
             }
             if (dataSourceMap.remove(entry.getKey(), entry.getValue())) {
                 closeDataSource(entry.getValue());

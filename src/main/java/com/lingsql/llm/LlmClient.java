@@ -42,6 +42,7 @@ public class LlmClient {
     private final ModelHealthService healthService;
     private final ObjectMapper objectMapper;
     private final RestTemplateBuilder restTemplateBuilder;
+    private volatile RestTemplate sharedRestTemplate;
 
     /**
      * 发送聊天请求。
@@ -104,14 +105,7 @@ public class LlmClient {
                 Map.of("role", "user", "content", userPrompt)
         ));
 
-        RestTemplate restTemplate = restTemplateBuilder
-                .requestFactory(() -> {
-                    SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-                    factory.setConnectTimeout((int) DEFAULT_TIMEOUT.toMillis());
-                    factory.setReadTimeout((int) DEFAULT_TIMEOUT.toMillis());
-                    return factory;
-                })
-                .build();
+        RestTemplate restTemplate = resolveRestTemplate();
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -144,6 +138,33 @@ public class LlmClient {
         traceInfo.setTokenCount(parsedResponse.tokenCount());
         LlmTraceContext.set(traceInfo);
         return content;
+    }
+
+    /**
+     * 获取共享 RestTemplate，避免每次请求重复构建客户端对象。
+     *
+     * @return RestTemplate
+     * @author 余炘洋
+     * @date 2026-02-28
+     */
+    private RestTemplate resolveRestTemplate() {
+        if (sharedRestTemplate != null) {
+            return sharedRestTemplate;
+        }
+        synchronized (this) {
+            if (sharedRestTemplate != null) {
+                return sharedRestTemplate;
+            }
+            sharedRestTemplate = restTemplateBuilder
+                    .requestFactory(() -> {
+                        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+                        factory.setConnectTimeout((int) DEFAULT_TIMEOUT.toMillis());
+                        factory.setReadTimeout((int) DEFAULT_TIMEOUT.toMillis());
+                        return factory;
+                    })
+                    .build();
+            return sharedRestTemplate;
+        }
     }
 
     /**

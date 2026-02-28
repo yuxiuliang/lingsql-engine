@@ -4,6 +4,7 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.datasource.model.TenantDbConfig;
+import com.lingsql.metadata.service.MetadataExtService;
 import com.lingsql.rbac.model.DataScopeRule;
 import com.lingsql.rbac.model.RbacDataScopeType;
 import com.lingsql.rbac.security.RbacSecurityUtils;
@@ -27,7 +28,9 @@ import net.sf.jsqlparser.util.deparser.ExpressionDeParser;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -42,6 +45,7 @@ import java.util.regex.Pattern;
 public class SqlSecurityChecker {
 
     private final LingSqlProperties properties;
+    private final MetadataExtService metadataExtService;
 
     /**
      * 校验 SQL 是否安全。
@@ -64,7 +68,7 @@ public class SqlSecurityChecker {
                 throw new BizException(ErrorCode.SQL_INVALID, "安全警告：仅支持单条 SELECT 查询");
             }
             validateLimit(plainSelect);
-            validateTenantCondition(config, plainSelect.getWhere(), tenantId);
+            validateTenantCondition(config, plainSelect, tenantId);
             validateSelfDataScopeCondition(plainSelect.getWhere());
             validateTables(statement, config);
             validateColumns(plainSelect, config);
@@ -100,24 +104,37 @@ public class SqlSecurityChecker {
      * 校验逻辑隔离条件是否存在。
      *
      * @param config 租户配置
-     * @param where  WHERE 条件
+     * @param plainSelect 查询体
      * @param tenantId 当前租户ID
      * @author 余炘洋
      * @date 2026-01-22
      */
-    private void validateTenantCondition(TenantDbConfig config, Expression where, String tenantId) {
+    private void validateTenantCondition(TenantDbConfig config, PlainSelect plainSelect, String tenantId) {
         if (!config.isLogicalIsolation()) {
             return;
         }
         if (!StringUtils.hasText(tenantId)) {
             throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：租户上下文缺失");
         }
+        Expression where = plainSelect == null ? null : plainSelect.getWhere();
         if (where == null) {
             throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：逻辑隔离模式缺少 tenant 条件");
         }
-        String columnName = config.resolveLogicColumn();
-        if (!containsEqualsCondition(where, columnName, tenantId, null)) {
-            throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：逻辑隔离模式 tenant 条件不合法");
+        List<TableRef> tableRefs = collectTableRefs(plainSelect);
+        if (tableRefs.isEmpty()) {
+            String columnName = config.resolveLogicColumn();
+            if (!containsEqualsCondition(where, columnName, tenantId, null)) {
+                throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：逻辑隔离模式 tenant 条件不合法");
+            }
+            return;
+        }
+        for (TableRef ref : tableRefs) {
+            String columnName = metadataExtService.resolveIsolationField(tenantId, ref.tableName())
+                    .orElse(config.resolveLogicColumn());
+            if (!containsEqualsCondition(where, columnName, tenantId, null, ref.qualifier(), ref.tableName())) {
+                throw new BizException(ErrorCode.SECURITY_VIOLATION,
+                        "安全警告：逻辑隔离模式 tenant 条件不合法，表=" + ref.tableName());
+            }
         }
     }
 
@@ -260,15 +277,50 @@ public class SqlSecurityChecker {
      * @date 2026-02-26
      */
     private boolean containsEqualsCondition(Expression where, String columnName, String expectedText, Long expectedLong) {
+        return containsEqualsCondition(where, columnName, expectedText, expectedLong, null, null);
+    }
+
+    /**
+     * 判断 WHERE 条件中是否包含指定字段与目标值的等值条件（可选表限定名）。
+     *
+     * @param where             WHERE 条件
+     * @param columnName        字段名
+     * @param expectedText      期望字符串值
+     * @param expectedLong      期望数字值
+     * @param expectedQualifier 期望表别名
+     * @param expectedTableName 期望表名
+     * @return 是否匹配
+     * @author 余炘洋
+     * @date 2026-02-28
+     */
+    private boolean containsEqualsCondition(Expression where,
+                                            String columnName,
+                                            String expectedText,
+                                            Long expectedLong,
+                                            String expectedQualifier,
+                                            String expectedTableName) {
         if (where == null || !StringUtils.hasText(columnName)) {
             return false;
         }
-        EqualsConditionVisitor visitor = new EqualsConditionVisitor(columnName, expectedText, expectedLong);
+        EqualsConditionVisitor visitor = new EqualsConditionVisitor(
+                columnName,
+                expectedText,
+                expectedLong,
+                expectedQualifier,
+                expectedTableName
+        );
         where.accept(visitor);
         if (visitor.isFound()) {
             return true;
         }
-        return containsEqualsByText(where.toString(), normalizeColumnName(columnName), expectedText, expectedLong);
+        return containsEqualsByText(
+                where.toString(),
+                normalizeColumnName(columnName),
+                expectedText,
+                expectedLong,
+                normalizeIdentifier(expectedQualifier),
+                normalizeIdentifier(expectedTableName)
+        );
     }
 
     /**
@@ -278,16 +330,36 @@ public class SqlSecurityChecker {
      * @param columnName   字段名
      * @param expectedText 期望字符串值
      * @param expectedLong 期望数字值
+     * @param expectedQualifier 期望表别名
+     * @param expectedTableName 期望表名
      * @return 是否匹配
      * @author 余炘洋
      * @date 2026-02-26
      */
-    private boolean containsEqualsByText(String whereText, String columnName, String expectedText, Long expectedLong) {
+    private boolean containsEqualsByText(String whereText,
+                                         String columnName,
+                                         String expectedText,
+                                         Long expectedLong,
+                                         String expectedQualifier,
+                                         String expectedTableName) {
         if (!StringUtils.hasText(whereText) || !StringUtils.hasText(columnName)) {
             return false;
         }
         String normalized = whereText.replace("`", "");
-        String columnPattern = "(?:\\b\\w+\\.)?" + Pattern.quote(columnName);
+        String columnPattern;
+        if (StringUtils.hasText(expectedQualifier) || StringUtils.hasText(expectedTableName)) {
+            String q1 = StringUtils.hasText(expectedQualifier) ? Pattern.quote(expectedQualifier) : null;
+            String q2 = StringUtils.hasText(expectedTableName) ? Pattern.quote(expectedTableName) : null;
+            if (q1 != null && q2 != null && !q1.equals(q2)) {
+                columnPattern = "(?:(?:" + q1 + ")|(?:" + q2 + "))\\." + Pattern.quote(columnName);
+            } else if (q1 != null) {
+                columnPattern = q1 + "\\." + Pattern.quote(columnName);
+            } else {
+                columnPattern = q2 + "\\." + Pattern.quote(columnName);
+            }
+        } else {
+            columnPattern = "(?:\\b\\w+\\.)?" + Pattern.quote(columnName);
+        }
         if (expectedText != null) {
             String valuePattern = Pattern.quote("'" + expectedText + "'");
             return Pattern.compile(columnPattern + "\\s*=\\s*" + valuePattern, Pattern.CASE_INSENSITIVE).matcher(normalized).find()
@@ -319,6 +391,58 @@ public class SqlSecurityChecker {
             normalized = normalized.substring(dotIndex + 1);
         }
         return normalized.toLowerCase();
+    }
+
+    /**
+     * 标准化标识符。
+     *
+     * @param identifier 原始标识符
+     * @return 标准化结果
+     * @author 余炘洋
+     * @date 2026-02-28
+     */
+    private String normalizeIdentifier(String identifier) {
+        if (!StringUtils.hasText(identifier)) {
+            return null;
+        }
+        return identifier.trim().replace("`", "").toLowerCase();
+    }
+
+    /**
+     * 收集主表与 JOIN 表引用。
+     *
+     * @param plainSelect 查询体
+     * @return 表引用列表
+     * @author 余炘洋
+     * @date 2026-02-28
+     */
+    private List<TableRef> collectTableRefs(PlainSelect plainSelect) {
+        List<TableRef> refs = new ArrayList<>();
+        collectTableRef(plainSelect == null ? null : plainSelect.getFromItem(), refs);
+        if (plainSelect != null && plainSelect.getJoins() != null) {
+            plainSelect.getJoins().forEach(join -> collectTableRef(join.getRightItem(), refs));
+        }
+        return refs;
+    }
+
+    /**
+     * 收集单个表引用。
+     *
+     * @param fromItem FROM/JOIN 项
+     * @param refs     引用列表
+     * @author 余炘洋
+     * @date 2026-02-28
+     */
+    private void collectTableRef(net.sf.jsqlparser.statement.select.FromItem fromItem, List<TableRef> refs) {
+        if (!(fromItem instanceof net.sf.jsqlparser.schema.Table table)) {
+            return;
+        }
+        String tableName = table.getName();
+        if (!StringUtils.hasText(tableName)) {
+            return;
+        }
+        String qualifier = table.getAlias() == null ? tableName : table.getAlias().getName();
+        refs.add(new TableRef(tableName, qualifier));
     }
 
     /**
@@ -384,6 +508,8 @@ public class SqlSecurityChecker {
         private final String columnName;
         private final String expectedText;
         private final Long expectedLong;
+        private final String expectedQualifier;
+        private final String expectedTableName;
         private boolean found = false;
 
         /**
@@ -392,13 +518,21 @@ public class SqlSecurityChecker {
          * @param columnName   字段名
          * @param expectedText 期望字符串值
          * @param expectedLong 期望数字值
+         * @param expectedQualifier 期望表别名
+         * @param expectedTableName 期望表名
          * @author 余炘洋
          * @date 2026-02-26
          */
-        private EqualsConditionVisitor(String columnName, String expectedText, Long expectedLong) {
+        private EqualsConditionVisitor(String columnName,
+                                       String expectedText,
+                                       Long expectedLong,
+                                       String expectedQualifier,
+                                       String expectedTableName) {
             this.columnName = normalizeColumnName(columnName);
             this.expectedText = expectedText;
             this.expectedLong = expectedLong;
+            this.expectedQualifier = normalizeIdentifier(expectedQualifier);
+            this.expectedTableName = normalizeIdentifier(expectedTableName);
         }
 
         /**
@@ -430,6 +564,9 @@ public class SqlSecurityChecker {
             if (!actualColumn.equals(columnName)) {
                 return false;
             }
+            if (!matchesTable(column)) {
+                return false;
+            }
             if (expectedText != null) {
                 return matchesTextValue(valueExpr, expectedText);
             }
@@ -450,6 +587,20 @@ public class SqlSecurityChecker {
                 return expected.equals(String.valueOf(longValue.getValue()));
             }
             return expected.equals(stripValue(valueExpr.toString()));
+        }
+
+        private boolean matchesTable(Column column) {
+            if (!StringUtils.hasText(expectedQualifier) && !StringUtils.hasText(expectedTableName)) {
+                return true;
+            }
+            String actualTable = column.getTable() == null ? null : normalizeIdentifier(column.getTable().getName());
+            if (!StringUtils.hasText(actualTable)) {
+                return false;
+            }
+            if (StringUtils.hasText(expectedQualifier) && expectedQualifier.equals(actualTable)) {
+                return true;
+            }
+            return StringUtils.hasText(expectedTableName) && expectedTableName.equals(actualTable);
         }
 
         private boolean matchesLongValue(Expression valueExpr, Long expected) {
@@ -494,5 +645,16 @@ public class SqlSecurityChecker {
         private boolean isFound() {
             return found;
         }
+    }
+
+    /**
+     * 表引用。
+     *
+     * @param tableName 表名
+     * @param qualifier SQL 中可见限定名（别名优先）
+     * @author 余炘洋
+     * @date 2026-02-28
+     */
+    private record TableRef(String tableName, String qualifier) {
     }
 }
