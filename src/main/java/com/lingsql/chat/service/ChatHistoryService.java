@@ -19,12 +19,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.data.redis.core.Cursor;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 聊天历史服务，负责持久化与视图转换。
@@ -339,7 +344,7 @@ public class ChatHistoryService {
      * @date 2026-01-23
      */
     private void evictListCache(String tenantId, Long userId) {
-        var keys = stringRedisTemplate.keys("lingsql:chat:history:list:" + tenantId + ":" + userId + ":*");
+        Set<String> keys = scanKeys("lingsql:chat:history:list:" + tenantId + ":" + userId + ":*");
         if (keys != null && !keys.isEmpty()) {
             stringRedisTemplate.delete(keys);
         }
@@ -367,5 +372,38 @@ public class ChatHistoryService {
     private Duration resolveTtl() {
         Duration ttl = properties.getCache().getChatHistoryTtl();
         return ttl == null ? Duration.ofMinutes(30) : ttl;
+    }
+
+    /**
+     * 使用 SCAN 获取匹配键，避免 KEYS 带来的阻塞风险。
+     *
+     * @param pattern 键模式
+     * @return 键集合
+     * @author 余炘洋
+     * @date 2026-02-28
+     */
+    private Set<String> scanKeys(String pattern) {
+        if (pattern == null || pattern.isBlank() || stringRedisTemplate.getConnectionFactory() == null) {
+            return Collections.emptySet();
+        }
+        Set<String> result = new HashSet<>();
+        ScanOptions options = ScanOptions.scanOptions()
+                .match(pattern)
+                .count(500)
+                .build();
+        try (var connection = stringRedisTemplate.getConnectionFactory().getConnection();
+             Cursor<byte[]> cursor = connection.scan(options)) {
+            while (cursor.hasNext()) {
+                byte[] key = cursor.next();
+                if (key == null || key.length == 0) {
+                    continue;
+                }
+                result.add(new String(key, StandardCharsets.UTF_8));
+            }
+        } catch (Exception ex) {
+            log.warn("扫描历史列表缓存键失败: pattern={}, reason={}", pattern, ex.getMessage());
+            return Collections.emptySet();
+        }
+        return result;
     }
 }

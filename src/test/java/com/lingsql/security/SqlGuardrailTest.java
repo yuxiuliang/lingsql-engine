@@ -55,7 +55,10 @@ class SqlGuardrailTest {
     @Test
     void checkerShouldRejectTenantConditionWithWrongValue() {
         LingSqlProperties properties = createProperties(100);
-        SqlSecurityChecker checker = new SqlSecurityChecker(properties);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        Mockito.when(metadataExtService.resolveIsolationField(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        SqlSecurityChecker checker = new SqlSecurityChecker(properties, metadataExtService);
         TenantDbConfig config = createTenantConfig("LOGICAL", "tenant_id");
 
         BizException ex = assertThrows(
@@ -73,7 +76,10 @@ class SqlGuardrailTest {
     @Test
     void checkerShouldRejectSelfScopeWithWrongUserCondition() {
         LingSqlProperties properties = createProperties(100);
-        SqlSecurityChecker checker = new SqlSecurityChecker(properties);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        Mockito.when(metadataExtService.resolveIsolationField(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        SqlSecurityChecker checker = new SqlSecurityChecker(properties, metadataExtService);
         TenantDbConfig config = createTenantConfig("PHYSICAL", "tenant_id");
         bindSelfScopeSession(123L, "creator_id");
 
@@ -92,7 +98,10 @@ class SqlGuardrailTest {
     @Test
     void checkerShouldAllowSelfScopeWithCurrentUserCondition() {
         LingSqlProperties properties = createProperties(100);
-        SqlSecurityChecker checker = new SqlSecurityChecker(properties);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        Mockito.when(metadataExtService.resolveIsolationField(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        SqlSecurityChecker checker = new SqlSecurityChecker(properties, metadataExtService);
         TenantDbConfig config = createTenantConfig("PHYSICAL", "tenant_id");
         bindSelfScopeSession(123L, "creator_id");
 
@@ -100,6 +109,68 @@ class SqlGuardrailTest {
             checker.check("SELECT order_id FROM orders WHERE creator_id = 123 LIMIT 10", config, "TENANT_A");
         } catch (Exception ex) {
             fail("当前用户条件正确时不应抛出异常: " + ex.getMessage());
+        }
+    }
+
+    @Test
+    void rewriteShouldInjectTenantConditionForAllJoinedTables() {
+        LingSqlProperties properties = createProperties(100);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        Mockito.when(metadataExtService.resolveIsolationField(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        SqlRewriter rewriter = new SqlRewriter(properties, metadataExtService);
+        TenantDbConfig config = createTenantConfig("LOGICAL", "tenant_id");
+
+        String rewritten = rewriter.rewrite(
+                "SELECT o.order_id FROM orders o JOIN customers c ON o.customer_id = c.id WHERE o.amount > 0 LIMIT 50",
+                config,
+                "TENANT_A"
+        );
+
+        assertTrue(rewritten.contains("o.tenant_id = 'TENANT_A'"), "主表应注入租户条件");
+        assertTrue(rewritten.contains("c.tenant_id = 'TENANT_A'"), "JOIN 表应注入租户条件");
+    }
+
+    @Test
+    void checkerShouldRejectJoinMissingTenantConditionOnJoinedTable() {
+        LingSqlProperties properties = createProperties(100);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        Mockito.when(metadataExtService.resolveIsolationField(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        SqlSecurityChecker checker = new SqlSecurityChecker(properties, metadataExtService);
+        TenantDbConfig config = createTenantConfig("LOGICAL", "tenant_id");
+
+        BizException ex = assertThrows(
+                BizException.class,
+                () -> checker.check(
+                        "SELECT o.order_id FROM orders o JOIN customers c ON o.customer_id = c.id " +
+                                "WHERE o.tenant_id = 'TENANT_A' LIMIT 10",
+                        config,
+                        "TENANT_A"
+                )
+        );
+
+        assertEquals(ErrorCode.SECURITY_VIOLATION, ex.getErrorCode());
+    }
+
+    @Test
+    void checkerShouldAllowJoinWithTenantConditionOnAllTables() {
+        LingSqlProperties properties = createProperties(100);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        Mockito.when(metadataExtService.resolveIsolationField(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        SqlSecurityChecker checker = new SqlSecurityChecker(properties, metadataExtService);
+        TenantDbConfig config = createTenantConfig("LOGICAL", "tenant_id");
+
+        try {
+            checker.check(
+                    "SELECT o.order_id FROM orders o JOIN customers c ON o.customer_id = c.id " +
+                            "WHERE o.tenant_id = 'TENANT_A' AND c.tenant_id = 'TENANT_A' LIMIT 10",
+                    config,
+                    "TENANT_A"
+            );
+        } catch (Exception ex) {
+            fail("JOIN 多表租户条件完整时不应抛出异常: " + ex.getMessage());
         }
     }
 

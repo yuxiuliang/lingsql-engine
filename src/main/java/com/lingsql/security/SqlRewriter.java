@@ -30,6 +30,7 @@ import net.sf.jsqlparser.expression.Alias;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -69,8 +70,7 @@ public class SqlRewriter {
             injectLimit(plainSelect);
 
             if (config.isLogicalIsolation()) {
-                String isolationColumn = resolveIsolationColumn(plainSelect, config, tenantId);
-                injectTenantCondition(plainSelect, isolationColumn, tenantId);
+                injectTenantConditions(plainSelect, config, tenantId);
             }
             maskSensitiveColumns(plainSelect, config);
             injectDataScope(plainSelect);
@@ -111,41 +111,77 @@ public class SqlRewriter {
     }
 
     /**
-     * 注入租户隔离条件。
-     *
-     * @param plainSelect 查询体
-     * @param columnName  隔离字段名
-     * @param tenantId    租户标识
-     * @author 余炘洋
-     * @date 2026-01-22
-     */
-    private void injectTenantCondition(PlainSelect plainSelect, String columnName, String tenantId) {
-        if (!StringUtils.hasText(columnName) || !StringUtils.hasText(tenantId)) {
-            return;
-        }
-        injectEqualsCondition(plainSelect, buildColumn(plainSelect, columnName), new StringValue(tenantId));
-    }
-
-    /**
-     * 解析隔离字段名，表级配置优先。
+     * 注入租户隔离条件（主表与 JOIN 表均强制追加）。
      *
      * @param plainSelect 查询体
      * @param config      租户配置
      * @param tenantId    租户标识
-     * @return 隔离字段
      * @author 余炘洋
-     * @date 2026-01-23
+     * @date 2026-02-28
      */
-    private String resolveIsolationColumn(PlainSelect plainSelect, TenantDbConfig config, String tenantId) {
-        String defaultColumn = config.resolveLogicColumn();
-        if (plainSelect.getFromItem() == null || plainSelect.getJoins() != null && !plainSelect.getJoins().isEmpty()) {
-            return defaultColumn;
+    private void injectTenantConditions(PlainSelect plainSelect, TenantDbConfig config, String tenantId) {
+        if (!StringUtils.hasText(tenantId)) {
+            return;
         }
-        if (plainSelect.getFromItem() instanceof net.sf.jsqlparser.schema.Table table) {
-            String tableName = table.getName();
-            return metadataExtService.resolveIsolationField(tenantId, tableName).orElse(defaultColumn);
+        List<TableRef> tableRefs = collectTableRefs(plainSelect);
+        if (tableRefs.isEmpty()) {
+            String defaultColumn = config.resolveLogicColumn();
+            if (!StringUtils.hasText(defaultColumn)) {
+                return;
+            }
+            injectEqualsCondition(plainSelect, buildColumn(plainSelect, defaultColumn), new StringValue(tenantId));
+            return;
         }
-        return defaultColumn;
+        for (TableRef tableRef : tableRefs) {
+            String isolationColumn = metadataExtService
+                    .resolveIsolationField(tenantId, tableRef.tableName())
+                    .orElse(config.resolveLogicColumn());
+            if (!StringUtils.hasText(isolationColumn)) {
+                continue;
+            }
+            Column column = new Column(isolationColumn);
+            if (StringUtils.hasText(tableRef.qualifier())) {
+                column.setTable(new net.sf.jsqlparser.schema.Table(tableRef.qualifier()));
+            }
+            injectEqualsCondition(plainSelect, column, new StringValue(tenantId));
+        }
+    }
+
+    /**
+     * 收集主表与 JOIN 表引用。
+     *
+     * @param plainSelect 查询体
+     * @return 表引用列表
+     * @author 余炘洋
+     * @date 2026-02-28
+     */
+    private List<TableRef> collectTableRefs(PlainSelect plainSelect) {
+        List<TableRef> refs = new ArrayList<>();
+        collectTableRef(plainSelect == null ? null : plainSelect.getFromItem(), refs);
+        if (plainSelect != null && plainSelect.getJoins() != null) {
+            plainSelect.getJoins().forEach(join -> collectTableRef(join.getRightItem(), refs));
+        }
+        return refs;
+    }
+
+    /**
+     * 收集单个表引用。
+     *
+     * @param fromItem FROM/JOIN 项
+     * @param refs     引用列表
+     * @author 余炘洋
+     * @date 2026-02-28
+     */
+    private void collectTableRef(net.sf.jsqlparser.statement.select.FromItem fromItem, List<TableRef> refs) {
+        if (!(fromItem instanceof net.sf.jsqlparser.schema.Table table)) {
+            return;
+        }
+        String tableName = table.getName();
+        if (!StringUtils.hasText(tableName)) {
+            return;
+        }
+        String qualifier = table.getAlias() != null ? table.getAlias().getName() : tableName;
+        refs.add(new TableRef(tableName, qualifier));
     }
 
     /**
@@ -375,6 +411,17 @@ public class SqlRewriter {
         private String getMatchedColumn() {
             return matchedColumn;
         }
+    }
+
+    /**
+     * 表引用。
+     *
+     * @param tableName 表名
+     * @param qualifier SQL 中可见限定名（别名优先）
+     * @author 余炘洋
+     * @date 2026-02-28
+     */
+    private record TableRef(String tableName, String qualifier) {
     }
 
 }
