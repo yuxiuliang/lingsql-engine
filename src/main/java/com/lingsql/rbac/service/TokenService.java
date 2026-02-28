@@ -41,6 +41,7 @@ public class TokenService {
     private static final String REVOKED_USER_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "revoked:user:";
     private static final String SESSION_CACHE_PREFIX = RbacSecurityConstants.TOKEN_CACHE_PREFIX + "session:";
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
+    private static final String IAT_MILLIS_CLAIM = "iatMs";
 
     private final LingSqlProperties properties;
     private final ObjectMapper objectMapper;
@@ -69,6 +70,7 @@ public class TokenService {
                 .subject(String.valueOf(session.getUserId()))
                 .audience().add(resolveAudience()).and()
                 .id(jti)
+                .claim(IAT_MILLIS_CLAIM, now.toEpochMilli())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiresAt))
                 .signWith(resolveSigningKey())
@@ -318,7 +320,11 @@ public class TokenService {
     }
 
     private boolean isUserRevoked(Claims claims) {
-        if (claims == null || claims.getIssuedAt() == null) {
+        if (claims == null) {
+            return false;
+        }
+        Long issuedAtMillis = resolveIssuedAtMillis(claims);
+        if (issuedAtMillis == null) {
             return false;
         }
         String subject = claims.getSubject();
@@ -337,10 +343,34 @@ public class TokenService {
         }
         try {
             long revokedMillis = Long.parseLong(revokedAt);
-            return claims.getIssuedAt().toInstant().toEpochMilli() < revokedMillis;
+            if (revokedMillis > 0L && revokedMillis < 1_000_000_000_000L) {
+                revokedMillis = revokedMillis * 1000L;
+            }
+            return issuedAtMillis < revokedMillis;
         } catch (NumberFormatException ex) {
             return false;
         }
+    }
+
+    private Long resolveIssuedAtMillis(Claims claims) {
+        if (claims == null) {
+            return null;
+        }
+        Object rawIatMillis = claims.get(IAT_MILLIS_CLAIM);
+        if (rawIatMillis instanceof Number number) {
+            return number.longValue();
+        }
+        if (rawIatMillis instanceof String value && StringUtils.hasText(value)) {
+            try {
+                return Long.parseLong(value.trim());
+            } catch (NumberFormatException ex) {
+                // ignore and fallback to iat
+            }
+        }
+        if (claims.getIssuedAt() == null) {
+            return null;
+        }
+        return claims.getIssuedAt().toInstant().toEpochMilli();
     }
 
     private String hashToken(String token) {
