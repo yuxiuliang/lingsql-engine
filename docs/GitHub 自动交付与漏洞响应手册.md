@@ -53,12 +53,15 @@
 
 ### 2.6 `dependabot-auto-merge.yml`（依赖 PR 自动合并）
 
-- 触发条件：Dependabot 打开的依赖升级 PR。
+- 触发条件：
+  - Dependabot 打开的依赖升级 PR（自动审批）。
+  - CI/Security/CodeQL 工作流成功后（自动尝试合并）。
 - 执行动作：
   - 自动审批 Dependabot PR。
-  - 启用 Auto-Merge（`squash`）。
+  - 在门禁绿灯后执行 `squash` 自动合并并删除分支。
 - 安全边界：
   - 仍受分支保护规则与必需状态检查约束，门禁未通过不会合并。
+  - 不依赖仓库层面的 “Allow auto-merge” 开关，适配单分支仓库。
 
 ## 3. 本地一键自检
 

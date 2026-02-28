@@ -3,19 +3,26 @@ name: LingSQL Dependabot Auto Merge
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
+  workflow_run:
+    workflows:
+      - LingSQL CI
+      - LingSQL Security
+      - LingSQL CodeQL
+    types: [completed]
 
 permissions:
   contents: write
   pull-requests: write
+  actions: read
 
 concurrency:
-  group: lingsql-dependabot-automerge-${{ github.event.pull_request.number }}
+  group: lingsql-dependabot-automerge-${{ github.event.pull_request.number || github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 jobs:
-  auto-merge:
-    name: Auto Merge Dependabot PR
-    if: ${{ github.actor == 'dependabot[bot]' && startsWith(github.head_ref, 'dependabot/') }}
+  auto-approve:
+    name: Auto Approve Dependabot PR
+    if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' && startsWith(github.head_ref, 'dependabot/') }}
     runs-on: ubuntu-latest
     steps:
       - name: Auto Approve
@@ -24,8 +31,28 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: gh pr review "${PR_NUMBER}" --approve --body "自动批准：依赖升级由系统门禁保障。"
 
-      - name: Enable Auto Merge
+  merge-when-green:
+    name: Merge Dependabot PR When Gates Are Green
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'dependabot/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve Dependabot PR Number
+        id: resolve
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr merge "${PR_NUMBER}" --auto --squash --delete-branch
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          PR_NUMBER="$(gh pr list --state open --head "${HEAD_BRANCH}" --json number,author,isDraft,baseRefName --jq 'map(select(.author.login=="dependabot[bot]" and .baseRefName=="master" and (.isDraft|not)))[0].number // empty')"
+          if [ -z "${PR_NUMBER}" ]; then
+            echo "pr_number=" >> "${GITHUB_OUTPUT}"
+            echo "未找到可合并的 Dependabot PR，跳过。"
+            exit 0
+          fi
+          echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
+
+      - name: Merge PR
+        if: ${{ steps.resolve.outputs.pr_number != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        run: gh pr merge "${PR_NUMBER}" --squash --delete-branch
