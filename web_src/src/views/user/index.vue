@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, reactive, ref} from 'vue';
+import {computed, reactive, ref, watch} from 'vue';
 import {ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
 import {
@@ -325,7 +325,17 @@ const handleRefresh = () => {
   loadUsers();
 };
 
-loadUsers();
+watch(
+  () => activeTenantId.value,
+  () => {
+    page.value = 1;
+    dialogVisible.value = false;
+    passwordVisible.value = false;
+    editingId.value = null;
+    loadUsers();
+  },
+  {immediate: true}
+);
 </script>
 
 <template>
@@ -394,7 +404,7 @@ loadUsers();
           <el-input v-model="form.username" placeholder="请输入账号" :disabled="!!editingId"/>
         </el-form-item>
         <el-form-item label="初始密码" v-if="!editingId">
-          <el-input v-model="form.password" placeholder="请输入密码" show-password/>
+          <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password autocomplete="new-password"/>
         </el-form-item>
         <el-form-item label="昵称">
           <el-input v-model="form.nickname" placeholder="请输入昵称"/>
@@ -426,7 +436,7 @@ loadUsers();
     <el-dialog v-model="passwordVisible" title="重置密码" width="420px" :close-on-click-modal="false">
       <el-form label-width="90px">
         <el-form-item label="新密码">
-          <el-input v-model="resetForm.newPassword" show-password placeholder="请输入新密码"/>
+          <el-input v-model="resetForm.newPassword" type="password" show-password placeholder="请输入新密码" autocomplete="new-password"/>
         </el-form-item>
       </el-form>
       <template #footer>

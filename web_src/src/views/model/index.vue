@@ -330,7 +330,7 @@ loadModelHealth();
           <el-input v-model="form.baseUrl" placeholder="例如：http://localhost:8000"/>
         </el-form-item>
         <el-form-item label="访问密钥">
-          <el-input v-model="form.apiKey" placeholder="API Key" show-password/>
+          <el-input v-model="form.apiKey" type="password" placeholder="API Key" show-password autocomplete="new-password"/>
         </el-form-item>
         <el-form-item label="是否启用">
           <el-select v-model="form.isActive" style="width: 100%">

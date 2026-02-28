@@ -8,6 +8,7 @@ import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.executor.SqlTaskTracker;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -116,10 +117,27 @@ public class DataSourceManager {
      * @date 2026-01-22
      */
     public void removeDataSource(String tenantId) {
-        CachedDataSource cached = dataSourceMap.remove(tenantId);
+        if (!StringUtils.hasText(tenantId)) {
+            return;
+        }
+        CachedDataSource cached = dataSourceMap.remove(tenantId.trim());
         if (cached != null) {
             closeDataSource(cached);
         }
+    }
+
+    /**
+     * 进程关闭时清理所有动态连接池，避免线程与连接泄漏。
+     *
+     * @author 余炘洋
+     * @date 2026-02-28
+     */
+    @PreDestroy
+    public void shutdownAllDataSources() {
+        for (CachedDataSource cached : dataSourceMap.values()) {
+            closeDataSource(cached);
+        }
+        dataSourceMap.clear();
     }
 
     /**

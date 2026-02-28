@@ -64,7 +64,7 @@ public class SqlRewriter {
             Select select = (Select) CCJSqlParserUtil.parse(sql);
             PlainSelect plainSelect = select.getPlainSelect();
             if (plainSelect == null) {
-                return sql;
+                throw new BizException(ErrorCode.SQL_INVALID, "仅支持单条 SELECT 查询");
             }
 
             injectLimit(plainSelect);
@@ -76,9 +76,11 @@ public class SqlRewriter {
             injectDataScope(plainSelect);
 
             return select.toString();
+        } catch (BizException ex) {
+            throw ex;
         } catch (Exception e) {
-            log.warn("SQL 改写失败，返回原 SQL: {}", e.getMessage());
-            return sql;
+            log.warn("SQL 改写失败: {}", e.getMessage(), e);
+            throw new BizException(ErrorCode.SQL_INVALID, "SQL 改写失败", e);
         }
     }
 

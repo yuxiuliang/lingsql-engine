@@ -511,7 +511,7 @@ loadTenants();
             <el-input v-model="form.username" placeholder="数据库账号"/>
           </el-form-item>
           <el-form-item label="密码">
-            <el-input v-model="form.password" placeholder="数据库密码" show-password/>
+            <el-input v-model="form.password" type="password" placeholder="数据库密码" show-password autocomplete="new-password"/>
           </el-form-item>
           <el-form-item label="驱动类">
             <el-input v-model="form.driverClass" placeholder="com.mysql.cj.jdbc.Driver"/>

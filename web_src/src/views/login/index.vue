@@ -146,6 +146,7 @@ const initCanvas = () => {
   let width = 0;
   let height = 0;
   let animationId = 0;
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const resize = () => {
     width = canvas.clientWidth;
@@ -227,14 +228,28 @@ const initCanvas = () => {
     animationId = requestAnimationFrame(render);
   };
 
-  resize();
-  createParticles();
-  render();
+  const renderStaticBackground = () => {
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = '#0b1220';
+    ctx.fillRect(0, 0, width, height);
+  };
 
   const handleResize = () => {
     resize();
+    if (prefersReducedMotion) {
+      renderStaticBackground();
+      return;
+    }
     createParticles();
   };
+
+  resize();
+  if (prefersReducedMotion) {
+    renderStaticBackground();
+  } else {
+    createParticles();
+    render();
+  }
   window.addEventListener('resize', handleResize);
 
   return () => {
@@ -257,8 +272,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="login-page">
-    <canvas ref="canvasRef" class="login-canvas"></canvas>
-    <div class="sql-texture">
+    <canvas ref="canvasRef" class="login-canvas" aria-hidden="true"></canvas>
+    <div class="sql-texture" aria-hidden="true">
       SELECT id, name, amount FROM orders WHERE tenant_id = ?;
       CREATE TABLE t_lingsql_engine_ai_model_config (id BIGINT, model_name VARCHAR(64));
       SELECT sum(order_amount) AS total, count(*) AS cnt FROM orders GROUP BY day;
@@ -314,7 +329,14 @@ onBeforeUnmount(() => {
                 <el-input v-model="form.username" placeholder="请输入用户名" class="form-input"/>
               </el-form-item>
               <el-form-item label="密码">
-                <el-input v-model="form.password" placeholder="请输入密码" show-password class="form-input"/>
+                <el-input
+                  v-model="form.password"
+                  type="password"
+                  placeholder="请输入密码"
+                  show-password
+                  autocomplete="current-password"
+                  class="form-input"
+                />
               </el-form-item>
               <div class="login-actions">
                 <el-checkbox v-model="form.rememberMe" label="记住我"/>

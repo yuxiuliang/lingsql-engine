@@ -42,6 +42,7 @@ const historyKeyword = ref(chatStore.keyword || '');
 const historyPage = ref(chatStore.page || 1);
 const historySize = ref(chatStore.size || 10);
 const isNarrowScreen = ref(false);
+const historyRequestSeq = ref(0);
 
 /**
  * 问题最大长度。
@@ -198,6 +199,8 @@ const loadHistory = async () => {
  * @date 2026-01-23
  */
 const startNewChat = () => {
+  historyRequestSeq.value += 1;
+  historyLoading.value = false;
   messages.value = [];
   question.value = '';
   activeHistoryId.value = null;
@@ -213,10 +216,15 @@ const startNewChat = () => {
  * @date 2026-01-23
  */
 const loadHistoryDetail = async (item: ChatHistoryItem) => {
+  const requestSeq = historyRequestSeq.value + 1;
+  historyRequestSeq.value = requestSeq;
   historyLoading.value = true;
   activeHistoryId.value = item.id;
   try {
     const detail: ChatHistoryDetail = await fetchChatHistoryDetail(item.id);
+    if (requestSeq !== historyRequestSeq.value || activeHistoryId.value !== item.id) {
+      return;
+    }
     messages.value = [
       {id: nextMessageId(), role: 'user', content: detail.question},
       {
@@ -229,9 +237,13 @@ const loadHistoryDetail = async (item: ChatHistoryItem) => {
     ];
     await scrollToBottom();
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载历史详情失败');
+    if (requestSeq === historyRequestSeq.value) {
+      ElMessage.error(error instanceof Error ? error.message : '加载历史详情失败');
+    }
   } finally {
-    historyLoading.value = false;
+    if (requestSeq === historyRequestSeq.value) {
+      historyLoading.value = false;
+    }
   }
 };
 
@@ -242,6 +254,9 @@ const loadHistoryDetail = async (item: ChatHistoryItem) => {
  * @date 2026-01-23
  */
 const handleSend = async () => {
+  if (loading.value) {
+    return;
+  }
   const content = question.value.trim();
   if (!content) {
     ElMessage.warning('请输入问题');
@@ -549,7 +564,7 @@ onBeforeUnmount(() => {
             @keydown.enter.exact.prevent="handleSend"
           />
           <div class="chat-input-actions">
-            <el-button type="primary" :loading="loading" :disabled="!question.trim()" @click="handleSend">
+            <el-button type="primary" :loading="loading" :disabled="loading || !question.trim()" @click="handleSend">
               发送
             </el-button>
           </div>

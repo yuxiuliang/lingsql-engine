@@ -44,13 +44,12 @@ public class SqlTaskTracker {
             return;
         }
         String key = tenantId.trim();
-        AtomicInteger counter = runningTasks.get(key);
-        if (counter == null) {
-            return;
-        }
-        if (counter.decrementAndGet() <= 0) {
-            runningTasks.remove(key);
-        }
+        runningTasks.compute(key, (ignored, counter) -> {
+            if (counter == null) {
+                return null;
+            }
+            return counter.decrementAndGet() <= 0 ? null : counter;
+        });
     }
 
     /**

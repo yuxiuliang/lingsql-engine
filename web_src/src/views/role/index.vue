@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, reactive, ref} from 'vue';
+import {computed, reactive, ref, watch} from 'vue';
 import {ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
 import {
@@ -204,7 +204,16 @@ const handleRefresh = () => {
   loadRoles();
 };
 
-loadRoles();
+watch(
+  () => activeTenantId.value,
+  () => {
+    dialogVisible.value = false;
+    editingId.value = null;
+    loadRoles();
+  },
+  {immediate: true}
+);
+
 loadPermissions();
 </script>
 
