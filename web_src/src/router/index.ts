@@ -27,6 +27,24 @@ const routes: Array<RouteRecordRaw> = [
                 meta: {title: 'AI 语数对话', icon: 'ChatLineRound'}
             },
             {
+                path: '/history',
+                name: 'ChatHistoryCompat',
+                redirect: '/chat',
+                meta: {title: '问答历史', icon: 'ChatLineRound'}
+            },
+            {
+                path: '/chat-history',
+                name: 'ChatHistoryLegacyCompat',
+                redirect: '/chat',
+                meta: {title: '问答历史', icon: 'ChatLineRound'}
+            },
+            {
+                path: '/chat/history',
+                name: 'ChatHistoryNestedCompat',
+                redirect: '/chat',
+                meta: {title: '问答历史', icon: 'ChatLineRound'}
+            },
+            {
                 path: '/dashboard',
                 name: 'Dashboard',
                 component: () => import('@/views/dashboard/index.vue'),

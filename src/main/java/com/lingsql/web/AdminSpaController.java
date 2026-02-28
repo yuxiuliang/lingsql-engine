@@ -38,6 +38,9 @@ public class AdminSpaController {
             "/login",
             "/layout",
             "/chat",
+            "/history",
+            "/chat-history",
+            "/chat/history",
             "/dashboard",
             "/model",
             "/tenant",
@@ -58,4 +61,3 @@ public class AdminSpaController {
         return FORWARD_ADMIN_INDEX;
     }
 }
-
