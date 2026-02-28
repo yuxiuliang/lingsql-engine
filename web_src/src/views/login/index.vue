@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {onMounted, reactive, ref} from 'vue';
+import {onBeforeUnmount, onMounted, reactive, ref} from 'vue';
 import {useRouter} from 'vue-router';
 import {ElLoading, ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
@@ -135,23 +135,25 @@ interface Meteor {
 const initCanvas = () => {
   const canvas = canvasRef.value;
   if (!canvas) {
-    return;
+    return () => null;
   }
   const ctx = canvas.getContext('2d');
   if (!ctx) {
-    return;
+    return () => null;
   }
   const particles: Particle[] = [];
   const meteors: Meteor[] = [];
   let width = 0;
   let height = 0;
+  let animationId = 0;
 
   const resize = () => {
     width = canvas.clientWidth;
     height = canvas.clientHeight;
-    canvas.width = width * window.devicePixelRatio;
-    canvas.height = height * window.devicePixelRatio;
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   };
 
   const createParticles = () => {
@@ -222,21 +224,34 @@ const initCanvas = () => {
     });
 
     spawnMeteor();
-    requestAnimationFrame(render);
+    animationId = requestAnimationFrame(render);
   };
 
   resize();
   createParticles();
   render();
 
-  window.addEventListener('resize', () => {
+  const handleResize = () => {
     resize();
     createParticles();
-  });
+  };
+  window.addEventListener('resize', handleResize);
+
+  return () => {
+    window.removeEventListener('resize', handleResize);
+    cancelAnimationFrame(animationId);
+  };
 };
 
+let stopCanvas: (() => void) | null = null;
+
 onMounted(() => {
-  initCanvas();
+  stopCanvas = initCanvas();
+});
+
+onBeforeUnmount(() => {
+  stopCanvas?.();
+  stopCanvas = null;
 });
 </script>
 
@@ -316,7 +331,8 @@ onMounted(() => {
 <style scoped>
 .login-page {
   position: relative;
-  height: 100vh;
+  min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
   background: #0b1220;
 }
@@ -349,7 +365,8 @@ onMounted(() => {
 .login-container {
   position: relative;
   z-index: 2;
-  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -487,6 +504,10 @@ onMounted(() => {
 .login-button:hover {
   transform: translateY(-2px);
   box-shadow: 0 16px 30px rgba(64, 158, 255, 0.5);
+}
+
+.login-button:focus-visible {
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.32);
 }
 
 @media (max-width: 900px) {

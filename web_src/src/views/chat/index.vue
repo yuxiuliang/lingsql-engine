@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, nextTick, onMounted, ref, watch} from 'vue';
+import {computed, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {ElMessage, ElMessageBox} from 'element-plus';
 import {
   askQuestion,
@@ -41,6 +41,7 @@ const activeHistoryId = ref<number | null>(null);
 const historyKeyword = ref(chatStore.keyword || '');
 const historyPage = ref(chatStore.page || 1);
 const historySize = ref(chatStore.size || 10);
+const isNarrowScreen = ref(false);
 
 /**
  * 问题最大长度。
@@ -386,6 +387,33 @@ const handlePageChange = async (page: number) => {
   await loadHistory();
 };
 
+/**
+ * 历史记录项键盘交互处理。
+ *
+ * @param event 键盘事件
+ * @param item 历史记录
+ * @author 余炘洋
+ * @date 2026-02-28
+ */
+const handleHistoryItemKeydown = (event: KeyboardEvent, item: ChatHistoryItem) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    loadHistoryDetail(item);
+  }
+};
+
+/**
+ * 同步视口状态。
+ *
+ * @author 余炘洋
+ * @date 2026-02-28
+ */
+const syncViewport = () => {
+  isNarrowScreen.value = window.innerWidth <= 980;
+};
+
+const drawerSize = computed(() => (isNarrowScreen.value ? '90%' : '36%'));
+
 watch(
   () => messages.value.length,
   () => {
@@ -396,6 +424,12 @@ watch(
 onMounted(() => {
   loadHistory();
   loadChatRuntimeConfig();
+  syncViewport();
+  window.addEventListener('resize', syncViewport);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncViewport);
 });
 </script>
 
@@ -426,19 +460,24 @@ onMounted(() => {
           :key="item.id"
           class="history-item"
           :class="{active: item.id === activeHistoryId}"
+          role="button"
+          tabindex="0"
+          :aria-current="item.id === activeHistoryId ? 'true' : 'false'"
+          :aria-label="`打开历史记录：${truncateQuestion(item.question)}`"
           @click="loadHistoryDetail(item)"
+          @keydown="handleHistoryItemKeydown($event, item)"
         >
           <div class="history-text">{{ truncateQuestion(item.question) }}</div>
           <el-tag v-if="isErrorSql(item.sql)" size="small" type="danger" effect="dark">异常</el-tag>
           <div class="history-actions">
-            <button class="icon-button" @click.stop="handleRename(item)" title="重命名">
+            <button class="icon-button" type="button" @click.stop="handleRename(item)" title="重命名" aria-label="重命名历史记录">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M4 17.25V20h2.75L19.81 6.94l-2.75-2.75L4 17.25zm15.71-9.04a1 1 0 0 0 0-1.41l-2.5-2.5a1 1 0 0 0-1.41 0l-1.83 1.83 3.91 3.91 1.83-1.83z"
                 />
               </svg>
             </button>
-            <button class="icon-button danger" @click.stop="handleDelete(item)" title="删除">
+            <button class="icon-button danger" type="button" @click.stop="handleDelete(item)" title="删除" aria-label="删除历史记录">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M6 7h12l-1 13H7L6 7zm3-3h6l1 2H8l1-2z"
@@ -471,7 +510,7 @@ onMounted(() => {
             <div class="bubble-content">{{ message.content }}</div>
 
             <template v-if="message.role === 'assistant' && shouldShowSql(message.sql)">
-              <div class="sql-toggle" @click="openSqlDrawer(message.sql)">查看执行 SQL</div>
+              <button type="button" class="sql-toggle" @click="openSqlDrawer(message.sql)">查看执行 SQL</button>
             </template>
 
             <template v-if="message.role === 'assistant' && message.data && message.data.length">
@@ -521,7 +560,7 @@ onMounted(() => {
         <div class="history-mask-card">正在加载历史记录...</div>
       </div>
 
-      <el-drawer v-model="drawerVisible" direction="rtl" size="36%" :with-header="false">
+      <el-drawer v-model="drawerVisible" direction="rtl" :size="drawerSize" :with-header="false">
         <div class="sql-drawer">
           <div class="sql-drawer-title">执行 SQL</div>
           <pre class="sql-block">{{ drawerSql }}</pre>
@@ -539,7 +578,7 @@ onMounted(() => {
   grid-template-columns: 260px 1fr;
   gap: 16px;
   padding: 14px;
-  background: #f8fafc;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
   border-radius: 16px;
   overflow: hidden;
 }
@@ -633,6 +672,7 @@ onMounted(() => {
 .history-item {
   background: #f8fafc;
   border-radius: 12px;
+  border: 1px solid transparent;
   padding: 10px 12px;
   display: flex;
   align-items: center;
@@ -648,8 +688,14 @@ onMounted(() => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
+.history-item:focus-visible {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.22);
+}
+
 .history-item.active {
   background: rgba(64, 158, 255, 0.12);
+  border-color: rgba(37, 99, 235, 0.32);
 }
 
 .history-text {
@@ -668,6 +714,10 @@ onMounted(() => {
   opacity: 1;
 }
 
+.history-item:focus-within .history-actions {
+  opacity: 1;
+}
+
 .icon-button {
   width: 26px;
   height: 26px;
@@ -679,6 +729,17 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.icon-button:hover {
+  background: #cbd5e1;
+}
+
+.icon-button:focus-visible {
+  background: #dbeafe;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+  transform: translateY(-1px);
 }
 
 .icon-button svg {
@@ -770,10 +831,21 @@ onMounted(() => {
 }
 
 .sql-toggle {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
   margin-top: 10px;
   font-size: 12px;
   color: #2563eb;
   cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sql-toggle:focus-visible {
+  border-radius: 6px;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
 }
 
 .table-section {
@@ -907,10 +979,40 @@ onMounted(() => {
 @media (max-width: 980px) {
   .chat-shell {
     grid-template-columns: 1fr;
+    padding: 10px;
   }
 
   .history-panel {
     order: 2;
+    max-height: 42vh;
+  }
+
+  .chat-panel {
+    order: 1;
+  }
+
+  .history-actions {
+    opacity: 1;
+  }
+
+  .bubble {
+    max-width: 88%;
+  }
+
+  .chat-input-card :deep(.el-card__body) {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .chat-shell {
+    gap: 10px;
+  }
+
+  .history-panel,
+  .chat-panel {
+    border-radius: 12px;
+    padding: 10px;
   }
 }
 </style>

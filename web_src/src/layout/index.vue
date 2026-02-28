@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import {computed, onMounted, ref} from 'vue';
-import {useRouter} from 'vue-router';
+import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import {useRoute, useRouter} from 'vue-router';
 import {useAuthStore} from '@/store/auth';
 import {fetchMenus, fetchProfile, logout as logoutApi} from '@/api/auth';
 import {fetchTenants, TenantView} from '@/api/tenant';
@@ -21,10 +21,31 @@ interface MenuNode {
 }
 
 const router = useRouter();
+const route = useRoute();
 const authStore = useAuthStore();
 const isCollapsed = ref(false);
+const isMobile = ref(false);
+const mobileMenuVisible = ref(false);
 const tenantOptions = ref<TenantView[]>([]);
 const tenantLoading = ref(false);
+
+const ICON_PATHS: Record<string, string> = {
+  chat: 'M4 5h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z',
+  tenant: 'M4 10l8-6 8 6v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9z',
+  metadata: 'M4 4h16v4H4V4zm0 6h16v10H4V10zm4 3h8v2H8v-2z',
+  lexicon: 'M5 4h12a2 2 0 0 1 2 2v12l-4-2-4 2-4-2-4 2V6a2 2 0 0 1 2-2z',
+  join: 'M7 7a4 4 0 0 1 4-4h2v2h-2a2 2 0 0 0-2 2v2H7V7zm8 0a2 2 0 0 0-2-2h-2V3h2a4 4 0 0 1 4 4v2h-2V7zM7 15h2v2a2 2 0 0 0 2 2h2v2h-2a4 4 0 0 1-4-4v-2zm10 0v2a4 4 0 0 1-4 4h-2v-2h2a2 2 0 0 0 2-2v-2h2z',
+  model: 'M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z',
+  user: 'M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.4 0-8 2-8 4v2h16v-2c0-2-3.6-4-8-4z',
+  role: 'M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6l7-4z',
+  permission: 'M7 14a5 5 0 1 1 4.6 3H9v3H7v-6zm4-7a3 3 0 1 0 3 3 3 3 0 0 0-3-3z',
+  audit: 'M6 2h9l5 5v15H6V2zm8 1.5V7h3.5L14 3.5zM8 10h8v2H8v-2zm0 4h8v2H8v-2z',
+  sql: 'M12 2c-4.4 0-8 1.3-8 3v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 .9 6 1s-2.1 1-6 1-6-.9-6-1 2.1-1 6-1zm0 4c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2V7c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2v-3c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v2c0 1.1-2.1 2-6 2s-6-.9-6-2v-2c0 .1 2.1 1 6 1z',
+  dashboard: 'M4 13h4v7H4v-7zm6-6h4v13h-4V7zm6 3h4v10h-4V10z',
+  billing: 'M6 2h12a2 2 0 0 1 2 2v18l-4-2-4 2-4-2-4 2V4a2 2 0 0 1 2-2zm2 5h8v2H8V7zm0 4h8v2H8v-2z',
+  plan: 'M4 4h16v4H4V4zm0 6h16v4H4v-4zm0 6h16v4H4v-4z',
+  default: 'M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z'
+};
 
 /**
  * 判断是否系统管理员。
@@ -171,7 +192,7 @@ const resolveIconType = (icon?: string): string => {
   if (['history'].includes(normalized)) {
     return 'chat';
   }
-  if (['database', 'user', 'officebuilding'].includes(normalized)) {
+  if (['database', 'officebuilding'].includes(normalized)) {
     return 'tenant';
   }
   if (['member', 'account'].includes(normalized)) {
@@ -189,13 +210,13 @@ const resolveIconType = (icon?: string): string => {
   if (['sql-log', 'sqls'].includes(normalized)) {
     return 'sql';
   }
-  if (['dashboard', 'overview', 'console'].includes(normalized)) {
+  if (['overview', 'console'].includes(normalized)) {
     return 'dashboard';
   }
-  if (['billing', 'bill', 'pricing', 'charge'].includes(normalized)) {
+  if (['bill', 'pricing', 'charge'].includes(normalized)) {
     return 'billing';
   }
-  if (['plan', 'package', 'tier'].includes(normalized)) {
+  if (['package', 'tier'].includes(normalized)) {
     return 'plan';
   }
   if (['table', 'notebook'].includes(normalized)) {
@@ -211,6 +232,19 @@ const resolveIconType = (icon?: string): string => {
     return 'model';
   }
   return 'default';
+};
+
+/**
+ * 解析图标路径。
+ *
+ * @param icon 原始图标
+ * @return SVG 路径
+ * @author 余炘洋
+ * @date 2026-02-28
+ */
+const resolveIconPath = (icon?: string): string => {
+  const iconType = resolveIconType(icon);
+  return ICON_PATHS[iconType] || ICON_PATHS.default;
 };
 
 /**
@@ -236,6 +270,50 @@ const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value;
 };
 
+/**
+ * 同步移动端视口状态。
+ *
+ * @author 余炘洋
+ * @date 2026-02-28
+ */
+const syncViewport = () => {
+  isMobile.value = window.innerWidth <= 980;
+  if (!isMobile.value) {
+    mobileMenuVisible.value = false;
+  }
+};
+
+/**
+ * 切换移动端导航显隐。
+ *
+ * @author 余炘洋
+ * @date 2026-02-28
+ */
+const toggleMobileMenu = () => {
+  mobileMenuVisible.value = !mobileMenuVisible.value;
+};
+
+/**
+ * 菜单选择后收起移动端导航。
+ *
+ * @author 余炘洋
+ * @date 2026-02-28
+ */
+const handleMenuSelect = () => {
+  if (isMobile.value) {
+    mobileMenuVisible.value = false;
+  }
+};
+
+watch(
+  () => route.path,
+  () => {
+    if (isMobile.value) {
+      mobileMenuVisible.value = false;
+    }
+  }
+);
+
 onMounted(loadMenus);
 onMounted(() => {
   if (!isSysAdmin.value && authStore.tenantId && !authStore.activeTenantId) {
@@ -243,18 +321,47 @@ onMounted(() => {
   }
 });
 onMounted(loadTenants);
+onMounted(() => {
+  syncViewport();
+  window.addEventListener('resize', syncViewport);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncViewport);
+});
 </script>
 
 <template>
   <el-container class="layout">
-    <el-aside :width="isCollapsed ? '76px' : '240px'" class="layout-aside" :class="{collapsed: isCollapsed}">
-      <div class="logo" :class="{collapsed: isCollapsed}">
+    <div
+      v-if="isMobile && mobileMenuVisible"
+      class="mobile-backdrop"
+      role="button"
+      tabindex="0"
+      aria-label="关闭导航菜单"
+      @click="mobileMenuVisible = false"
+      @keydown.enter.prevent="mobileMenuVisible = false"
+      @keydown.space.prevent="mobileMenuVisible = false"
+    ></div>
+
+    <el-aside
+      :width="isCollapsed && !isMobile ? '76px' : '240px'"
+      class="layout-aside"
+      :class="{collapsed: isCollapsed && !isMobile, 'mobile-visible': mobileMenuVisible}"
+    >
+      <div class="logo" :class="{collapsed: isCollapsed && !isMobile}">
         <div class="logo-icon">语</div>
-        <div v-if="!isCollapsed" class="logo-text">
+        <div v-if="!isCollapsed || isMobile" class="logo-text">
           <div class="logo-title">语数</div>
           <div class="logo-sub">lingsql-engine</div>
         </div>
-        <button class="collapse-button" @click="toggleCollapse" :title="isCollapsed ? '展开' : '收起'">
+        <button
+          v-if="!isMobile"
+          class="collapse-button"
+          :title="isCollapsed ? '展开' : '收起'"
+          :aria-label="isCollapsed ? '展开侧边栏' : '收起侧边栏'"
+          @click="toggleCollapse"
+        >
           <span class="collapse-line"></span>
           <span class="collapse-line"></span>
           <span class="collapse-line"></span>
@@ -264,62 +371,19 @@ onMounted(loadTenants);
         router
         class="menu"
         :default-active="$route.path"
-        background-color="#334155"
+        background-color="#1e293b"
         text-color="#e2e8f0"
         active-text-color="#ffffff"
-        :collapse="isCollapsed"
+        :collapse="isCollapsed && !isMobile"
         :collapse-transition="false"
+        @select="handleMenuSelect"
       >
         <template v-for="menu in menuTree" :key="menu.menuCode || menu.path">
           <el-sub-menu v-if="menu.children && menu.children.length" :index="menu.path || menu.menuCode || ''">
             <template #title>
               <el-icon class="menu-icon">
-                <svg v-if="resolveIconType(menu.icon) === 'chat'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M4 5h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"
-                  />
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'tenant'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 10l8-6 8 6v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'metadata'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 4h16v4H4V4zm0 6h16v10H4V10zm4 3h8v2H8v-2z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'lexicon'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M5 4h12a2 2 0 0 1 2 2v12l-4-2-4 2-4-2-4 2V6a2 2 0 0 1 2-2z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'join'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M7 7a4 4 0 0 1 4-4h2v2h-2a2 2 0 0 0-2 2v2H7V7zm8 0a2 2 0 0 0-2-2h-2V3h2a4 4 0 0 1 4 4v2h-2V7zM7 15h2v2a2 2 0 0 0 2 2h2v2h-2a4 4 0 0 1-4-4v-2zm10 0v2a4 4 0 0 1-4 4h-2v-2h2a2 2 0 0 0 2-2v-2h2z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'model'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'user'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.4 0-8 2-8 4v2h16v-2c0-2-3.6-4-8-4z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'role'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6l7-4z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'permission'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M7 14a5 5 0 1 1 4.6 3H9v3H7v-6zm4-7a3 3 0 1 0 3 3 3 3 0 0 0-3-3z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'audit'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M6 2h9l5 5v15H6V2zm8 1.5V7h3.5L14 3.5zM8 10h8v2H8v-2zm0 4h8v2H8v-2z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'sql'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 2c-4.4 0-8 1.3-8 3v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 .9 6 1s-2.1 1-6 1-6-.9-6-1 2.1-1 6-1zm0 4c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2V7c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2v-3c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v2c0 1.1-2.1 2-6 2s-6-.9-6-2v-2c0 .1 2.1 1 6 1z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'dashboard'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 13h4v7H4v-7zm6-6h4v13h-4V7zm6 3h4v10h-4V10z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'billing'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M6 2h12a2 2 0 0 1 2 2v18l-4-2-4 2-4-2-4 2V4a2 2 0 0 1 2-2zm2 5h8v2H8V7zm0 4h8v2H8v-2z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(menu.icon) === 'plan'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 4h16v4H4V4zm0 6h16v4H4v-4zm0 6h16v4H4v-4z"/>
-                </svg>
-                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path :d="resolveIconPath(menu.icon)"/>
                 </svg>
               </el-icon>
               <span class="menu-label">{{ menu.menuName }}</span>
@@ -331,52 +395,8 @@ onMounted(loadTenants);
               :title="child.menuName"
             >
               <el-icon class="menu-icon">
-                <svg v-if="resolveIconType(child.icon) === 'chat'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M4 5h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"
-                  />
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'tenant'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 10l8-6 8 6v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'metadata'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 4h16v4H4V4zm0 6h16v10H4V10zm4 3h8v2H8v-2z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'lexicon'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M5 4h12a2 2 0 0 1 2 2v12l-4-2-4 2-4-2-4 2V6a2 2 0 0 1 2-2z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'join'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M7 7a4 4 0 0 1 4-4h2v2h-2a2 2 0 0 0-2 2v2H7V7zm8 0a2 2 0 0 0-2-2h-2V3h2a4 4 0 0 1 4 4v2h-2V7zM7 15h2v2a2 2 0 0 0 2 2h2v2h-2a4 4 0 0 1-4-4v-2zm10 0v2a4 4 0 0 1-4 4h-2v-2h2a2 2 0 0 0 2-2v-2h2z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'model'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'user'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.4 0-8 2-8 4v2h16v-2c0-2-3.6-4-8-4z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'role'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6l7-4z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'permission'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M7 14a5 5 0 1 1 4.6 3H9v3H7v-6zm4-7a3 3 0 1 0 3 3 3 3 0 0 0-3-3z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'audit'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M6 2h9l5 5v15H6V2zm8 1.5V7h3.5L14 3.5zM8 10h8v2H8v-2zm0 4h8v2H8v-2z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'sql'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 2c-4.4 0-8 1.3-8 3v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 .9 6 1s-2.1 1-6 1-6-.9-6-1 2.1-1 6-1zm0 4c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2V7c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2v-3c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v2c0 1.1-2.1 2-6 2s-6-.9-6-2v-2c0 .1 2.1 1 6 1z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'dashboard'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 13h4v7H4v-7zm6-6h4v13h-4V7zm6 3h4v10h-4V10z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'billing'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M6 2h12a2 2 0 0 1 2 2v18l-4-2-4 2-4-2-4 2V4a2 2 0 0 1 2-2zm2 5h8v2H8V7zm0 4h8v2H8v-2z"/>
-                </svg>
-                <svg v-else-if="resolveIconType(child.icon) === 'plan'" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 4h16v4H4V4zm0 6h16v4H4v-4zm0 6h16v4H4v-4z"/>
-                </svg>
-                <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path :d="resolveIconPath(child.icon)"/>
                 </svg>
               </el-icon>
               <span class="menu-label">{{ child.menuName }}</span>
@@ -384,69 +404,37 @@ onMounted(loadTenants);
           </el-sub-menu>
           <el-menu-item v-else :index="menu.path || ''" :title="menu.menuName">
             <el-icon class="menu-icon">
-              <svg v-if="resolveIconType(menu.icon) === 'chat'" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M4 5h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"
-                />
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'tenant'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 10l8-6 8 6v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9z"/>
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'metadata'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 4h16v4H4V4zm0 6h16v10H4V10zm4 3h8v2H8v-2z"/>
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'lexicon'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M5 4h12a2 2 0 0 1 2 2v12l-4-2-4 2-4-2-4 2V6a2 2 0 0 1 2-2z"/>
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'join'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M7 7a4 4 0 0 1 4-4h2v2h-2a2 2 0 0 0-2 2v2H7V7zm8 0a2 2 0 0 0-2-2h-2V3h2a4 4 0 0 1 4 4v2h-2V7zM7 15h2v2a2 2 0 0 0 2 2h2v2h-2a4 4 0 0 1-4-4v-2zm10 0v2a4 4 0 0 1-4 4h-2v-2h2a2 2 0 0 0 2-2v-2h2z"/>
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'model'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'user'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.4 0-8 2-8 4v2h16v-2c0-2-3.6-4-8-4z"/>
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'role'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 2l7 4v6c0 5-3.5 9-7 10-3.5-1-7-5-7-10V6l7-4z"/>
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'permission'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M7 14a5 5 0 1 1 4.6 3H9v3H7v-6zm4-7a3 3 0 1 0 3 3 3 3 0 0 0-3-3z"/>
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'audit'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M6 2h9l5 5v15H6V2zm8 1.5V7h3.5L14 3.5zM8 10h8v2H8v-2zm0 4h8v2H8v-2z"/>
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'sql'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 2c-4.4 0-8 1.3-8 3v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5c0-1.7-3.6-3-8-3zm0 2c3.9 0 6 .9 6 1s-2.1 1-6 1-6-.9-6-1 2.1-1 6-1zm0 4c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2V7c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v3c0 1.1-2.1 2-6 2s-6-.9-6-2v-3c0 .1 2.1 1 6 1zm0 5c3.9 0 6-.9 6-1v2c0 1.1-2.1 2-6 2s-6-.9-6-2v-2c0 .1 2.1 1 6 1z"/>
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'dashboard'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 13h4v7H4v-7zm6-6h4v13h-4V7zm6 3h4v10h-4V10z"/>
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'billing'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M6 2h12a2 2 0 0 1 2 2v18l-4-2-4 2-4-2-4 2V4a2 2 0 0 1 2-2zm2 5h8v2H8V7zm0 4h8v2H8v-2z"/>
-              </svg>
-              <svg v-else-if="resolveIconType(menu.icon) === 'plan'" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 4h16v4H4V4zm0 6h16v4H4v-4zm0 6h16v4H4v-4z"/>
-              </svg>
-              <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z"/>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="resolveIconPath(menu.icon)"/>
               </svg>
             </el-icon>
             <span class="menu-label">{{ menu.menuName }}</span>
           </el-menu-item>
         </template>
       </el-menu>
-      <div class="sidebar-footer" :class="{collapsed: isCollapsed}">
+      <div class="sidebar-footer" :class="{collapsed: isCollapsed && !isMobile}">
         <div class="avatar-circle">{{ avatarText }}</div>
-        <div v-if="!isCollapsed" class="user-info">
+        <div v-if="!isCollapsed || isMobile" class="user-info">
           <div class="user-name">{{ authStore.nickname || authStore.username || '未命名用户' }}</div>
           <div class="user-role">租户：{{ currentTenantName || '未设置' }}</div>
         </div>
       </div>
     </el-aside>
-    <el-container>
+
+    <el-container class="layout-content">
       <el-header class="layout-header">
         <div class="header-left">
+          <button
+            v-if="isMobile"
+            class="mobile-menu-button"
+            aria-label="打开导航菜单"
+            title="打开导航菜单"
+            @click="toggleMobileMenu"
+          >
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
           <span class="header-title">管理控制台</span>
         </div>
         <div class="header-right">
@@ -485,16 +473,23 @@ onMounted(loadTenants);
 
 <style scoped>
 .layout {
-  height: 100vh;
-  background: #f8fafc;
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: transparent;
+}
+
+.layout-content {
+  min-width: 0;
 }
 
 .layout-aside {
-  background: linear-gradient(180deg, #334155 0%, #475569 100%);
+  background: linear-gradient(180deg, #1e293b 0%, #334155 100%);
   color: #fff;
   display: flex;
   flex-direction: column;
   transition: width 0.2s ease;
+  z-index: 1300;
 }
 
 .logo {
@@ -514,7 +509,7 @@ onMounted(loadTenants);
   width: 38px;
   height: 38px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #409EFF 0%, #66B1FF 100%);
+  background: linear-gradient(140deg, #3b82f6 0%, #0ea5e9 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -522,7 +517,7 @@ onMounted(loadTenants);
   font-weight: 700;
   letter-spacing: 1px;
   color: #fff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.24);
 }
 
 .logo-text {
@@ -537,7 +532,7 @@ onMounted(loadTenants);
 
 .logo-sub {
   font-size: 12px;
-  opacity: 0.7;
+  opacity: 0.72;
   margin-top: 4px;
 }
 
@@ -580,13 +575,6 @@ onMounted(loadTenants);
   overflow-y: auto;
 }
 
-.menu-group-title {
-  padding: 4px 20px 8px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
-  letter-spacing: 1px;
-}
-
 .menu-icon {
   width: 18px;
   height: 18px;
@@ -602,7 +590,8 @@ onMounted(loadTenants);
   fill: currentColor;
 }
 
-.menu :deep(.el-menu-item) {
+.menu :deep(.el-menu-item),
+.menu :deep(.el-sub-menu__title) {
   height: 44px;
   line-height: 44px;
   margin: 4px 12px;
@@ -612,15 +601,17 @@ onMounted(loadTenants);
 }
 
 .menu :deep(.el-menu-item.is-active) {
-  background: rgba(64, 158, 255, 0.18);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  background: rgba(37, 99, 235, 0.22);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.18);
 }
 
-.menu :deep(.el-menu-item:hover) {
-  background: rgba(255, 255, 255, 0.08);
+.menu :deep(.el-menu-item:hover),
+.menu :deep(.el-sub-menu__title:hover) {
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.layout-aside.collapsed .menu :deep(.el-menu-item) {
+.layout-aside.collapsed .menu :deep(.el-menu-item),
+.layout-aside.collapsed .menu :deep(.el-sub-menu__title) {
   margin: 4px 10px;
   justify-content: center;
 }
@@ -630,15 +621,12 @@ onMounted(loadTenants);
   display: inline-flex !important;
 }
 
-.layout-aside.collapsed .menu :deep(.el-menu-item .menu-icon) {
-  display: inline-flex !important;
-}
-
 .layout-aside.collapsed .menu-label {
   display: none;
 }
 
-.menu :deep(.el-menu--collapse .el-menu-item .menu-icon) {
+.menu :deep(.el-menu--collapse .el-menu-item .menu-icon),
+.menu :deep(.el-menu--collapse .el-sub-menu__title .menu-icon) {
   display: inline-flex !important;
 }
 
@@ -673,7 +661,7 @@ onMounted(loadTenants);
 
 .user-role {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.72);
   margin-top: 4px;
 }
 
@@ -681,16 +669,44 @@ onMounted(loadTenants);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fff;
-  border-bottom: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid #e2e8f0;
   padding: 0 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .header-title {
   font-size: 16px;
   font-weight: 600;
-  color: #111827;
+  color: #0f172a;
+}
+
+.mobile-menu-button {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.mobile-menu-button span {
+  width: 14px;
+  height: 2px;
+  background: #1e293b;
+  border-radius: 2px;
+  margin: 0 auto;
 }
 
 .header-right {
@@ -701,7 +717,7 @@ onMounted(loadTenants);
 
 .layout-header .user-name {
   font-size: 13px;
-  color: #374151;
+  color: #334155;
 }
 
 .sidebar-footer .user-name {
@@ -711,8 +727,8 @@ onMounted(loadTenants);
 
 .tenant-tag {
   border: none;
-  color: #475569;
-  background: #f1f5f9;
+  color: #334155;
+  background: #e2e8f0;
 }
 
 .tenant-selector {
@@ -720,9 +736,65 @@ onMounted(loadTenants);
 }
 
 .layout-main {
-  padding: 20px;
-  height: 100%;
+  padding: 16px;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
+}
+
+.mobile-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.45);
+  z-index: 1200;
+}
+
+@media (max-width: 1200px) {
+  .layout-header .user-name {
+    display: none;
+  }
+}
+
+@media (max-width: 980px) {
+  .layout {
+    overflow: hidden;
+  }
+
+  .layout-aside {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 240px !important;
+    transform: translateX(-105%);
+    transition: transform 0.2s ease;
+    box-shadow: 0 14px 30px rgba(2, 6, 23, 0.4);
+  }
+
+  .layout-aside.mobile-visible {
+    transform: translateX(0);
+  }
+
+  .layout-header {
+    padding: 0 12px;
+  }
+
+  .header-right {
+    gap: 6px;
+  }
+
+  .tenant-selector {
+    width: 150px;
+  }
+
+  .layout-main {
+    padding: 10px;
+  }
+}
+
+@media (max-width: 640px) {
+  .tenant-selector,
+  .tenant-tag {
+    display: none;
+  }
 }
 </style>

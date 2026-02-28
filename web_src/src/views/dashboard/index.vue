@@ -58,8 +58,10 @@ onMounted(loadDashboard);
 
 <template>
   <div class="page">
-    <div class="page-title">仪表盘</div>
-    <div class="page-desc">概览租户活跃度、模型成本与问答质量趋势。</div>
+    <div class="header-block">
+      <div class="page-title">仪表盘</div>
+      <div class="page-desc">概览租户活跃度、模型成本与问答质量趋势。</div>
+    </div>
 
     <el-card class="card" shadow="never">
       <div class="toolbar">
@@ -92,44 +94,54 @@ onMounted(loadDashboard);
 
     <el-card class="card" shadow="never">
       <div class="section-title">准确率趋势</div>
-      <el-table :data="accuracyTrend" border v-loading="loading">
-        <el-table-column prop="date" label="日期" min-width="140"/>
-        <el-table-column prop="accuracy" label="准确率(%)" min-width="120"/>
-        <el-table-column prop="positiveCount" label="好评数" min-width="120"/>
-        <el-table-column prop="totalCount" label="评价总数" min-width="120"/>
-      </el-table>
+      <div class="table-wrap">
+        <el-table :data="accuracyTrend" border v-loading="loading">
+          <el-table-column prop="date" label="日期" min-width="140"/>
+          <el-table-column prop="accuracy" label="准确率(%)" min-width="120"/>
+          <el-table-column prop="positiveCount" label="好评数" min-width="120"/>
+          <el-table-column prop="totalCount" label="评价总数" min-width="120"/>
+        </el-table>
+      </div>
     </el-card>
 
     <el-card class="card" shadow="never">
       <div class="section-title">Top 问题消耗</div>
-      <el-table :data="topQuestions" border v-loading="loading">
-        <el-table-column prop="question" label="问题" min-width="240"/>
-        <el-table-column prop="totalTokens" label="Token总量" min-width="120"/>
-        <el-table-column prop="totalCost" label="成本" min-width="120"/>
-        <el-table-column prop="totalCount" label="调用次数" min-width="120"/>
-        <el-table-column label="穿透" width="120">
-          <template #default="scope">
-            <el-button size="small" @click="handleTopQuestionClick(scope.row.question)">查看日志</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <div class="table-wrap">
+        <el-table :data="topQuestions" border v-loading="loading">
+          <el-table-column prop="question" label="问题" min-width="240"/>
+          <el-table-column prop="totalTokens" label="Token总量" min-width="120"/>
+          <el-table-column prop="totalCost" label="成本" min-width="120"/>
+          <el-table-column prop="totalCount" label="调用次数" min-width="120"/>
+          <el-table-column label="穿透" width="120">
+            <template #default="scope">
+              <el-button size="small" @click="handleTopQuestionClick(scope.row.question)">查看日志</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
     </el-card>
 
     <el-card class="card" shadow="never">
       <div class="section-title">模型成本分布</div>
-      <el-table :data="tokenCostStats" border v-loading="loading">
-        <el-table-column prop="modelName" label="模型" min-width="160"/>
-        <el-table-column prop="totalTokens" label="Token总量" min-width="120"/>
-        <el-table-column prop="totalCost" label="成本" min-width="120"/>
-        <el-table-column prop="totalCount" label="调用次数" min-width="120"/>
-      </el-table>
+      <div class="table-wrap">
+        <el-table :data="tokenCostStats" border v-loading="loading">
+          <el-table-column prop="modelName" label="模型" min-width="160"/>
+          <el-table-column prop="totalTokens" label="Token总量" min-width="120"/>
+          <el-table-column prop="totalCost" label="成本" min-width="120"/>
+          <el-table-column prop="totalCount" label="调用次数" min-width="120"/>
+        </el-table>
+      </div>
     </el-card>
   </div>
 </template>
 
 <style scoped>
 .page {
-  padding: 24px;
+  padding: 6px;
+}
+
+.header-block {
+  margin-bottom: 12px;
 }
 
 .page-title {
@@ -140,12 +152,14 @@ onMounted(loadDashboard);
 
 .page-desc {
   color: #64748b;
-  margin-bottom: 16px;
+  margin-top: 4px;
 }
 
 .card {
-  border-radius: 12px;
+  border-radius: 14px;
   margin-bottom: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
 }
 
 .toolbar {
@@ -170,13 +184,14 @@ onMounted(loadDashboard);
 }
 
 .summary-card {
-  background: #f8fafc;
+  background: linear-gradient(180deg, #f8fafc 0%, #eff6ff 100%);
   border-radius: 12px;
   padding: 16px;
+  border: 1px solid #e2e8f0;
 }
 
 .summary-label {
-  color: #64748b;
+  color: #475569;
   font-size: 13px;
 }
 
@@ -190,5 +205,47 @@ onMounted(loadDashboard);
   font-size: 16px;
   font-weight: 600;
   margin-bottom: 12px;
+  color: #0f172a;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.table-wrap :deep(.el-table) {
+  min-width: 620px;
+}
+
+@media (max-width: 900px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .summary-card {
+    padding: 12px;
+  }
+
+  .summary-value {
+    font-size: 20px;
+  }
+
+  .toolbar-left {
+    width: 100%;
+  }
+
+  .toolbar-left :deep(.el-input-number) {
+    max-width: 180px;
+  }
+}
+
+@media (max-width: 640px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section-title {
+    font-size: 15px;
+  }
 }
 </style>
