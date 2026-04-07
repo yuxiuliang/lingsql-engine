@@ -47,4 +47,12 @@ public class ChatResult {
      * @date 2026-01-23
      */
     private Long historyId;
+
+    /**
+     * 执行轨迹。
+     *
+     * @author 余炘洋
+     * @date 2026-04-07
+     */
+    private List<ChatTraceStep> trace;
 }

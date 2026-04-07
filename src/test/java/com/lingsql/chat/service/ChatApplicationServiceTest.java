@@ -3,6 +3,7 @@ package com.lingsql.chat.service;
 import com.lingsql.chat.entity.ChatHistory;
 import com.lingsql.chat.model.ChatRequest;
 import com.lingsql.chat.model.ChatResult;
+import com.lingsql.chat.model.ChatTraceStep;
 import com.lingsql.context.SessionInfo;
 import com.lingsql.context.TenantContext;
 import com.lingsql.executor.ResultRefiner;
@@ -41,13 +42,14 @@ class ChatApplicationServiceTest {
         when(sqlExecutor.execute("TENANT_A", "查销售额", "WEB"))
                 .thenReturn(SqlExecutionResult.failure(
                         "SELECT * FROM t_order",
-                        "Communications link failure: connect timed out"
+                        "Communications link failure: connect timed out",
+                        List.of(new ChatTraceStep("OBSERVATION", "首轮执行失败", "系统已触发安全失败提示。", "FAILURE", 1))
                 ));
         when(resultRefiner.refine(anyString(), any(SqlExecutionResult.class))).thenReturn("请稍后重试");
 
         ChatHistory history = new ChatHistory();
         history.setId(99L);
-        when(chatHistoryService.saveHistory(anyString(), anyLong(), anyString(), anyString(), anyString(), any()))
+        when(chatHistoryService.saveHistory(anyString(), anyLong(), anyString(), anyString(), anyString(), any(), any()))
                 .thenReturn(history);
 
         ChatApplicationService service = new ChatApplicationService(
@@ -65,6 +67,7 @@ class ChatApplicationServiceTest {
         assertNotNull(result);
         assertEquals("ERROR:SQL 执行失败，请检查查询条件", result.getSql());
         assertEquals(99L, result.getHistoryId());
+        assertEquals(1, result.getTrace().size());
         verify(chatMemoryService, never()).saveSuccessExchange(anyString(), anyString(), anyString(), anyString(), any());
 
         ArgumentCaptor<SqlExecutionResult> resultCaptor = ArgumentCaptor.forClass(SqlExecutionResult.class);
@@ -72,4 +75,3 @@ class ChatApplicationServiceTest {
         assertEquals("SQL 执行失败，请检查查询条件", resultCaptor.getValue().getErrorMessage());
     }
 }
-

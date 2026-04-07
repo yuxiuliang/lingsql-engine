@@ -21,6 +21,21 @@ export interface ChatResult {
   data: Array<Record<string, unknown>>;
   sql: string;
   historyId?: number;
+  trace?: ChatTraceStep[];
+}
+
+/**
+ * 问答执行轨迹步骤定义。
+ *
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+export interface ChatTraceStep {
+  type: string;
+  title: string;
+  content: string;
+  status: string;
+  attempt?: number;
 }
 
 /**
@@ -63,6 +78,7 @@ export interface ChatHistoryDetail {
   answer: string;
   sql?: string;
   data: Array<Record<string, unknown>>;
+  trace?: ChatTraceStep[];
   createTime?: string;
 }
 

@@ -20,6 +20,7 @@ public class ChatHistoryDetailView {
     private String answer;
     private String sql;
     private List<Map<String, Object>> data;
+    private List<ChatTraceStep> trace;
     private LocalDateTime createTime;
 }
 

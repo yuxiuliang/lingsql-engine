@@ -1,9 +1,9 @@
 package com.lingsql.chat.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.chat.entity.ChatHistory;
 import com.lingsql.chat.model.ChatHistoryDetailView;
+import com.lingsql.chat.model.ChatTraceStep;
 import com.lingsql.chat.model.ChatHistoryView;
 import com.lingsql.chat.repository.ChatHistoryRepository;
 import com.lingsql.common.exception.BizException;
@@ -47,6 +47,7 @@ public class ChatHistoryService {
     private final StringRedisTemplate stringRedisTemplate;
     private final LingSqlProperties properties;
     private final PageParamResolver pageParamResolver;
+    private final ChatHistoryPayloadCodec chatHistoryPayloadCodec;
 
     /**
      * 保存历史记录。
@@ -60,7 +61,15 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    public ChatHistory saveHistory(String tenantId, Long userId, String question, String answer, String sqlText, List<Map<String, Object>> data) {
+    public ChatHistory saveHistory(
+            String tenantId,
+            Long userId,
+            String question,
+            String answer,
+            String sqlText,
+            List<Map<String, Object>> data,
+            List<ChatTraceStep> trace
+    ) {
         ChatHistory history = new ChatHistory();
         history.setTenantId(tenantId);
         history.setUserId(userId);
@@ -69,7 +78,7 @@ public class ChatHistoryService {
         history.setSqlText(sqlText);
         history.setStatus(sqlText != null && sqlText.startsWith("ERROR:") ? 0 : 1);
         history.setCreateTime(LocalDateTime.now());
-        history.setDataJson(toJson(data));
+        history.setDataJson(chatHistoryPayloadCodec.encode(data, trace));
         ChatHistory saved = chatHistoryRepository.save(history);
         evictListCache(tenantId, userId);
         cacheDetail(tenantId, userId, saved);
@@ -180,47 +189,6 @@ public class ChatHistoryService {
     }
 
     /**
-     * 将数据序列化为 JSON。
-     *
-     * @param data 数据
-     * @return JSON
-     * @author 余炘洋
-     * @date 2026-01-23
-     */
-    private String toJson(List<Map<String, Object>> data) {
-        if (data == null || data.isEmpty()) {
-            return "[]";
-        }
-        try {
-            return objectMapper.writeValueAsString(data);
-        } catch (Exception ex) {
-            log.warn("历史记录数据序列化失败: {}", ex.getMessage());
-            return "[]";
-        }
-    }
-
-    /**
-     * 解析 JSON 数据。
-     *
-     * @param json JSON 字符串
-     * @return 数据列表
-     * @author 余炘洋
-     * @date 2026-01-23
-     */
-    private List<Map<String, Object>> fromJson(String json) {
-        if (json == null || json.isBlank()) {
-            return Collections.emptyList();
-        }
-        try {
-            return objectMapper.readValue(json, new TypeReference<List<Map<String, Object>>>() {
-            });
-        } catch (Exception ex) {
-            log.warn("历史记录数据解析失败: {}", ex.getMessage());
-            return Collections.emptyList();
-        }
-    }
-
-    /**
      * 序列化列表缓存。
      *
      * @param tenantId 租户标识
@@ -247,7 +215,7 @@ public class ChatHistoryService {
      */
     private PageResult<ChatHistoryView> fromJsonPage(String json) {
         try {
-            return objectMapper.readValue(json, new TypeReference<PageResult<ChatHistoryView>>() {
+            return objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<PageResult<ChatHistoryView>>() {
             });
         } catch (Exception ex) {
             log.warn("历史列表缓存解析失败: {}", ex.getMessage());
@@ -283,7 +251,7 @@ public class ChatHistoryService {
      */
     private ChatHistoryDetailView fromJsonDetail(String json) {
         try {
-            return objectMapper.readValue(json, new TypeReference<ChatHistoryDetailView>() {
+            return objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<ChatHistoryDetailView>() {
             });
         } catch (Exception ex) {
             log.warn("历史详情缓存解析失败: {}", ex.getMessage());
@@ -305,7 +273,8 @@ public class ChatHistoryService {
         view.setQuestion(history.getQuestion());
         view.setAnswer(history.getAnswer());
         view.setSql(history.getSqlText());
-        view.setData(fromJson(history.getDataJson()));
+        view.setData(chatHistoryPayloadCodec.decodeData(history.getDataJson()));
+        view.setTrace(chatHistoryPayloadCodec.decodeTrace(history.getDataJson()));
         view.setCreateTime(history.getCreateTime());
         return view;
     }

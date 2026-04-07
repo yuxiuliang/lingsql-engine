@@ -6,6 +6,7 @@ import {
   ChatHistoryDetail,
   ChatHistoryItem,
   ChatResult,
+  ChatTraceStep,
   deleteChatHistory,
   fetchChatHistory,
   fetchChatHistoryDetail,
@@ -26,6 +27,7 @@ interface ChatMessage {
   content: string;
   sql?: string;
   data?: Array<Record<string, unknown>>;
+  trace?: ChatTraceStep[];
 }
 
 const chatStore = useChatStore();
@@ -43,6 +45,7 @@ const historyPage = ref(chatStore.page || 1);
 const historySize = ref(chatStore.size || 10);
 const isNarrowScreen = ref(false);
 const historyRequestSeq = ref(0);
+const expandedTraceMessageIds = ref<number[]>([]);
 
 /**
  * 问题最大长度。
@@ -139,6 +142,204 @@ const openSqlDrawer = (sql?: string) => {
 };
 
 /**
+ * 判断是否存在执行轨迹。
+ *
+ * @param trace 执行轨迹
+ * @return 是否存在
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const shouldShowTrace = (trace?: ChatTraceStep[]) => {
+  return !!trace && trace.length > 0;
+};
+
+/**
+ * 判断是否触发自愈重试。
+ *
+ * @param trace 执行轨迹
+ * @return 是否触发
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const hasSelfHealing = (trace?: ChatTraceStep[]) => {
+  return (trace || []).some((step) => (step.attempt || 1) > 1);
+};
+
+/**
+ * 判断轨迹是否展开。
+ *
+ * @param messageId 消息ID
+ * @return 是否展开
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const isTraceExpanded = (messageId: number) => {
+  return expandedTraceMessageIds.value.includes(messageId);
+};
+
+/**
+ * 展开执行轨迹。
+ *
+ * @param messageId 消息ID
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const expandTrace = (messageId: number) => {
+  if (isTraceExpanded(messageId)) {
+    return;
+  }
+  expandedTraceMessageIds.value = [...expandedTraceMessageIds.value, messageId];
+};
+
+/**
+ * 切换执行轨迹面板。
+ *
+ * @param messageId 消息ID
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const toggleTrace = (messageId: number) => {
+  if (isTraceExpanded(messageId)) {
+    expandedTraceMessageIds.value = expandedTraceMessageIds.value.filter((id) => id !== messageId);
+    return;
+  }
+  expandTrace(messageId);
+};
+
+/**
+ * 获取最终轨迹步骤。
+ *
+ * @param trace 执行轨迹
+ * @return 最终步骤
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const resolveFinalTraceStep = (trace?: ChatTraceStep[]) => {
+  return [...(trace || [])].reverse().find((step) => step.type === 'FINAL');
+};
+
+/**
+ * 解析轨迹摘要。
+ *
+ * @param trace 执行轨迹
+ * @return 摘要文本
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const resolveTraceSummary = (trace?: ChatTraceStep[]) => {
+  if (!shouldShowTrace(trace)) {
+    return '';
+  }
+  if (hasSelfHealing(trace)) {
+    const finalStep = resolveFinalTraceStep(trace);
+    return finalStep?.status === 'SUCCESS' ? '已自愈' : '已重试';
+  }
+  return '首轮完成';
+};
+
+/**
+ * 解析轨迹面板副标题。
+ *
+ * @param trace 执行轨迹
+ * @return 副标题
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const resolveTraceCaption = (trace?: ChatTraceStep[]) => {
+  if (!shouldShowTrace(trace)) {
+    return '';
+  }
+  return hasSelfHealing(trace) ? '包含一次自动纠错流程' : '首轮链路已直接完成';
+};
+
+/**
+ * 解析步骤类型标签。
+ *
+ * @param type 步骤类型
+ * @return 标签
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const resolveTraceTypeLabel = (type?: string) => {
+  if (type === 'THOUGHT') {
+    return '思考';
+  }
+  if (type === 'ACTION') {
+    return '行动';
+  }
+  if (type === 'OBSERVATION') {
+    return '观察';
+  }
+  if (type === 'FINAL') {
+    return '结果';
+  }
+  return '轨迹';
+};
+
+/**
+ * 解析步骤状态标签。
+ *
+ * @param status 状态
+ * @return 标签
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const resolveTraceStatusLabel = (status?: string) => {
+  if (status === 'SUCCESS') {
+    return '完成';
+  }
+  if (status === 'FAILURE') {
+    return '异常';
+  }
+  return '处理中';
+};
+
+/**
+ * 解析步骤状态样式类。
+ *
+ * @param status 状态
+ * @return 样式类
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const resolveTraceStatusClass = (status?: string) => {
+  if (status === 'FAILURE') {
+    return 'failure';
+  }
+  if (status === 'SUCCESS') {
+    return 'success';
+  }
+  return 'info';
+};
+
+/**
+ * 解析步骤类型样式类。
+ *
+ * @param type 类型
+ * @return 样式类
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const resolveTraceTypeClass = (type?: string) => {
+  return (type || 'TRACE').toLowerCase();
+};
+
+/**
+ * 解析轮次标签。
+ *
+ * @param attempt 轮次
+ * @return 标签
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+const resolveAttemptLabel = (attempt?: number) => {
+  if (!attempt || attempt <= 1) {
+    return '首轮';
+  }
+  return `纠错第${attempt}轮`;
+};
+
+/**
  * 解析表格列名。
  *
  * @param rows 数据行
@@ -202,6 +403,7 @@ const startNewChat = () => {
   historyRequestSeq.value += 1;
   historyLoading.value = false;
   messages.value = [];
+  expandedTraceMessageIds.value = [];
   question.value = '';
   activeHistoryId.value = null;
   drawerVisible.value = false;
@@ -232,9 +434,14 @@ const loadHistoryDetail = async (item: ChatHistoryItem) => {
         role: 'assistant',
         content: detail.answer,
         sql: detail.sql,
-        data: detail.data || []
+        data: detail.data || [],
+        trace: detail.trace || []
       }
     ];
+    const assistantMessage = messages.value[1];
+    if (assistantMessage && shouldShowTrace(assistantMessage.trace)) {
+      expandedTraceMessageIds.value = [assistantMessage.id];
+    }
     await scrollToBottom();
   } catch (error) {
     if (requestSeq === historyRequestSeq.value) {
@@ -277,9 +484,13 @@ const handleSend = async () => {
       role: 'assistant',
       content: result.answer,
       sql: result.sql,
-      data: result.data || []
+      data: result.data || [],
+      trace: result.trace || []
     };
     messages.value.push(assistantMessage);
+    if (shouldShowTrace(assistantMessage.trace)) {
+      expandTrace(assistantMessage.id);
+    }
     if (result.historyId && historyPage.value === 1 && !historyKeyword.value.trim()) {
       chatStore.prependHistory({
         id: result.historyId,
@@ -524,9 +735,53 @@ onBeforeUnmount(() => {
             <div class="bubble-role">{{ message.role === 'user' ? '用户' : '语数' }}</div>
             <div class="bubble-content">{{ message.content }}</div>
 
-            <template v-if="message.role === 'assistant' && shouldShowSql(message.sql)">
-              <button type="button" class="sql-toggle" @click="openSqlDrawer(message.sql)">查看执行 SQL</button>
-            </template>
+            <div
+              v-if="message.role === 'assistant' && (shouldShowSql(message.sql) || shouldShowTrace(message.trace))"
+              class="assistant-actions"
+            >
+              <button v-if="shouldShowSql(message.sql)" type="button" class="sql-toggle" @click="openSqlDrawer(message.sql)">
+                查看执行 SQL
+              </button>
+              <button v-if="shouldShowTrace(message.trace)" type="button" class="trace-toggle" @click="toggleTrace(message.id)">
+                {{ isTraceExpanded(message.id) ? '收起执行轨迹' : '查看执行轨迹' }}
+              </button>
+              <span v-if="shouldShowTrace(message.trace)" class="trace-chip" :class="resolveTraceStatusClass(resolveFinalTraceStep(message.trace)?.status)">
+                {{ resolveTraceSummary(message.trace) }}
+              </span>
+            </div>
+
+            <div
+              v-if="message.role === 'assistant' && shouldShowTrace(message.trace) && isTraceExpanded(message.id)"
+              class="trace-section"
+            >
+              <div class="trace-panel-header">
+                <div>
+                  <div class="trace-panel-title">智能链路</div>
+                  <div class="trace-panel-caption">{{ resolveTraceCaption(message.trace) }}</div>
+                </div>
+              </div>
+              <div class="trace-timeline">
+                <div
+                  v-for="(step, index) in message.trace"
+                  :key="`${message.id}-${index}-${step.title}`"
+                  class="trace-step"
+                  :class="[resolveTraceStatusClass(step.status), resolveTraceTypeClass(step.type)]"
+                >
+                  <div class="trace-marker"></div>
+                  <div class="trace-card">
+                    <div class="trace-card-header">
+                      <span class="trace-type">{{ resolveTraceTypeLabel(step.type) }}</span>
+                      <span class="trace-title">{{ step.title }}</span>
+                      <span class="trace-attempt">{{ resolveAttemptLabel(step.attempt) }}</span>
+                      <span class="trace-status" :class="resolveTraceStatusClass(step.status)">
+                        {{ resolveTraceStatusLabel(step.status) }}
+                      </span>
+                    </div>
+                    <div class="trace-content">{{ step.content }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <template v-if="message.role === 'assistant' && message.data && message.data.length">
               <div class="table-section">
@@ -850,7 +1105,6 @@ onBeforeUnmount(() => {
   border: none;
   background: transparent;
   padding: 0;
-  margin-top: 10px;
   font-size: 12px;
   color: #2563eb;
   cursor: pointer;
@@ -858,9 +1112,192 @@ onBeforeUnmount(() => {
   text-underline-offset: 2px;
 }
 
-.sql-toggle:focus-visible {
+.assistant-actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.sql-toggle,
+.trace-toggle {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  color: #2563eb;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sql-toggle:focus-visible,
+.trace-toggle:focus-visible {
   border-radius: 6px;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+
+.trace-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.trace-chip.success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.trace-chip.failure {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.trace-section {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(14, 165, 233, 0.12) 0%, rgba(59, 130, 246, 0.06) 48%, rgba(255, 255, 255, 0.92) 100%);
+  border: 1px solid rgba(125, 211, 252, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.trace-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.trace-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.trace-panel-caption {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.trace-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trace-step {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.trace-marker {
+  width: 10px;
+  height: 10px;
+  margin-top: 12px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 0 4px rgba(125, 211, 252, 0.22);
+}
+
+.trace-step.failure .trace-marker {
+  background: #f87171;
+  box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.18);
+}
+
+.trace-step.final .trace-marker {
+  background: #22c55e;
+}
+
+.trace-card {
+  position: relative;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  box-shadow: 0 8px 20px rgba(148, 163, 184, 0.14);
+}
+
+.trace-card::before {
+  content: '';
+  position: absolute;
+  left: -18px;
+  top: 16px;
+  width: 2px;
+  height: calc(100% + 12px);
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.72), rgba(148, 163, 184, 0));
+}
+
+.trace-step:last-child .trace-card::before {
+  display: none;
+}
+
+.trace-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.trace-type {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.trace-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.trace-attempt {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.trace-status {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0284c7;
+}
+
+.trace-status.success {
+  color: #15803d;
+}
+
+.trace-status.failure {
+  color: #dc2626;
+}
+
+.trace-content {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #334155;
+  white-space: pre-wrap;
 }
 
 .table-section {

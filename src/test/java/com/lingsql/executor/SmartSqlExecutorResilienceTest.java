@@ -67,5 +67,50 @@ class SmartSqlExecutorResilienceTest {
         verify(logService).record(logCaptor.capture());
         assertTrue(logCaptor.getValue().isSuccess());
     }
-}
 
+    @Test
+    void executeShouldExposeSelfHealingTraceWhenRetrySucceeds() {
+        SqlAgentService agentService = Mockito.mock(SqlAgentService.class);
+        SqlSecurityChecker securityChecker = Mockito.mock(SqlSecurityChecker.class);
+        SqlRewriter rewriter = Mockito.mock(SqlRewriter.class);
+        TenantDbConfigRepository configRepository = Mockito.mock(TenantDbConfigRepository.class);
+        SqlExecuteLogService logService = Mockito.mock(SqlExecuteLogService.class);
+        SqlTaskTracker taskTracker = Mockito.mock(SqlTaskTracker.class);
+        TenantBillingService billingService = Mockito.mock(TenantBillingService.class);
+        JdbcTemplate jdbcTemplate = Mockito.mock(JdbcTemplate.class);
+
+        TenantDbConfig config = new TenantDbConfig();
+        config.setTenantId("TENANT_A");
+        when(configRepository.findByTenantId("TENANT_A")).thenReturn(Optional.of(config));
+        when(agentService.generateSql("TENANT_A", "查询今天订单数")).thenReturn("SELECT bad AS cnt");
+        when(agentService.generateSqlWithRetry(Mockito.eq("TENANT_A"), Mockito.eq("查询今天订单数"), anyString()))
+                .thenReturn("SELECT 1 AS cnt");
+        when(rewriter.rewrite(anyString(), any(TenantDbConfig.class), anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(jdbcTemplate.queryForList("SELECT bad AS cnt"))
+                .thenThrow(new RuntimeException("Unknown column"));
+        when(jdbcTemplate.queryForList("SELECT 1 AS cnt"))
+                .thenReturn(List.of(Map.of("cnt", 1)));
+
+        SmartSqlExecutor executor = new SmartSqlExecutor(
+                agentService,
+                securityChecker,
+                rewriter,
+                configRepository,
+                logService,
+                taskTracker,
+                billingService,
+                jdbcTemplate
+        );
+
+        SqlExecutionResult result = executor.execute("TENANT_A", "查询今天订单数", "WEB");
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getTrace().stream()
+                .anyMatch(step -> "THOUGHT".equals(step.getType()) && Integer.valueOf(2).equals(step.getAttempt())));
+        assertTrue(result.getTrace().stream()
+                .anyMatch(step -> "FINAL".equals(step.getType())
+                        && "SUCCESS".equals(step.getStatus())
+                        && Integer.valueOf(2).equals(step.getAttempt())));
+    }
+}
