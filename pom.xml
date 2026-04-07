@@ -22,6 +22,7 @@
         <jsqlparser.version>5.3</jsqlparser.version>
         <jjwt.version>0.13.0</jjwt.version>
         <log4j2.version>2.25.3</log4j2.version>
+        <poi.version>5.4.1</poi.version>
     </properties>
 
     <dependencies>
@@ -99,6 +100,12 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
         </dependency>
 
         <dependency>
