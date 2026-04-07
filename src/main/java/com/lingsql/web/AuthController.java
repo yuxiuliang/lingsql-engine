@@ -69,7 +69,7 @@ public class AuthController {
                 response.getRefreshToken(),
                 response.getRefreshExpiresIn()
         );
-        return ApiResponse.success(response);
+        return ApiResponse.success(sanitizeLoginResponse(response));
     }
 
     /**
@@ -162,7 +162,7 @@ public class AuthController {
                     refreshed.getRefreshToken(),
                     refreshed.getRefreshExpiresIn()
             );
-            return ApiResponse.success(refreshed);
+            return ApiResponse.success(sanitizeLoginResponse(refreshed));
         } catch (BadCredentialsException ex) {
             refreshTokenCookieManager.clearRefreshTokenCookie(request, response);
             throw ex;
@@ -193,6 +193,24 @@ public class AuthController {
             return header.trim();
         }
         return refreshTokenCookieManager.resolveRefreshToken(request);
+    }
+
+    /**
+     * Cookie 模式下移除响应体中的 Refresh Token，避免再次暴露给前端脚本。
+     *
+     * @param response 登录响应
+     * @return 脱敏后的响应
+     * @author 余炘洋
+     * @date 2026-04-07
+     */
+    private LoginResponse sanitizeLoginResponse(LoginResponse response) {
+        if (response == null) {
+            return null;
+        }
+        if (refreshTokenCookieManager.isRefreshTokenCookieEnabled()) {
+            response.setRefreshToken(null);
+        }
+        return response;
     }
 
     /**
