@@ -56,4 +56,15 @@ public interface BillingPlanRepository extends JpaRepository<BillingPlan, Long> 
      * @date 2026-01-29
      */
     boolean existsByPlanNameAndIsDeleted(String planName, Integer isDeleted);
+
+    /**
+     * 按套餐名称与删除状态查询套餐。
+     *
+     * @param planName  套餐名称
+     * @param isDeleted 删除标记
+     * @return 套餐信息
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    Optional<BillingPlan> findByPlanNameAndIsDeleted(String planName, Integer isDeleted);
 }

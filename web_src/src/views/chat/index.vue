@@ -5,6 +5,7 @@ import {
   askQuestion,
   ChatHistoryDetail,
   ChatHistoryItem,
+  ChatHistoryMessage,
   ChatResult,
   ChatTraceStep,
   deleteChatHistory,
@@ -39,7 +40,8 @@ const messageSeed = ref(1);
 const drawerVisible = ref(false);
 const drawerSql = ref('');
 const messageContainerRef = ref<HTMLDivElement | null>(null);
-const activeHistoryId = ref<number | null>(null);
+const activeConversationId = ref<string | null>(null);
+const currentConversationId = ref<string | null>(null);
 const historyKeyword = ref(chatStore.keyword || '');
 const historyPage = ref(chatStore.page || 1);
 const historySize = ref(chatStore.size || 10);
@@ -100,6 +102,52 @@ const nextMessageId = () => {
   const value = messageSeed.value;
   messageSeed.value += 1;
   return value;
+};
+
+/**
+ * 将历史详情转换为前端消息列表。
+ *
+ * @param detail 历史详情
+ * @return 消息列表
+ * @author 余炘洋
+ * @date 2026-04-10
+ */
+const buildMessagesFromDetail = (detail: ChatHistoryDetail): ChatMessage[] => {
+  const historyMessages = detail.messages || [];
+  if (historyMessages.length > 0) {
+    return historyMessages.map((message: ChatHistoryMessage) => ({
+      id: nextMessageId(),
+      role: message.role,
+      content: message.content,
+      sql: message.sql,
+      data: message.data || [],
+      trace: message.trace || []
+    }));
+  }
+  return [
+    {id: nextMessageId(), role: 'user', content: detail.question},
+    {
+      id: nextMessageId(),
+      role: 'assistant',
+      content: detail.answer,
+      sql: detail.sql,
+      data: detail.data || [],
+      trace: detail.trace || []
+    }
+  ];
+};
+
+/**
+ * 默认展开最后一条带执行轨迹的助手消息。
+ *
+ * @author 余炘洋
+ * @date 2026-04-10
+ */
+const expandLatestTraceMessage = () => {
+  const target = [...messages.value]
+    .reverse()
+    .find((message) => message.role === 'assistant' && shouldShowTrace(message.trace));
+  expandedTraceMessageIds.value = target ? [target.id] : [];
 };
 
 /**
@@ -405,7 +453,8 @@ const startNewChat = () => {
   messages.value = [];
   expandedTraceMessageIds.value = [];
   question.value = '';
-  activeHistoryId.value = null;
+  activeConversationId.value = null;
+  currentConversationId.value = null;
   drawerVisible.value = false;
   drawerSql.value = '';
 };
@@ -421,27 +470,15 @@ const loadHistoryDetail = async (item: ChatHistoryItem) => {
   const requestSeq = historyRequestSeq.value + 1;
   historyRequestSeq.value = requestSeq;
   historyLoading.value = true;
-  activeHistoryId.value = item.id;
+  activeConversationId.value = item.conversationId;
   try {
     const detail: ChatHistoryDetail = await fetchChatHistoryDetail(item.id);
-    if (requestSeq !== historyRequestSeq.value || activeHistoryId.value !== item.id) {
+    if (requestSeq !== historyRequestSeq.value || activeConversationId.value !== item.conversationId) {
       return;
     }
-    messages.value = [
-      {id: nextMessageId(), role: 'user', content: detail.question},
-      {
-        id: nextMessageId(),
-        role: 'assistant',
-        content: detail.answer,
-        sql: detail.sql,
-        data: detail.data || [],
-        trace: detail.trace || []
-      }
-    ];
-    const assistantMessage = messages.value[1];
-    if (assistantMessage && shouldShowTrace(assistantMessage.trace)) {
-      expandedTraceMessageIds.value = [assistantMessage.id];
-    }
+    currentConversationId.value = detail.conversationId || item.conversationId;
+    messages.value = buildMessagesFromDetail(detail);
+    expandLatestTraceMessage();
     await scrollToBottom();
   } catch (error) {
     if (requestSeq === historyRequestSeq.value) {
@@ -478,7 +515,10 @@ const handleSend = async () => {
   loading.value = true;
   await scrollToBottom();
   try {
-    const result: ChatResult = await askQuestion(content);
+    const result: ChatResult = await askQuestion({
+      question: content,
+      conversationId: currentConversationId.value || undefined
+    });
     const assistantMessage: ChatMessage = {
       id: nextMessageId(),
       role: 'assistant',
@@ -488,20 +528,12 @@ const handleSend = async () => {
       trace: result.trace || []
     };
     messages.value.push(assistantMessage);
+    currentConversationId.value = result.conversationId || currentConversationId.value;
+    activeConversationId.value = currentConversationId.value;
     if (shouldShowTrace(assistantMessage.trace)) {
       expandTrace(assistantMessage.id);
     }
-    if (result.historyId && historyPage.value === 1 && !historyKeyword.value.trim()) {
-      chatStore.prependHistory({
-        id: result.historyId,
-        question: content,
-        answer: result.answer,
-        sql: result.sql,
-        createTime: new Date().toISOString()
-      });
-    } else {
-      await loadHistory();
-    }
+    await loadHistory();
   } catch (error) {
     const message = error instanceof Error ? error.message : '请求失败';
     messages.value.push({
@@ -560,7 +592,7 @@ const handleDelete = async (item: ChatHistoryItem) => {
     await ElMessageBox.confirm('确认删除该历史记录？', '提示', {type: 'warning'});
     await deleteChatHistory(item.id);
     chatStore.removeHistory(item.id);
-    if (activeHistoryId.value === item.id) {
+    if (activeConversationId.value === item.conversationId) {
       startNewChat();
     }
     if (chatStore.historyList.length === 0 && historyPage.value > 1) {
@@ -664,8 +696,8 @@ onBeforeUnmount(() => {
     <aside class="history-panel">
       <div class="history-header">
         <div>
-          <div class="history-title">最近记录</div>
-          <div class="history-subtitle">工作流历史</div>
+          <div class="history-title">最近会话</div>
+          <div class="history-subtitle">按对话归档</div>
         </div>
         <el-button class="new-chat-button" @click="startNewChat">+ 开启新对话</el-button>
       </div>
@@ -674,7 +706,7 @@ onBeforeUnmount(() => {
           v-model="historyKeyword"
           size="small"
           clearable
-          placeholder="搜索历史问题"
+          placeholder="搜索会话标题"
           @keyup.enter="handleSearch"
           @clear="handleSearch"
         />
@@ -683,12 +715,12 @@ onBeforeUnmount(() => {
       <div class="history-list">
         <div
           v-for="item in chatStore.historyList"
-          :key="item.id"
+          :key="item.conversationId"
           class="history-item"
-          :class="{active: item.id === activeHistoryId}"
+          :class="{active: item.conversationId === activeConversationId}"
           role="button"
           tabindex="0"
-          :aria-current="item.id === activeHistoryId ? 'true' : 'false'"
+          :aria-current="item.conversationId === activeConversationId ? 'true' : 'false'"
           :aria-label="`打开历史记录：${truncateQuestion(item.question)}`"
           @click="loadHistoryDetail(item)"
           @keydown="handleHistoryItemKeydown($event, item)"

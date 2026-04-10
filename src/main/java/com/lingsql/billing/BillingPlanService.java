@@ -7,6 +7,7 @@ import com.lingsql.billing.model.BillingPlanView;
 import com.lingsql.billing.repository.BillingPlanRepository;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -15,9 +16,11 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -40,6 +43,7 @@ public class BillingPlanService {
 
     private final BillingPlanRepository planRepository;
     private final TenantRepository tenantRepository;
+    private final BillingBalanceService billingBalanceService;
 
     /**
      * 查询套餐列表。
@@ -122,6 +126,9 @@ public class BillingPlanService {
         }
         BillingPlan plan = planRepository.findByIdAndIsDeleted(id, NOT_DELETED)
                 .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "套餐不存在"));
+        String previousServiceLevel = plan.getServiceLevel();
+        String previousTenantType = plan.getTenantType();
+        long previousDefaultQuotaBalance = resolveDefaultQuotaBalance(plan.getDefaultQuotaBalance());
         if (request.getPlanCode() != null) {
             String normalized = normalizeCode(request.getPlanCode());
             if (!StringUtils.hasText(normalized)) {
@@ -165,7 +172,9 @@ public class BillingPlanService {
             plan.setRemark(request.getRemark());
         }
         plan.setUpdateTime(LocalDateTime.now());
-        return toView(planRepository.save(plan));
+        BillingPlan saved = planRepository.save(plan);
+        syncTenantPlanDefaults(saved, previousServiceLevel, previousTenantType, previousDefaultQuotaBalance);
+        return toView(saved);
     }
 
     /**
@@ -266,6 +275,155 @@ public class BillingPlanService {
                 .format(LocalDateTime.now());
         int random = ThreadLocalRandom.current().nextInt(1000, 10000);
         return PLAN_CODE_PREFIX + timestamp + random;
+    }
+
+    /**
+     * 同步仍跟随套餐默认值的租户配置。
+     *
+     * @param plan                       更新后的套餐
+     * @param previousServiceLevel       更新前服务等级
+     * @param previousTenantType         更新前租户类型
+     * @param previousDefaultQuotaBalance 更新前默认余额
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private void syncTenantPlanDefaults(BillingPlan plan,
+                                        String previousServiceLevel,
+                                        String previousTenantType,
+                                        long previousDefaultQuotaBalance) {
+        if (plan == null || !StringUtils.hasText(plan.getPlanName())) {
+            return;
+        }
+        List<TenantInfo> tenants = tenantRepository.findByPlanNameAndIsDeleted(plan.getPlanName(), NOT_DELETED);
+        if (tenants.isEmpty()) {
+            return;
+        }
+        String normalizedCurrentServiceLevel = normalizeOptional(plan.getServiceLevel());
+        String normalizedCurrentTenantType = normalizeOptional(plan.getTenantType());
+        String normalizedPreviousServiceLevel = normalizeOptional(previousServiceLevel);
+        String normalizedPreviousTenantType = normalizeOptional(previousTenantType);
+        long currentDefaultQuotaBalance = resolveDefaultQuotaBalance(plan.getDefaultQuotaBalance());
+        boolean serviceLevelChanged = !Objects.equals(normalizedCurrentServiceLevel, normalizedPreviousServiceLevel);
+        boolean tenantTypeChanged = !Objects.equals(normalizedCurrentTenantType, normalizedPreviousTenantType);
+        boolean defaultQuotaChanged = currentDefaultQuotaBalance != previousDefaultQuotaBalance;
+        if (!serviceLevelChanged && !tenantTypeChanged && !defaultQuotaChanged) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<TenantInfo> changedTenants = new ArrayList<>();
+        List<TenantInfo> balanceChangedTenants = new ArrayList<>();
+        for (TenantInfo tenant : tenants) {
+            boolean changed = false;
+            boolean balanceChanged = false;
+            if (serviceLevelChanged && shouldSyncServiceLevel(tenant.getServiceLevel(), normalizedPreviousServiceLevel)) {
+                tenant.setServiceLevel(resolveTenantServiceLevel(plan.getServiceLevel()));
+                changed = true;
+            }
+            if (tenantTypeChanged && shouldSyncTenantType(tenant.getTenantType(), normalizedPreviousTenantType)) {
+                tenant.setTenantType(resolveTenantType(plan.getTenantType()));
+                changed = true;
+            }
+            if (defaultQuotaChanged && shouldSyncQuotaBalance(tenant.getQuotaBalance(), previousDefaultQuotaBalance)) {
+                tenant.setQuotaBalance(currentDefaultQuotaBalance);
+                changed = true;
+                balanceChanged = true;
+            }
+            if (!changed) {
+                continue;
+            }
+            tenant.setUpdateTime(now);
+            changedTenants.add(tenant);
+            if (balanceChanged) {
+                balanceChangedTenants.add(tenant);
+            }
+        }
+        if (changedTenants.isEmpty()) {
+            return;
+        }
+        tenantRepository.saveAll(changedTenants);
+        for (TenantInfo tenant : balanceChangedTenants) {
+            billingBalanceService.resetBalance(tenant.getTenantId(), tenant.getQuotaBalance());
+        }
+    }
+
+    /**
+     * 判断服务等级是否仍跟随套餐。
+     *
+     * @param tenantServiceLevel   租户服务等级
+     * @param previousServiceLevel 更新前套餐服务等级
+     * @return 是否允许同步
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private boolean shouldSyncServiceLevel(String tenantServiceLevel, String previousServiceLevel) {
+        String normalizedTenantServiceLevel = normalizeOptional(tenantServiceLevel);
+        if (!StringUtils.hasText(normalizedTenantServiceLevel)) {
+            return true;
+        }
+        return Objects.equals(normalizedTenantServiceLevel, previousServiceLevel);
+    }
+
+    /**
+     * 判断租户类型是否仍跟随套餐。
+     *
+     * @param tenantTenantType   租户类型
+     * @param previousTenantType 更新前套餐租户类型
+     * @return 是否允许同步
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private boolean shouldSyncTenantType(String tenantTenantType, String previousTenantType) {
+        String normalizedTenantType = normalizeOptional(tenantTenantType);
+        if (!StringUtils.hasText(normalizedTenantType)) {
+            return true;
+        }
+        return Objects.equals(normalizedTenantType, previousTenantType);
+    }
+
+    /**
+     * 判断余额是否仍跟随套餐默认值。
+     *
+     * @param tenantQuotaBalance          租户当前余额
+     * @param previousDefaultQuotaBalance 更新前默认余额
+     * @return 是否允许同步
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private boolean shouldSyncQuotaBalance(Long tenantQuotaBalance, long previousDefaultQuotaBalance) {
+        if (tenantQuotaBalance == null || tenantQuotaBalance <= 0) {
+            return true;
+        }
+        return tenantQuotaBalance == previousDefaultQuotaBalance;
+    }
+
+    /**
+     * 解析租户服务等级。
+     *
+     * @param serviceLevel 服务等级
+     * @return 规范化等级
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private String resolveTenantServiceLevel(String serviceLevel) {
+        if (!StringUtils.hasText(serviceLevel)) {
+            return BillingPolicy.DEFAULT_SERVICE_LEVEL;
+        }
+        return serviceLevel.trim().toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * 解析租户类型。
+     *
+     * @param tenantType 租户类型
+     * @return 规范化类型
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private String resolveTenantType(String tenantType) {
+        if (!StringUtils.hasText(tenantType)) {
+            return null;
+        }
+        return tenantType.trim().toUpperCase(Locale.ROOT);
     }
 
     private BillingPlanView toView(BillingPlan plan) {

@@ -20,6 +20,13 @@ import {
 } from '@/api/tenant';
 import {BillingPlanView, fetchPlans} from '@/api/plan';
 import {useAuthStore} from '@/store/auth';
+import {
+  buildMysqlJdbcUrl,
+  createEmptyMysqlConnectionForm,
+  DEFAULT_MYSQL_DRIVER_CLASS,
+  DEFAULT_MYSQL_PORT,
+  parseMysqlJdbcUrl
+} from '@/utils/mysql-jdbc';
 
 const authStore = useAuthStore();
 const tenants = ref<TenantView[]>([]);
@@ -86,9 +93,12 @@ const form = reactive<TenantForm>({
   jdbcUrl: '',
   username: '',
   password: '',
-  driverClass: 'com.mysql.cj.jdbc.Driver',
+  driverClass: DEFAULT_MYSQL_DRIVER_CLASS,
   logicColumn: 'tenant_id'
 });
+const jdbcForm = reactive(createEmptyMysqlConnectionForm());
+const jdbcManualMode = ref(false);
+const jdbcPreview = computed(() => buildMysqlJdbcUrl(jdbcForm));
 
 /**
  * 生命周期续期表单定义。
@@ -140,8 +150,85 @@ const resetForm = () => {
   form.jdbcUrl = '';
   form.username = '';
   form.password = '';
-  form.driverClass = 'com.mysql.cj.jdbc.Driver';
+  form.driverClass = DEFAULT_MYSQL_DRIVER_CLASS;
   form.logicColumn = 'tenant_id';
+  syncJdbcForm(form.jdbcUrl);
+};
+
+/**
+ * 回填 JDBC 简化表单。
+ *
+ * @param jdbcUrl JDBC 地址
+ * @author 余炘洋
+ * @date 2026-04-10
+ */
+const syncJdbcForm = (jdbcUrl?: string) => {
+  const parsed = parseMysqlJdbcUrl(jdbcUrl);
+  jdbcForm.host = parsed.host;
+  jdbcForm.port = parsed.port || DEFAULT_MYSQL_PORT;
+  jdbcForm.databaseName = parsed.databaseName;
+  jdbcForm.params = parsed.params;
+  jdbcManualMode.value = parsed.manualMode;
+};
+
+/**
+ * 切换 JDBC 手动模式。
+ *
+ * @param value 是否手动填写
+ * @author 余炘洋
+ * @date 2026-04-10
+ */
+const handleJdbcManualModeChange = (value: boolean) => {
+  if (value) {
+    form.jdbcUrl = form.jdbcUrl.trim() || jdbcPreview.value;
+    return;
+  }
+  if (!jdbcForm.port.trim()) {
+    jdbcForm.port = DEFAULT_MYSQL_PORT;
+  }
+};
+
+/**
+ * 解析初始化配置使用的 JDBC 地址。
+ *
+ * @return JDBC 地址
+ * @author 余炘洋
+ * @date 2026-04-10
+ */
+const resolveJdbcUrl = () => {
+  return jdbcManualMode.value ? form.jdbcUrl.trim() : jdbcPreview.value;
+};
+
+/**
+ * 校验初始化数据源配置。
+ *
+ * @return 合法 JDBC 地址
+ * @author 余炘洋
+ * @date 2026-04-10
+ */
+const validateInitJdbcUrl = (): string | null => {
+  if (jdbcManualMode.value) {
+    const jdbcUrl = resolveJdbcUrl();
+    if (!jdbcUrl) {
+      ElMessage.warning('请填写 JDBC 地址');
+      return null;
+    }
+    return jdbcUrl;
+  }
+  if (!jdbcForm.host.trim()) {
+    ElMessage.warning('请填写数据库 IP 或主机名');
+    return null;
+  }
+  if (!jdbcForm.databaseName.trim()) {
+    ElMessage.warning('请填写数据库名');
+    return null;
+  }
+  const jdbcUrl = jdbcPreview.value;
+  if (!jdbcUrl) {
+    ElMessage.warning('请补全数据库连接信息');
+    return null;
+  }
+  return jdbcUrl;
 };
 
 /**
@@ -263,7 +350,7 @@ const handleEdit = (row: TenantView) => {
  * @author 余炘洋
  * @date 2026-01-26
  */
-const buildCreatePayload = (): TenantCreateRequest => {
+const buildCreatePayload = (jdbcUrl?: string): TenantCreateRequest => {
   const payload: TenantCreateRequest = {
     tenantName: form.tenantName.trim(),
     status: form.status,
@@ -276,11 +363,11 @@ const buildCreatePayload = (): TenantCreateRequest => {
   };
   if (initConfig.value) {
     payload.isolationMode = form.isolationMode;
-    payload.jdbcUrl = form.jdbcUrl || undefined;
-    payload.username = form.username || undefined;
+    payload.jdbcUrl = jdbcUrl || undefined;
+    payload.username = form.username.trim() || undefined;
     payload.password = form.password || undefined;
-    payload.driverClass = form.driverClass || undefined;
-    payload.logicColumn = form.logicColumn || undefined;
+    payload.driverClass = form.driverClass.trim() || DEFAULT_MYSQL_DRIVER_CLASS;
+    payload.logicColumn = form.logicColumn.trim() || undefined;
   }
   return payload;
 };
@@ -316,12 +403,16 @@ const handleSave = async () => {
     ElMessage.warning('请填写租户名称');
     return;
   }
+  const jdbcUrl = !editingId.value && initConfig.value ? validateInitJdbcUrl() : null;
+  if (!editingId.value && initConfig.value && !jdbcUrl) {
+    return;
+  }
   try {
     if (editingId.value) {
       await updateTenant(editingId.value, buildUpdatePayload());
       ElMessage.success('租户已更新');
     } else {
-      await createTenant(buildCreatePayload());
+      await createTenant(buildCreatePayload(jdbcUrl || undefined));
       ElMessage.success('租户已创建');
     }
     dialogVisible.value = false;
@@ -919,9 +1010,35 @@ refreshTenantData();
                 <el-option label="逻辑隔离" value="LOGICAL"/>
               </el-select>
             </el-form-item>
-            <el-form-item label="JDBC地址">
-              <el-input v-model="form.jdbcUrl" placeholder="jdbc:mysql://host:port/db"/>
+            <el-form-item label="手动JDBC">
+              <el-switch v-model="jdbcManualMode" @change="handleJdbcManualModeChange"/>
+              <div class="form-tip">默认按 MySQL 自动拼接地址，不会写 JDBC 时只填主机、端口和数据库名即可。</div>
             </el-form-item>
+            <template v-if="jdbcManualMode">
+              <el-form-item label="JDBC地址">
+                <el-input v-model="form.jdbcUrl" placeholder="jdbc:mysql://127.0.0.1:3306/demo"/>
+              </el-form-item>
+            </template>
+            <template v-else>
+              <el-form-item label="数据库主机">
+                <el-input v-model="jdbcForm.host" placeholder="127.0.0.1 或 db.example.com"/>
+              </el-form-item>
+              <el-form-item label="端口">
+                <el-input v-model="jdbcForm.port" placeholder="3306"/>
+              </el-form-item>
+              <el-form-item label="数据库名">
+                <el-input v-model="jdbcForm.databaseName" placeholder="demo"/>
+              </el-form-item>
+              <el-form-item label="连接参数">
+                <el-input v-model="jdbcForm.params" placeholder="useSSL=false&allowPublicKeyRetrieval=true">
+                  <template #prepend>?</template>
+                </el-input>
+                <div class="form-tip">可选项，常见场景保持默认即可。</div>
+              </el-form-item>
+              <el-form-item label="JDBC预览">
+                <el-input :model-value="jdbcPreview" readonly placeholder="根据上面的字段自动生成"/>
+              </el-form-item>
+            </template>
             <el-form-item label="账号">
               <el-input v-model="form.username" placeholder="数据库账号"/>
             </el-form-item>

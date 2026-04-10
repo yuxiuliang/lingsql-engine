@@ -3,6 +3,7 @@ package com.lingsql.chat.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.chat.entity.ChatHistory;
 import com.lingsql.chat.model.ChatHistoryDetailView;
+import com.lingsql.chat.model.ChatHistoryMessageView;
 import com.lingsql.chat.model.ChatTraceStep;
 import com.lingsql.chat.model.ChatHistoryView;
 import com.lingsql.chat.repository.ChatHistoryRepository;
@@ -16,6 +17,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -27,8 +30,10 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -61,9 +66,11 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
+    @Transactional
     public ChatHistory saveHistory(
             String tenantId,
             Long userId,
+            String conversationId,
             String question,
             String answer,
             String sqlText,
@@ -73,6 +80,8 @@ public class ChatHistoryService {
         ChatHistory history = new ChatHistory();
         history.setTenantId(tenantId);
         history.setUserId(userId);
+        history.setConversationId(conversationId);
+        history.setConversationTitle(resolveConversationTitle(tenantId, userId, conversationId, question));
         history.setQuestion(question);
         history.setAnswer(answer);
         history.setSqlText(sqlText);
@@ -81,7 +90,7 @@ public class ChatHistoryService {
         history.setDataJson(chatHistoryPayloadCodec.encode(data, trace));
         ChatHistory saved = chatHistoryRepository.save(history);
         evictListCache(tenantId, userId);
-        cacheDetail(tenantId, userId, saved);
+        evictConversationDetailCache(tenantId, userId, saved);
         return saved;
     }
 
@@ -106,17 +115,12 @@ public class ChatHistoryService {
             }
         }
         Pageable pageable = PageRequest.of(safePage - 1, safeSize);
-        Page<ChatHistory> historyPage;
-        if (keyword == null || keyword.isBlank()) {
-            historyPage = chatHistoryRepository.findByTenantIdAndUserIdOrderByCreateTimeDesc(tenantId, userId, pageable);
-        } else {
-            historyPage = chatHistoryRepository.findByTenantIdAndUserIdAndQuestionContainingOrderByCreateTimeDesc(
-                    tenantId,
-                    userId,
-                    keyword.trim(),
-                    pageable
-            );
-        }
+        Page<ChatHistory> historyPage = chatHistoryRepository.findConversationSummaries(
+                tenantId,
+                userId,
+                normalizeKeyword(keyword),
+                pageable
+        );
         List<ChatHistoryView> views = historyPage.getContent()
                 .stream()
                 .map(ChatHistoryView::from)
@@ -136,7 +140,10 @@ public class ChatHistoryService {
      * @date 2026-01-23
      */
     public ChatHistoryDetailView getHistoryDetail(String tenantId, Long userId, Long id) {
-        String cacheKey = buildDetailKey(tenantId, userId, id);
+        ChatHistory history = chatHistoryRepository.findByIdAndTenantIdAndUserId(id, tenantId, userId)
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "历史记录不存在"));
+        String conversationKey = resolveConversationCacheKey(history);
+        String cacheKey = buildDetailKey(tenantId, userId, conversationKey);
         String cached = stringRedisTemplate.opsForValue().get(cacheKey);
         if (cached != null && !cached.isBlank()) {
             ChatHistoryDetailView cachedView = fromJsonDetail(cached);
@@ -144,10 +151,8 @@ public class ChatHistoryService {
                 return cachedView;
             }
         }
-        ChatHistory history = chatHistoryRepository.findByIdAndTenantIdAndUserId(id, tenantId, userId)
-                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "历史记录不存在"));
-        ChatHistoryDetailView view = toDetailView(history);
-        cacheDetail(tenantId, userId, history);
+        ChatHistoryDetailView view = buildDetailView(tenantId, userId, history);
+        cacheDetail(tenantId, userId, conversationKey, view);
         return view;
     }
 
@@ -161,16 +166,24 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
+    @Transactional
     public ChatHistoryView renameHistory(String tenantId, Long userId, Long id, String question) {
         if (question == null || question.isBlank()) {
             throw new BizException(ErrorCode.INVALID_PARAM, "标题不能为空");
         }
         ChatHistory history = chatHistoryRepository.findByIdAndTenantIdAndUserId(id, tenantId, userId)
                 .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "历史记录不存在"));
-        history.setQuestion(question.trim());
-        ChatHistory saved = chatHistoryRepository.save(history);
+        String title = question.trim();
+        if (StringUtils.hasText(history.getConversationId())) {
+            chatHistoryRepository.updateConversationTitle(tenantId, userId, history.getConversationId(), title);
+        } else {
+            history.setConversationTitle(title);
+            chatHistoryRepository.save(history);
+        }
+        ChatHistory saved = chatHistoryRepository.findByIdAndTenantIdAndUserId(id, tenantId, userId)
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "历史记录不存在"));
         evictListCache(tenantId, userId);
-        cacheDetail(tenantId, userId, saved);
+        evictConversationDetailCache(tenantId, userId, saved);
         return ChatHistoryView.from(saved);
     }
 
@@ -182,10 +195,17 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
+    @Transactional
     public void deleteHistory(String tenantId, Long userId, Long id) {
-        chatHistoryRepository.deleteByIdAndTenantIdAndUserId(id, tenantId, userId);
+        ChatHistory history = chatHistoryRepository.findByIdAndTenantIdAndUserId(id, tenantId, userId)
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "历史记录不存在"));
+        if (StringUtils.hasText(history.getConversationId())) {
+            chatHistoryRepository.deleteByTenantIdAndUserIdAndConversationId(tenantId, userId, history.getConversationId());
+        } else {
+            chatHistoryRepository.deleteByIdAndTenantIdAndUserId(id, tenantId, userId);
+        }
         evictListCache(tenantId, userId);
-        evictDetailCache(tenantId, userId, id);
+        evictConversationDetailCache(tenantId, userId, history);
     }
 
     /**
@@ -227,15 +247,14 @@ public class ChatHistoryService {
      * 缓存详情。
      *
      * @param tenantId 租户标识
-     * @param history  记录实体
+     * @param conversationKey 会话缓存键
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private void cacheDetail(String tenantId, Long userId, ChatHistory history) {
+    private void cacheDetail(String tenantId, Long userId, String conversationKey, ChatHistoryDetailView view) {
         try {
-            ChatHistoryDetailView view = toDetailView(history);
             String json = objectMapper.writeValueAsString(view);
-            stringRedisTemplate.opsForValue().set(buildDetailKey(tenantId, userId, history.getId()), json, resolveTtl());
+            stringRedisTemplate.opsForValue().set(buildDetailKey(tenantId, userId, conversationKey), json, resolveTtl());
         } catch (Exception ex) {
             log.warn("缓存历史详情失败: {}", ex.getMessage());
         }
@@ -267,16 +286,107 @@ public class ChatHistoryService {
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private ChatHistoryDetailView toDetailView(ChatHistory history) {
+    private ChatHistoryDetailView buildDetailView(String tenantId, Long userId, ChatHistory history) {
+        if (!StringUtils.hasText(history.getConversationId())) {
+            return toLegacyDetailView(history);
+        }
+        List<ChatHistory> histories = chatHistoryRepository.findByTenantIdAndUserIdAndConversationIdOrderByCreateTimeAscIdAsc(
+                tenantId,
+                userId,
+                history.getConversationId()
+        );
+        if (histories == null || histories.isEmpty()) {
+            return toLegacyDetailView(history);
+        }
+        return toConversationDetailView(histories);
+    }
+
+    private ChatHistoryDetailView toLegacyDetailView(ChatHistory history) {
         ChatHistoryDetailView view = new ChatHistoryDetailView();
         view.setId(history.getId());
-        view.setQuestion(history.getQuestion());
+        view.setConversationId(resolveConversationCacheKey(history));
+        view.setQuestion(resolveConversationTitle(history));
         view.setAnswer(history.getAnswer());
         view.setSql(history.getSqlText());
         view.setData(chatHistoryPayloadCodec.decodeData(history.getDataJson()));
         view.setTrace(chatHistoryPayloadCodec.decodeTrace(history.getDataJson()));
         view.setCreateTime(history.getCreateTime());
+        view.setMessages(buildMessages(List.of(history)));
         return view;
+    }
+
+    private ChatHistoryDetailView toConversationDetailView(List<ChatHistory> histories) {
+        ChatHistory latest = histories.get(histories.size() - 1);
+        ChatHistoryDetailView view = new ChatHistoryDetailView();
+        view.setId(latest.getId());
+        view.setConversationId(resolveConversationCacheKey(latest));
+        view.setQuestion(resolveConversationTitle(latest));
+        view.setAnswer(latest.getAnswer());
+        view.setSql(latest.getSqlText());
+        view.setData(chatHistoryPayloadCodec.decodeData(latest.getDataJson()));
+        view.setTrace(chatHistoryPayloadCodec.decodeTrace(latest.getDataJson()));
+        view.setCreateTime(latest.getCreateTime());
+        view.setMessages(buildMessages(histories));
+        return view;
+    }
+
+    private List<ChatHistoryMessageView> buildMessages(List<ChatHistory> histories) {
+        List<ChatHistoryMessageView> messages = new ArrayList<>();
+        for (ChatHistory history : histories) {
+            if (StringUtils.hasText(history.getQuestion())) {
+                ChatHistoryMessageView userMessage = new ChatHistoryMessageView();
+                userMessage.setRole("user");
+                userMessage.setContent(history.getQuestion());
+                userMessage.setCreateTime(history.getCreateTime());
+                messages.add(userMessage);
+            }
+            if (StringUtils.hasText(history.getAnswer())) {
+                ChatHistoryMessageView assistantMessage = new ChatHistoryMessageView();
+                assistantMessage.setRole("assistant");
+                assistantMessage.setContent(history.getAnswer());
+                assistantMessage.setSql(history.getSqlText());
+                assistantMessage.setData(chatHistoryPayloadCodec.decodeData(history.getDataJson()));
+                assistantMessage.setTrace(chatHistoryPayloadCodec.decodeTrace(history.getDataJson()));
+                assistantMessage.setCreateTime(history.getCreateTime());
+                messages.add(assistantMessage);
+            }
+        }
+        return messages;
+    }
+
+    private String resolveConversationTitle(String tenantId, Long userId, String conversationId, String question) {
+        if (StringUtils.hasText(conversationId)) {
+            Optional<ChatHistory> latest = chatHistoryRepository.findTopByTenantIdAndUserIdAndConversationIdOrderByIdDesc(
+                    tenantId,
+                    userId,
+                    conversationId
+            );
+            if (latest.isPresent() && StringUtils.hasText(latest.get().getConversationTitle())) {
+                return latest.get().getConversationTitle();
+            }
+        }
+        return question;
+    }
+
+    private String resolveConversationTitle(ChatHistory history) {
+        if (StringUtils.hasText(history.getConversationTitle())) {
+            return history.getConversationTitle();
+        }
+        return history.getQuestion();
+    }
+
+    private String resolveConversationCacheKey(ChatHistory history) {
+        if (StringUtils.hasText(history.getConversationId())) {
+            return history.getConversationId();
+        }
+        return "legacy-" + history.getId();
+    }
+
+    private String normalizeKeyword(String keyword) {
+        if (!StringUtils.hasText(keyword)) {
+            return null;
+        }
+        return keyword.trim();
     }
 
     /**
@@ -296,13 +406,13 @@ public class ChatHistoryService {
      * 获取详情缓存键。
      *
      * @param tenantId 租户标识
-     * @param id       记录ID
+     * @param conversationKey 会话缓存键
      * @return 缓存键
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private String buildDetailKey(String tenantId, Long userId, Long id) {
-        return "lingsql:chat:history:detail:" + tenantId + ":" + userId + ":" + id;
+    private String buildDetailKey(String tenantId, Long userId, String conversationKey) {
+        return "lingsql:chat:history:detail:" + tenantId + ":" + userId + ":" + conversationKey;
     }
 
     /**
@@ -323,12 +433,12 @@ public class ChatHistoryService {
      * 清理详情缓存。
      *
      * @param tenantId 租户标识
-     * @param id       记录ID
+     * @param history 记录实体
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private void evictDetailCache(String tenantId, Long userId, Long id) {
-        stringRedisTemplate.delete(buildDetailKey(tenantId, userId, id));
+    private void evictConversationDetailCache(String tenantId, Long userId, ChatHistory history) {
+        stringRedisTemplate.delete(buildDetailKey(tenantId, userId, resolveConversationCacheKey(history)));
     }
 
     /**

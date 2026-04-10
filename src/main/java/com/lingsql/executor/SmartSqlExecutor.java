@@ -9,6 +9,7 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.trace.RequestTraceContext;
 import com.lingsql.context.TenantContext;
+import com.lingsql.datasource.TenantDbConfigErrors;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.llm.LlmTraceContext;
@@ -90,7 +91,7 @@ public class SmartSqlExecutor {
         appendTrace(trace, TRACE_TYPE_THOUGHT, "解析用户问题", "已结合租户上下文、语义字典和历史会话分析本次查询意图。", TRACE_STATUS_SUCCESS, 1);
         try {
             TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId)
-                    .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
+                    .orElseThrow(TenantDbConfigErrors::missingConfig);
             return executeWithRetry(config, tenantId, question, logCommand, trace);
         } catch (Exception ex) {
             fillFailureLog(logCommand, null, ex.getMessage());

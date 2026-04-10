@@ -11,6 +11,13 @@ import {
 } from '@/api/config';
 import {fetchTenantSchema, refreshTenantSemantic, SchemaTableInfo, syncTenantSchema} from '@/api/admin';
 import {useAuthStore} from '@/store/auth';
+import {
+  buildMysqlJdbcUrl,
+  createEmptyMysqlConnectionForm,
+  DEFAULT_MYSQL_DRIVER_CLASS,
+  DEFAULT_MYSQL_PORT,
+  parseMysqlJdbcUrl
+} from '@/utils/mysql-jdbc';
 
 const tenantConfigs = ref<TenantDbConfig[]>([]);
 const loading = ref(false);
@@ -32,7 +39,7 @@ const form = reactive<TenantDbConfig>({
   jdbcUrl: '',
   username: '',
   password: '',
-  driverClass: 'com.mysql.cj.jdbc.Driver',
+  driverClass: DEFAULT_MYSQL_DRIVER_CLASS,
   isolationMode: 'PHYSICAL',
   logicColumn: 'tenant_id',
   whiteListTables: '',
@@ -40,6 +47,9 @@ const form = reactive<TenantDbConfig>({
   sensitiveColumns: '',
   status: 1
 });
+const jdbcForm = reactive(createEmptyMysqlConnectionForm());
+const jdbcManualMode = ref(false);
+const jdbcPreview = computed(() => buildMysqlJdbcUrl(jdbcForm));
 
 /**
  * 判断是否系统管理员。
@@ -109,7 +119,7 @@ const buildEmptyTenant = (): TenantDbConfig => ({
   jdbcUrl: '',
   username: '',
   password: '',
-  driverClass: 'com.mysql.cj.jdbc.Driver',
+  driverClass: DEFAULT_MYSQL_DRIVER_CLASS,
   isolationMode: 'PHYSICAL',
   logicColumn: 'tenant_id',
   whiteListTables: '',
@@ -155,6 +165,7 @@ const handleCreate = () => {
   editingId.value = null;
   Object.assign(form, buildEmptyTenant());
   form.tenantId = activeTenantId.value || '';
+  syncJdbcForm(form.jdbcUrl);
   dialogVisible.value = true;
 };
 
@@ -168,8 +179,107 @@ const handleCreate = () => {
 const handleEdit = (row: TenantDbConfig) => {
   editingId.value = row.id || null;
   Object.assign(form, row);
+  form.driverClass = form.driverClass || DEFAULT_MYSQL_DRIVER_CLASS;
+  syncJdbcForm(form.jdbcUrl);
   dialogVisible.value = true;
 };
+
+/**
+ * 回填 JDBC 简化表单。
+ *
+ * @param jdbcUrl JDBC 地址
+ * @author 余炘洋
+ * @date 2026-04-10
+ */
+const syncJdbcForm = (jdbcUrl?: string) => {
+  const parsed = parseMysqlJdbcUrl(jdbcUrl);
+  jdbcForm.host = parsed.host;
+  jdbcForm.port = parsed.port || DEFAULT_MYSQL_PORT;
+  jdbcForm.databaseName = parsed.databaseName;
+  jdbcForm.params = parsed.params;
+  jdbcManualMode.value = parsed.manualMode;
+};
+
+/**
+ * 切换 JDBC 手动模式。
+ *
+ * @param value 是否手动填写
+ * @author 余炘洋
+ * @date 2026-04-10
+ */
+const handleJdbcManualModeChange = (value: boolean) => {
+  if (value) {
+    form.jdbcUrl = form.jdbcUrl?.trim() || jdbcPreview.value;
+    return;
+  }
+  if (!jdbcForm.port.trim()) {
+    jdbcForm.port = DEFAULT_MYSQL_PORT;
+  }
+};
+
+/**
+ * 解析待提交的 JDBC 地址。
+ *
+ * @return JDBC 地址
+ * @author 余炘洋
+ * @date 2026-04-10
+ */
+const resolveJdbcUrl = () => {
+  return jdbcManualMode.value ? (form.jdbcUrl || '').trim() : jdbcPreview.value;
+};
+
+/**
+ * 校验 JDBC 配置。
+ *
+ * @return 合法 JDBC 地址
+ * @author 余炘洋
+ * @date 2026-04-10
+ */
+const validateJdbcUrl = (): string | null => {
+  if (jdbcManualMode.value) {
+    const jdbcUrl = resolveJdbcUrl();
+    if (!jdbcUrl) {
+      ElMessage.warning('请填写 JDBC 地址');
+      return null;
+    }
+    return jdbcUrl;
+  }
+  if (!jdbcForm.host.trim()) {
+    ElMessage.warning('请填写数据库 IP 或主机名');
+    return null;
+  }
+  if (!jdbcForm.databaseName.trim()) {
+    ElMessage.warning('请填写数据库名');
+    return null;
+  }
+  const jdbcUrl = jdbcPreview.value;
+  if (!jdbcUrl) {
+    ElMessage.warning('请补全数据库连接信息');
+    return null;
+  }
+  return jdbcUrl;
+};
+
+/**
+ * 构建数据源配置请求体。
+ *
+ * @param jdbcUrl JDBC 地址
+ * @return 请求体
+ * @author 余炘洋
+ * @date 2026-04-10
+ */
+const buildTenantConfigPayload = (jdbcUrl: string): TenantDbConfig => ({
+  ...form,
+  tenantId: form.tenantId?.trim() || '',
+  jdbcUrl,
+  username: form.username?.trim() || '',
+  password: form.password || '',
+  driverClass: form.driverClass?.trim() || DEFAULT_MYSQL_DRIVER_CLASS,
+  logicColumn: form.logicColumn?.trim() || '',
+  whiteListTables: form.whiteListTables?.trim() || '',
+  whiteListColumns: form.whiteListColumns?.trim() || '',
+  sensitiveColumns: form.sensitiveColumns?.trim() || ''
+});
 
 /**
  * 保存数据源配置。
@@ -182,19 +292,20 @@ const handleSave = async () => {
     ElMessage.warning('请先选择租户');
     return;
   }
-  if (!form.jdbcUrl) {
-    ElMessage.warning('请填写 JDBC 地址');
+  const jdbcUrl = validateJdbcUrl();
+  if (!jdbcUrl) {
     return;
   }
   try {
     if (!editingId.value) {
       form.tenantId = activeTenantId.value || '';
     }
+    const payload = buildTenantConfigPayload(jdbcUrl);
     if (editingId.value) {
-      await updateTenantConfig(editingId.value, form);
+      await updateTenantConfig(editingId.value, payload);
       ElMessage.success('数据源配置已更新');
     } else {
-      await createTenantConfig(form);
+      await createTenantConfig(payload);
       ElMessage.success('数据源配置已创建');
     }
     dialogVisible.value = false;
@@ -211,12 +322,12 @@ const handleSave = async () => {
  * @date 2026-01-23
  */
 const handleTestConnection = async () => {
-  if (!form.jdbcUrl) {
-    ElMessage.warning('请填写 JDBC 地址');
+  const jdbcUrl = validateJdbcUrl();
+  if (!jdbcUrl) {
     return;
   }
   try {
-    const message = await testTenantConnection(form);
+    const message = await testTenantConnection(buildTenantConfigPayload(jdbcUrl));
     ElMessage.success(message);
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '连接测试失败');
@@ -504,9 +615,35 @@ loadTenants();
           <el-form-item label="所属租户">
             <el-tag :type="form.tenantId ? 'success' : 'info'">{{ formTenantLabel }}</el-tag>
           </el-form-item>
-          <el-form-item label="JDBC地址">
-            <el-input v-model="form.jdbcUrl" placeholder="jdbc:mysql://host:port/db"/>
+          <el-form-item label="手动JDBC">
+            <el-switch v-model="jdbcManualMode" @change="handleJdbcManualModeChange"/>
+            <div class="form-tip">默认按 MySQL 自动拼接地址，不会写 JDBC 时只填主机、端口和数据库名即可。</div>
           </el-form-item>
+          <template v-if="jdbcManualMode">
+            <el-form-item label="JDBC地址">
+              <el-input v-model="form.jdbcUrl" placeholder="jdbc:mysql://127.0.0.1:3306/demo"/>
+            </el-form-item>
+          </template>
+          <template v-else>
+            <el-form-item label="数据库主机">
+              <el-input v-model="jdbcForm.host" placeholder="127.0.0.1 或 db.example.com"/>
+            </el-form-item>
+            <el-form-item label="端口">
+              <el-input v-model="jdbcForm.port" placeholder="3306"/>
+            </el-form-item>
+            <el-form-item label="数据库名">
+              <el-input v-model="jdbcForm.databaseName" placeholder="demo"/>
+            </el-form-item>
+            <el-form-item label="连接参数">
+              <el-input v-model="jdbcForm.params" placeholder="useSSL=false&allowPublicKeyRetrieval=true">
+                <template #prepend>?</template>
+              </el-input>
+              <div class="form-tip">可选项，常见场景保持默认即可。</div>
+            </el-form-item>
+            <el-form-item label="JDBC预览">
+              <el-input :model-value="jdbcPreview" readonly placeholder="根据上面的字段自动生成"/>
+            </el-form-item>
+          </template>
           <el-form-item label="用户名">
             <el-input v-model="form.username" placeholder="数据库账号"/>
           </el-form-item>
@@ -607,5 +744,11 @@ loadTenants();
 
 .empty-state {
   padding: 24px 0;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 6px;
 }
 </style>

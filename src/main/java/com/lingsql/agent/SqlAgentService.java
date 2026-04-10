@@ -6,6 +6,7 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.datasource.DataSourceManager;
+import com.lingsql.datasource.TenantDbConfigErrors;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.llm.LlmClient;
@@ -86,7 +87,7 @@ public class SqlAgentService {
         validatePrompt(userInput);
 
         TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId)
-                .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
+                .orElseThrow(TenantDbConfigErrors::missingConfig);
 
         List<TableInfo> tables = metadataCacheService.getCachedSchema(tenantId);
         if (tables == null || tables.isEmpty()) {

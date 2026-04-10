@@ -19,4 +19,12 @@ public class ChatRequest {
      */
     @ChatQuestionLength
     private String question;
+
+    /**
+     * 前端当前对话会话标识。
+     *
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private String conversationId;
 }

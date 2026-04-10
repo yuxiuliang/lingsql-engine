@@ -8,6 +8,7 @@ import {request} from '@/utils/request';
  */
 export interface ChatRequest {
   question: string;
+  conversationId?: string;
 }
 
 /**
@@ -22,6 +23,7 @@ export interface ChatResult {
   sql: string;
   historyId?: number;
   trace?: ChatTraceStep[];
+  conversationId?: string;
 }
 
 /**
@@ -46,11 +48,27 @@ export interface ChatTraceStep {
  */
 export interface ChatHistoryItem {
   id: number;
+  conversationId: string;
   question: string;
   answer: string;
   sql?: string;
   createTime?: string;
   data?: Array<Record<string, unknown>>;
+}
+
+/**
+ * 历史消息定义。
+ *
+ * @author 余炘洋
+ * @date 2026-04-10
+ */
+export interface ChatHistoryMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  sql?: string;
+  data?: Array<Record<string, unknown>>;
+  trace?: ChatTraceStep[];
+  createTime?: string;
 }
 
 /**
@@ -74,12 +92,14 @@ export interface PageResult<T> {
  */
 export interface ChatHistoryDetail {
   id: number;
+  conversationId: string;
   question: string;
   answer: string;
   sql?: string;
   data: Array<Record<string, unknown>>;
   trace?: ChatTraceStep[];
   createTime?: string;
+  messages?: ChatHistoryMessage[];
 }
 
 /**
@@ -90,10 +110,10 @@ export interface ChatHistoryDetail {
  * @author 余炘洋
  * @date 2026-01-23
  */
-export const askQuestion = async (question: string): Promise<ChatResult> => {
+export const askQuestion = async (payload: ChatRequest): Promise<ChatResult> => {
   return request<ChatResult>('/api/v1/chat/ask', {
     method: 'POST',
-    body: JSON.stringify({question})
+    body: JSON.stringify(payload)
   });
 };
 

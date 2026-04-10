@@ -2,7 +2,10 @@ package com.lingsql.rbac.init;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lingsql.billing.BillingBalanceService;
+import com.lingsql.billing.entity.BillingPlan;
 import com.lingsql.billing.BillingPolicy;
+import com.lingsql.billing.repository.BillingPlanRepository;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.rbac.entity.RbacMenu;
 import com.lingsql.rbac.entity.RbacPermission;
@@ -57,6 +60,7 @@ public class SuperAdminInitializer implements ApplicationRunner {
     private static final String SUPER_ADMIN_ROLE_NAME = "超级管理员";
     private static final int ACTIVE_STATUS = 1;
     private static final int NOT_DELETED = 0;
+    private static final long SYSTEM_TENANT_BALANCE = Long.MAX_VALUE;
     private static final Set<String> FORBIDDEN_PASSWORDS = Set.of(
             "Admin123456",
             "admin123456",
@@ -76,6 +80,8 @@ public class SuperAdminInitializer implements ApplicationRunner {
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
     private final ResourceLoader resourceLoader;
+    private final BillingBalanceService billingBalanceService;
+    private final BillingPlanRepository billingPlanRepository;
 
     @Override
     @Transactional
@@ -121,7 +127,9 @@ public class SuperAdminInitializer implements ApplicationRunner {
     }
 
     private void ensureTenantExists(String tenantId, String tenantName) {
-        if (tenantRepository.findByTenantIdAndIsDeleted(tenantId, NOT_DELETED).isPresent()) {
+        TenantInfo existing = tenantRepository.findByTenantIdAndIsDeleted(tenantId, NOT_DELETED).orElse(null);
+        if (existing != null) {
+            repairSystemTenant(existing);
             return;
         }
         TenantInfo tenant = new TenantInfo();
@@ -130,16 +138,68 @@ public class SuperAdminInitializer implements ApplicationRunner {
         tenant.setStatus(ACTIVE_STATUS);
         tenant.setRemark("系统初始化");
         tenant.setPlanName("SYSTEM");
-        tenant.setQuotaBalance(0L);
+        tenant.setQuotaBalance(SYSTEM_TENANT_BALANCE);
         tenant.setServiceLevel(BillingPolicy.DEFAULT_SERVICE_LEVEL);
         tenant.setIsDeleted(NOT_DELETED);
         tenant.setCreateTime(LocalDateTime.now());
         tenant.setUpdateTime(LocalDateTime.now());
         try {
-            tenantRepository.save(tenant);
+            TenantInfo saved = tenantRepository.save(tenant);
+            billingBalanceService.resetBalance(saved.getTenantId(), saved.getQuotaBalance());
         } catch (DataIntegrityViolationException ex) {
             log.warn("租户初始化冲突: {}", ex.getMessage());
         }
+    }
+
+    /**
+     * 修复历史系统租户的默认配额，避免超级管理员被付费墙阻断。
+     *
+     * @param tenant 系统租户
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private void repairSystemTenant(TenantInfo tenant) {
+        if (tenant == null) {
+            return;
+        }
+        boolean changed = false;
+        if (tenant.getQuotaBalance() == null || tenant.getQuotaBalance() <= 0) {
+            tenant.setQuotaBalance(resolveSystemTenantBalance(tenant.getPlanName()));
+            changed = true;
+        }
+        if (!StringUtils.hasText(tenant.getPlanName())) {
+            tenant.setPlanName("SYSTEM");
+            changed = true;
+        }
+        if (!StringUtils.hasText(tenant.getServiceLevel())) {
+            tenant.setServiceLevel(BillingPolicy.DEFAULT_SERVICE_LEVEL);
+            changed = true;
+        }
+        if (!changed) {
+            return;
+        }
+        tenant.setUpdateTime(LocalDateTime.now());
+        TenantInfo saved = tenantRepository.save(tenant);
+        billingBalanceService.resetBalance(saved.getTenantId(), saved.getQuotaBalance());
+    }
+
+    /**
+     * 解析系统租户初始余额。
+     * 若已绑定真实套餐，则优先回填套餐默认余额；否则退回系统无限余额。
+     *
+     * @param planName 套餐名称
+     * @return 系统租户可用余额
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private long resolveSystemTenantBalance(String planName) {
+        if (StringUtils.hasText(planName) && !"SYSTEM".equalsIgnoreCase(planName.trim())) {
+            BillingPlan plan = billingPlanRepository.findByPlanNameAndIsDeleted(planName.trim(), NOT_DELETED).orElse(null);
+            if (plan != null && plan.getDefaultQuotaBalance() != null && plan.getDefaultQuotaBalance() > 0) {
+                return plan.getDefaultQuotaBalance();
+            }
+        }
+        return SYSTEM_TENANT_BALANCE;
     }
 
     private RbacRole ensureSuperAdminRole() {

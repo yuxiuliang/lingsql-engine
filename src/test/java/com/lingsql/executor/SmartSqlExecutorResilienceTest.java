@@ -4,6 +4,8 @@ import com.lingsql.agent.SqlAgentService;
 import com.lingsql.audit.model.SqlExecuteLogCommand;
 import com.lingsql.audit.service.SqlExecuteLogService;
 import com.lingsql.billing.TenantBillingService;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.security.SqlRewriter;
@@ -18,6 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -112,5 +115,35 @@ class SmartSqlExecutorResilienceTest {
                 .anyMatch(step -> "FINAL".equals(step.getType())
                         && "SUCCESS".equals(step.getStatus())
                         && Integer.valueOf(2).equals(step.getAttempt())));
+    }
+
+    @Test
+    void executeShouldThrowClearErrorWhenTenantDbConfigMissing() {
+        SqlAgentService agentService = Mockito.mock(SqlAgentService.class);
+        SqlSecurityChecker securityChecker = Mockito.mock(SqlSecurityChecker.class);
+        SqlRewriter rewriter = Mockito.mock(SqlRewriter.class);
+        TenantDbConfigRepository configRepository = Mockito.mock(TenantDbConfigRepository.class);
+        SqlExecuteLogService logService = Mockito.mock(SqlExecuteLogService.class);
+        SqlTaskTracker taskTracker = Mockito.mock(SqlTaskTracker.class);
+        TenantBillingService billingService = Mockito.mock(TenantBillingService.class);
+        JdbcTemplate jdbcTemplate = Mockito.mock(JdbcTemplate.class);
+
+        when(configRepository.findByTenantId("TENANT_A")).thenReturn(Optional.empty());
+
+        SmartSqlExecutor executor = new SmartSqlExecutor(
+                agentService,
+                securityChecker,
+                rewriter,
+                configRepository,
+                logService,
+                taskTracker,
+                billingService,
+                jdbcTemplate
+        );
+
+        BizException ex = assertThrows(BizException.class, () -> executor.execute("TENANT_A", "查询今天订单数", "WEB"));
+
+        assertEquals(ErrorCode.TENANT_DB_CONFIG_NOT_FOUND, ex.getErrorCode());
+        assertEquals("租户数据源配置不存在，请先完成租户数据库连接配置", ex.getMessage());
     }
 }

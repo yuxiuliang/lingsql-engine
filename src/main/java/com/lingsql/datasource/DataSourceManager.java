@@ -85,7 +85,7 @@ public class DataSourceManager {
 
         // 从配置库中读取连接信息
         TenantDbConfig config = repository.findByTenantId(tenantId)
-                .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "未找到租户配置"));
+                .orElseThrow(TenantDbConfigErrors::missingConfig);
 
         if (config.getStatus() != null && config.getStatus() == 0) {
             throw new BizException(ErrorCode.FORBIDDEN, "租户配置已禁用");

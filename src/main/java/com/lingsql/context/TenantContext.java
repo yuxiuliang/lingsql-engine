@@ -18,6 +18,7 @@ public final class TenantContext {
      * @date 2026-01-22
      */
     private static final ThreadLocal<SessionInfo> CONTEXT = new ThreadLocal<>();
+    private static final ThreadLocal<String> CONVERSATION_CONTEXT = new ThreadLocal<>();
 
     /**
      * 私有构造函数。
@@ -93,6 +94,28 @@ public final class TenantContext {
     }
 
     /**
+     * 设置当前聊天会话标识。
+     *
+     * @param conversationId 会话标识
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    public static void setConversationId(String conversationId) {
+        CONVERSATION_CONTEXT.set(conversationId);
+    }
+
+    /**
+     * 获取当前聊天会话标识。
+     *
+     * @return 会话标识
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    public static String getConversationId() {
+        return CONVERSATION_CONTEXT.get();
+    }
+
+    /**
      * 清理当前线程上下文。
      *
      * @author 余炘洋
@@ -100,5 +123,6 @@ public final class TenantContext {
      */
     public static void clear() {
         CONTEXT.remove();
+        CONVERSATION_CONTEXT.remove();
     }
 }
