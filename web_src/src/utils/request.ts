@@ -13,6 +13,18 @@ export interface ApiResponse<T> {
   data: T;
 }
 
+/**
+ * 二进制响应定义。
+ *
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+export interface BlobResponse {
+  blob: Blob;
+  filename?: string;
+  contentType?: string;
+}
+
 interface RequestOptions extends RequestInit {
   skipAuthRefresh?: boolean;
 }
@@ -44,6 +56,22 @@ const REFRESH_METRIC_EVENT = 'lingsql:auth-refresh';
 
 let refreshPromise: Promise<RefreshPayload | null> | null = null;
 let lastRefreshMetricAt = 0;
+
+const buildHeaders = (options: RequestOptions, includeJsonContentType: boolean): Headers => {
+  const authStore = useAuthStore(pinia);
+  const tenantId = authStore.isSysAdmin ? (authStore.activeTenantId || '') : (authStore.activeTenantId || authStore.tenantId || '');
+  const headers = new Headers(options.headers || {});
+  if (includeJsonContentType && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  if (authStore.token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${authStore.token}`);
+  }
+  if (tenantId) {
+    headers.set('X-Tenant-Id', encodeURIComponent(tenantId));
+  }
+  return headers;
+};
 
 const parseJsonSafely = async <T>(response: Response): Promise<T | null> => {
   const contentType = response.headers.get('Content-Type') || '';
@@ -150,17 +178,7 @@ const refreshSessionOnce = async (refreshToken = ''): Promise<RefreshPayload | n
  */
 export const request = async <T>(path: string, options: RequestOptions = {}): Promise<T> => {
   const authStore = useAuthStore(pinia);
-  const tenantId = authStore.isSysAdmin ? (authStore.activeTenantId || '') : (authStore.activeTenantId || authStore.tenantId || '');
-  const headers = new Headers(options.headers || {});
-  if (!headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
-  if (authStore.token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${authStore.token}`);
-  }
-  if (tenantId) {
-    headers.set('X-Tenant-Id', encodeURIComponent(tenantId));
-  }
+  const headers = buildHeaders(options, true);
   const response = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers,
@@ -206,6 +224,75 @@ export const request = async <T>(path: string, options: RequestOptions = {}): Pr
     throw new Error(payload.message || '接口返回失败');
   }
   return payload.data;
+};
+
+/**
+ * 请求二进制文件。
+ *
+ * @param path 请求路径
+ * @param options 请求配置
+ * @return 二进制响应
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+export const requestBlob = async (path: string, options: RequestOptions = {}): Promise<BlobResponse> => {
+  const authStore = useAuthStore(pinia);
+  const headers = buildHeaders(options, false);
+  const response = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers,
+    credentials: options.credentials || 'include'
+  });
+  const payload = await parseJsonSafely<ApiResponse<unknown>>(response);
+  if (shouldAttemptRefresh(path, options, response.status, payload as ApiResponse<unknown> | null)) {
+    const refreshed = await refreshSessionOnce(authStore.refreshToken);
+    if (refreshed) {
+      authStore.updateToken(refreshed.token, refreshed.refreshToken || '');
+      const retryOptions: RequestOptions = {...options, skipAuthRefresh: true};
+      if (retryOptions.headers) {
+        const retryHeaders = new Headers(retryOptions.headers);
+        retryHeaders.delete('Authorization');
+        retryOptions.headers = retryHeaders;
+      }
+      return requestBlob(path, retryOptions);
+    }
+  }
+  if (!response.ok) {
+    if (response.status === 401) {
+      authStore.logout();
+      redirectToLogin();
+      throw new Error(payload?.message || '未登录或登录已过期');
+    }
+    if (response.status === 403) {
+      throw new Error(payload?.message || '无权限访问');
+    }
+    throw new Error(payload?.message || `接口请求失败: ${response.status}`);
+  }
+  const blob = await response.blob();
+  return {
+    blob,
+    filename: resolveFilename(response.headers.get('Content-Disposition')),
+    contentType: response.headers.get('Content-Type') || blob.type
+  };
+};
+
+const resolveFilename = (contentDisposition: string | null): string | undefined => {
+  if (!contentDisposition) {
+    return undefined;
+  }
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const plainMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
+  if (plainMatch?.[1]) {
+    return plainMatch[1];
+  }
+  return undefined;
 };
 
 const redirectToLogin = () => {

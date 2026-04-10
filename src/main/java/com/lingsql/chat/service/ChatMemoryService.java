@@ -328,7 +328,15 @@ public class ChatMemoryService {
         if (sessionInfo == null) {
             return null;
         }
-        return sessionInfo.getCombinedSessionId();
+        String combinedSessionId = sessionInfo.getCombinedSessionId();
+        String conversationId = TenantContext.getConversationId();
+        if (!StringUtils.hasText(conversationId)) {
+            return combinedSessionId;
+        }
+        if (!StringUtils.hasText(combinedSessionId)) {
+            return null;
+        }
+        return combinedSessionId + ":" + conversationId.trim();
     }
 
     /**

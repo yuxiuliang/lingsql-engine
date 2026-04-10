@@ -1,5 +1,6 @@
 package com.lingsql.executor;
 
+import com.lingsql.chat.model.ChatTraceStep;
 import lombok.Data;
 
 import java.util.Collections;
@@ -48,6 +49,14 @@ public class SqlExecutionResult {
     private String errorMessage;
 
     /**
+     * 执行轨迹。
+     *
+     * @author 余炘洋
+     * @date 2026-04-07
+     */
+    private List<ChatTraceStep> trace;
+
+    /**
      * 构建成功结果。
      *
      * @param sql  SQL 文本
@@ -57,10 +66,25 @@ public class SqlExecutionResult {
      * @date 2026-01-22
      */
     public static SqlExecutionResult success(String sql, List<Map<String, Object>> data) {
+        return success(sql, data, Collections.emptyList());
+    }
+
+    /**
+     * 构建成功结果。
+     *
+     * @param sql   SQL 文本
+     * @param data  数据结果
+     * @param trace 执行轨迹
+     * @return 结果对象
+     * @author 余炘洋
+     * @date 2026-04-07
+     */
+    public static SqlExecutionResult success(String sql, List<Map<String, Object>> data, List<ChatTraceStep> trace) {
         SqlExecutionResult result = new SqlExecutionResult();
         result.success = true;
         result.sql = sql;
         result.data = data == null ? Collections.emptyList() : data;
+        result.trace = trace == null ? Collections.emptyList() : List.copyOf(trace);
         return result;
     }
 
@@ -74,11 +98,26 @@ public class SqlExecutionResult {
      * @date 2026-01-22
      */
     public static SqlExecutionResult failure(String sql, String errorMessage) {
+        return failure(sql, errorMessage, Collections.emptyList());
+    }
+
+    /**
+     * 构建失败结果。
+     *
+     * @param sql          SQL 文本
+     * @param errorMessage 错误原因
+     * @param trace        执行轨迹
+     * @return 结果对象
+     * @author 余炘洋
+     * @date 2026-04-07
+     */
+    public static SqlExecutionResult failure(String sql, String errorMessage, List<ChatTraceStep> trace) {
         SqlExecutionResult result = new SqlExecutionResult();
         result.success = false;
         result.sql = sql;
         result.data = Collections.emptyList();
         result.errorMessage = errorMessage;
+        result.trace = trace == null ? Collections.emptyList() : List.copyOf(trace);
         return result;
     }
 }

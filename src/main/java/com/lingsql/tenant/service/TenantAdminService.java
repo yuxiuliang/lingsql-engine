@@ -1,5 +1,7 @@
 package com.lingsql.tenant.service;
 
+import com.lingsql.billing.entity.BillingPlan;
+import com.lingsql.billing.repository.BillingPlanRepository;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.datasource.model.TenantDbConfig;
@@ -43,6 +45,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -86,6 +89,7 @@ public class TenantAdminService {
     private final RbacUserRepository userRepository;
     private final SqlTaskTracker sqlTaskTracker;
     private final BillingBalanceService billingBalanceService;
+    private final BillingPlanRepository billingPlanRepository;
     private final TenantLifecycleService tenantLifecycleService;
 
     /**
@@ -210,10 +214,12 @@ public class TenantAdminService {
         tenant.setContactPhone(request.getContactPhone());
         tenant.setContactEmail(request.getContactEmail());
         tenant.setExpireTime(parseDateTime(request.getExpireTime()));
-        tenant.setPlanName(request.getPlanName());
-        tenant.setQuotaBalance(resolveQuotaBalance(request.getQuotaBalance()));
-        tenant.setServiceLevel(resolveServiceLevel(request.getServiceLevel()));
-        tenant.setTenantType(resolveTenantType(request.getTenantType()));
+        String planName = normalizePlanName(request.getPlanName());
+        BillingPlan plan = resolveBillingPlan(planName);
+        tenant.setPlanName(planName);
+        tenant.setQuotaBalance(resolveQuotaBalance(resolveQuotaBalanceForCreate(request.getQuotaBalance(), plan)));
+        tenant.setServiceLevel(resolveServiceLevel(resolveServiceLevelForTenant(request.getServiceLevel(), plan)));
+        tenant.setTenantType(resolveTenantType(resolveTenantTypeForTenant(request.getTenantType(), plan)));
         tenantLifecycleService.applyDefaultExpireTimeForTrial(tenant);
         tenant.setIsDeleted(NOT_DELETED);
         tenant.setCreateTime(LocalDateTime.now());
@@ -293,19 +299,20 @@ public class TenantAdminService {
         tenant.setContactPhone(request.getContactPhone());
         tenant.setContactEmail(request.getContactEmail());
         tenant.setExpireTime(parseDateTime(request.getExpireTime()));
-        tenant.setPlanName(request.getPlanName());
-        if (request.getQuotaBalance() != null) {
-            tenant.setQuotaBalance(resolveQuotaBalance(request.getQuotaBalance()));
+        String previousPlanName = normalizePlanName(tenant.getPlanName());
+        String targetPlanName = request.getPlanName() == null ? previousPlanName : normalizePlanName(request.getPlanName());
+        BillingPlan plan = resolveBillingPlan(targetPlanName);
+        boolean planChanged = !Objects.equals(previousPlanName, targetPlanName);
+        tenant.setPlanName(targetPlanName);
+        Long resolvedQuotaBalance = resolveQuotaBalanceForUpdate(request.getQuotaBalance(), tenant.getQuotaBalance(), plan, planChanged);
+        if (resolvedQuotaBalance != null) {
+            tenant.setQuotaBalance(resolveQuotaBalance(resolvedQuotaBalance));
         }
-        if (StringUtils.hasText(request.getServiceLevel())) {
-            tenant.setServiceLevel(resolveServiceLevel(request.getServiceLevel()));
-        }
-        if (StringUtils.hasText(request.getTenantType())) {
-            tenant.setTenantType(resolveTenantType(request.getTenantType()));
-        }
+        tenant.setServiceLevel(resolveServiceLevel(resolveServiceLevelForUpdate(request.getServiceLevel(), tenant.getServiceLevel(), plan)));
+        tenant.setTenantType(resolveTenantType(resolveTenantTypeForUpdate(request.getTenantType(), tenant.getTenantType(), plan)));
         tenant.setUpdateTime(LocalDateTime.now());
         TenantInfo saved = tenantRepository.save(tenant);
-        if (request.getQuotaBalance() != null) {
+        if (request.getQuotaBalance() != null || resolvedQuotaBalance != null) {
             billingBalanceService.resetBalance(saved.getTenantId(), saved.getQuotaBalance());
         }
         return toView(saved);
@@ -742,6 +749,162 @@ public class TenantAdminService {
             return 2;
         }
         return 1;
+    }
+
+    /**
+     * 规范化套餐名称。
+     *
+     * @param planName 套餐名称
+     * @return 规范化结果
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private String normalizePlanName(String planName) {
+        return StringUtils.hasText(planName) ? planName.trim() : null;
+    }
+
+    /**
+     * 解析套餐配置。
+     *
+     * @param planName 套餐名称
+     * @return 套餐配置
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private BillingPlan resolveBillingPlan(String planName) {
+        if (!StringUtils.hasText(planName)) {
+            return null;
+        }
+        return billingPlanRepository.findByPlanNameAndIsDeleted(planName, NOT_DELETED)
+                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "套餐不存在"));
+    }
+
+    /**
+     * 创建租户时解析余额。
+     *
+     * @param quotaBalance 显式余额
+     * @param plan         套餐配置
+     * @return 最终余额
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private Long resolveQuotaBalanceForCreate(Long quotaBalance, BillingPlan plan) {
+        if (quotaBalance != null) {
+            return quotaBalance;
+        }
+        if (plan != null) {
+            return plan.getDefaultQuotaBalance();
+        }
+        return null;
+    }
+
+    /**
+     * 更新租户时解析余额。
+     *
+     * @param requestQuotaBalance 显式余额
+     * @param currentQuotaBalance 当前余额
+     * @param plan                套餐配置
+     * @param planChanged         是否切换套餐
+     * @return 最终余额，返回 null 表示保持原值
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private Long resolveQuotaBalanceForUpdate(Long requestQuotaBalance,
+                                              Long currentQuotaBalance,
+                                              BillingPlan plan,
+                                              boolean planChanged) {
+        if (requestQuotaBalance != null) {
+            return requestQuotaBalance;
+        }
+        if (plan == null) {
+            return null;
+        }
+        if (planChanged || currentQuotaBalance == null || currentQuotaBalance <= 0) {
+            return plan.getDefaultQuotaBalance();
+        }
+        return null;
+    }
+
+    /**
+     * 创建租户时解析服务等级。
+     *
+     * @param requestServiceLevel 显式服务等级
+     * @param plan                套餐配置
+     * @return 最终服务等级
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private String resolveServiceLevelForTenant(String requestServiceLevel, BillingPlan plan) {
+        if (StringUtils.hasText(requestServiceLevel)) {
+            return requestServiceLevel;
+        }
+        if (plan != null) {
+            return plan.getServiceLevel();
+        }
+        return null;
+    }
+
+    /**
+     * 更新租户时解析服务等级。
+     *
+     * @param requestServiceLevel 显式服务等级
+     * @param currentServiceLevel 当前服务等级
+     * @param plan                套餐配置
+     * @return 最终服务等级
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private String resolveServiceLevelForUpdate(String requestServiceLevel,
+                                                String currentServiceLevel,
+                                                BillingPlan plan) {
+        if (StringUtils.hasText(requestServiceLevel)) {
+            return requestServiceLevel;
+        }
+        if (plan != null) {
+            return plan.getServiceLevel();
+        }
+        return currentServiceLevel;
+    }
+
+    /**
+     * 创建租户时解析租户类型。
+     *
+     * @param requestTenantType 显式租户类型
+     * @param plan              套餐配置
+     * @return 最终租户类型
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private String resolveTenantTypeForTenant(String requestTenantType, BillingPlan plan) {
+        if (StringUtils.hasText(requestTenantType)) {
+            return requestTenantType;
+        }
+        if (plan != null) {
+            return plan.getTenantType();
+        }
+        return null;
+    }
+
+    /**
+     * 更新租户时解析租户类型。
+     *
+     * @param requestTenantType 显式租户类型
+     * @param currentTenantType 当前租户类型
+     * @param plan              套餐配置
+     * @return 最终租户类型
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    private String resolveTenantTypeForUpdate(String requestTenantType,
+                                              String currentTenantType,
+                                              BillingPlan plan) {
+        if (StringUtils.hasText(requestTenantType)) {
+            return requestTenantType;
+        }
+        if (plan != null) {
+            return plan.getTenantType();
+        }
+        return currentTenantType;
     }
 
     /**

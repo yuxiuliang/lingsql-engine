@@ -1,4 +1,4 @@
-import {request} from '@/utils/request';
+import {BlobResponse, request, requestBlob} from '@/utils/request';
 
 /**
  * 分页结果定义。
@@ -235,6 +235,46 @@ export const exportSqlLogs = async (params: {
   const queryString = query.toString();
   const path = queryString ? `/api/v1/admin/audit/sql-logs/export?${queryString}` : '/api/v1/admin/audit/sql-logs/export';
   return request<SqlExecuteLogView[]>(path);
+};
+
+/**
+ * 导出 SQL 执行日志 Excel。
+ *
+ * @param params 查询参数
+ * @return 二进制文件
+ * @author 余炘洋
+ * @date 2026-04-07
+ */
+export const exportSqlLogsExcel = async (params: {
+  tenantId?: string;
+  userId?: number;
+  question?: string;
+  requestSource?: string;
+  startTime?: string;
+  endTime?: string;
+}): Promise<BlobResponse> => {
+  const query = new URLSearchParams();
+  if (params.tenantId) {
+    query.set('tenantId', params.tenantId);
+  }
+  if (params.userId !== undefined && params.userId !== null) {
+    query.set('userId', String(params.userId));
+  }
+  if (params.question) {
+    query.set('question', params.question);
+  }
+  if (params.requestSource) {
+    query.set('requestSource', params.requestSource);
+  }
+  if (params.startTime) {
+    query.set('startTime', params.startTime);
+  }
+  if (params.endTime) {
+    query.set('endTime', params.endTime);
+  }
+  const queryString = query.toString();
+  const path = queryString ? `/api/v1/admin/audit/sql-logs/export/excel?${queryString}` : '/api/v1/admin/audit/sql-logs/export/excel';
+  return requestBlob(path);
 };
 
 /**

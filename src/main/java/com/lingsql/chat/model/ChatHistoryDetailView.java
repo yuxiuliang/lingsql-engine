@@ -16,10 +16,13 @@ import java.util.Map;
 public class ChatHistoryDetailView {
 
     private Long id;
+    private String conversationId;
     private String question;
     private String answer;
     private String sql;
     private List<Map<String, Object>> data;
+    private List<ChatTraceStep> trace;
     private LocalDateTime createTime;
+    private List<ChatHistoryMessageView> messages;
 }
 

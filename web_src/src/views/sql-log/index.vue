@@ -6,7 +6,7 @@ import {
   PageResult,
   SqlExecuteLogView,
   TokenAuditOverviewView,
-  exportSqlLogs,
+  exportSqlLogsExcel,
   fetchSqlLogs,
   fetchTokenAuditOverview
 } from '@/api/audit';
@@ -184,10 +184,10 @@ const loadAllData = async () => {
 };
 
 /**
- * 导出 SQL 日志。
+ * 导出 SQL 日志 Excel。
  *
  * @author 余炘洋
- * @date 2026-01-26
+ * @date 2026-04-07
  */
 const handleExport = async () => {
   if (!isSysAdmin.value) {
@@ -197,7 +197,7 @@ const handleExport = async () => {
   exporting.value = true;
   try {
     const {startTime, endTime} = resolveTimeRange();
-    const list = await exportSqlLogs({
+    const file = await exportSqlLogsExcel({
       tenantId: activeTenantId.value || undefined,
       userId: searchForm.userId ? Number(searchForm.userId) : undefined,
       question: searchForm.question || undefined,
@@ -205,11 +205,10 @@ const handleExport = async () => {
       startTime,
       endTime
     });
-    const blob = new Blob([JSON.stringify(list, null, 2)], {type: 'application/json'});
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(file.blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `sql-log-export-${Date.now()}.json`;
+    link.download = file.filename || `sql-log-export-${Date.now()}.xlsx`;
     link.click();
     URL.revokeObjectURL(url);
     ElMessage.success('导出完成');
@@ -319,7 +318,7 @@ handleSearch();
 <template>
   <div class="page">
     <div class="page-title">SQL 日志</div>
-    <div class="page-desc">检索 SQL 执行日志并支持导出。</div>
+    <div class="page-desc">检索 SQL 执行日志并支持 Excel 导出。</div>
 
     <el-card class="card" shadow="never">
       <div class="toolbar">
@@ -345,7 +344,7 @@ handleSearch();
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="loadAllData">刷新</el-button>
         </div>
-        <el-button v-if="isSysAdmin" :loading="exporting" @click="handleExport">导出</el-button>
+        <el-button v-if="isSysAdmin" :loading="exporting" @click="handleExport">导出 Excel</el-button>
       </div>
 
       <div class="overview-wrap" v-loading="overviewLoading">

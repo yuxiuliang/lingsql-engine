@@ -3,6 +3,7 @@ package com.lingsql.web;
 import com.lingsql.audit.model.TokenAuditOverviewView;
 import com.lingsql.audit.model.TokenAuditQuery;
 import com.lingsql.audit.service.AuditLogService;
+import com.lingsql.audit.service.SqlExecuteLogExcelExporter;
 import com.lingsql.audit.service.SqlExecuteLogService;
 import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.common.result.ApiResponse;
@@ -38,6 +39,7 @@ class AuditLogControllerTokenOverviewTest {
         AuditLogController controller = new AuditLogController(
                 Mockito.mock(AuditLogService.class),
                 sqlExecuteLogService,
+                Mockito.mock(SqlExecuteLogExcelExporter.class),
                 Mockito.mock(PageParamResolver.class)
         );
 
@@ -70,6 +72,7 @@ class AuditLogControllerTokenOverviewTest {
         AuditLogController controller = new AuditLogController(
                 Mockito.mock(AuditLogService.class),
                 sqlExecuteLogService,
+                Mockito.mock(SqlExecuteLogExcelExporter.class),
                 Mockito.mock(PageParamResolver.class)
         );
 

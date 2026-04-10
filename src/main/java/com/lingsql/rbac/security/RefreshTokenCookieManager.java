@@ -25,6 +25,17 @@ public class RefreshTokenCookieManager {
     private final LingSqlProperties properties;
 
     /**
+     * 判断是否启用 Refresh Token Cookie 承载。
+     *
+     * @return 是否启用
+     * @author 余炘洋
+     * @date 2026-04-07
+     */
+    public boolean isRefreshTokenCookieEnabled() {
+        return isEnabled();
+    }
+
+    /**
      * 写入 Refresh Token Cookie。
      *
      * @param request      HTTP 请求
@@ -147,4 +158,3 @@ public class RefreshTokenCookieManager {
         return request != null && request.isSecure();
     }
 }
-

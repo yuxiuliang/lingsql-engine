@@ -194,9 +194,9 @@ lingsql:
     refresh-cookie-secure: ${LINGSQL_REFRESH_COOKIE_SECURE:false}
     single-session-enabled: ${LINGSQL_AUTH_SINGLE_SESSION_ENABLED:true}
   admin:
-    enabled: ${LINGSQL_ADMIN_ENABLED:false}
+    enabled: ${LINGSQL_ADMIN_ENABLED:true}
     tenant-id: ${LINGSQL_ADMIN_TENANT_ID:1}
-    tenant-name: ${LINGSQL_ADMIN_TENANT_NAME:1}
+    tenant-name: ${LINGSQL_ADMIN_TENANT_NAME:admin}
     username: ${LINGSQL_ADMIN_USERNAME:admin}
     password: ${LINGSQL_ADMIN_PASSWORD:}
     nickname: ${LINGSQL_ADMIN_NICKNAME:测试}

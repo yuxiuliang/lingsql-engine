@@ -15,6 +15,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -37,10 +38,12 @@ class AuthControllerCookieTest {
         );
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
+        when(cookieManager.isRefreshTokenCookieEnabled()).thenReturn(true);
 
         ApiResponse<LoginResponse> result = controller.login(new LoginRequest(), request, response);
 
         assertEquals(200, result.getCode());
+        assertNull(result.getData().getRefreshToken());
         verify(cookieManager).writeRefreshTokenCookie(request, response, "refresh_token_1", 7200L);
     }
 
@@ -61,11 +64,36 @@ class AuthControllerCookieTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
         when(cookieManager.resolveRefreshToken(request)).thenReturn("cookie_refresh_token");
+        when(cookieManager.isRefreshTokenCookieEnabled()).thenReturn(true);
 
         ApiResponse<LoginResponse> result = controller.refresh(request, response);
 
         assertEquals(200, result.getCode());
+        assertNull(result.getData().getRefreshToken());
         verify(cookieManager).writeRefreshTokenCookie(request, response, "refresh_token_2", 3600L);
+    }
+
+    @Test
+    void loginShouldKeepRefreshTokenInBodyWhenCookieDisabled() {
+        AuthService authService = Mockito.mock(AuthService.class);
+        LoginResponse loginResponse = buildLoginResponse("access_token", "refresh_token_1", 7200L);
+        when(authService.login(any(LoginRequest.class))).thenReturn(loginResponse);
+        RefreshTokenCookieManager cookieManager = Mockito.mock(RefreshTokenCookieManager.class);
+        when(cookieManager.isRefreshTokenCookieEnabled()).thenReturn(false);
+        AuthController controller = new AuthController(
+                authService,
+                Mockito.mock(MenuService.class),
+                Mockito.mock(TokenService.class),
+                Mockito.mock(RefreshTokenService.class),
+                cookieManager
+        );
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        ApiResponse<LoginResponse> result = controller.login(new LoginRequest(), request, response);
+
+        assertEquals(200, result.getCode());
+        assertEquals("refresh_token_1", result.getData().getRefreshToken());
     }
 
     @Test
@@ -132,4 +160,3 @@ class AuthControllerCookieTest {
         return response;
     }
 }
-

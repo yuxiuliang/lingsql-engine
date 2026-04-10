@@ -7,6 +7,7 @@ import com.lingsql.audit.model.SqlExecuteLogView;
 import com.lingsql.audit.model.TokenAuditOverviewView;
 import com.lingsql.audit.model.TokenAuditQuery;
 import com.lingsql.audit.service.AuditLogService;
+import com.lingsql.audit.service.SqlExecuteLogExcelExporter;
 import com.lingsql.audit.service.SqlExecuteLogService;
 import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.common.result.ApiResponse;
@@ -15,8 +16,13 @@ import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.rbac.security.SecureTenantResolver;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
@@ -37,8 +44,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AuditLogController {
 
+    private static final DateTimeFormatter EXPORT_FILE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+
     private final AuditLogService auditLogService;
     private final SqlExecuteLogService sqlExecuteLogService;
+    private final SqlExecuteLogExcelExporter sqlExecuteLogExcelExporter;
     private final PageParamResolver pageParamResolver;
 
     /**
@@ -194,6 +204,56 @@ public class AuditLogController {
     }
 
     /**
+     * 导出 SQL 执行日志 Excel 文件（仅超级管理员）。
+     *
+     * @param tenantId      租户ID
+     * @param userId        用户ID
+     * @param question      问题关键词
+     * @param requestSource 请求来源
+     * @param startTime     开始时间
+     * @param endTime       结束时间
+     * @return Excel 文件响应
+     * @author 余炘洋
+     * @date 2026-04-07
+     */
+    @GetMapping("/sql-logs/export/excel")
+    @PreAuthorize("hasAuthority('ADMIN:SQLLOG:EXPORT')")
+    public ResponseEntity<byte[]> exportSqlLogsExcel(
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) String question,
+            @RequestParam(required = false) String requestSource,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime
+    ) {
+        RbacUserSession session = requireSession();
+        if (!SecureTenantResolver.isSysAdmin(session)) {
+            throw new AccessDeniedException("无权限访问");
+        }
+        SqlExecuteLogQuery query = new SqlExecuteLogQuery();
+        query.setTenantId(tenantId);
+        query.setUserId(userId);
+        query.setQuestion(question);
+        query.setRequestSource(requestSource);
+        query.setStartTime(startTime);
+        query.setEndTime(endTime);
+        int exportSize = pageParamResolver.resolveExportSize();
+        PageResult<SqlExecuteLogView> pageResult = sqlExecuteLogService.queryForExport(query, 1, exportSize);
+        byte[] bytes = sqlExecuteLogExcelExporter.export(pageResult.getList());
+        String fileName = buildExportFileName();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(fileName)
+                        .build()
+                        .toString())
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ))
+                .contentLength(bytes.length)
+                .body(bytes);
+    }
+
+    /**
      * 获取当前会话。
      *
      * @return 会话信息
@@ -206,5 +266,9 @@ public class AuditLogController {
             throw new BadCredentialsException("未登录或登录已过期");
         }
         return session;
+    }
+
+    private String buildExportFileName() {
+        return "sql-log-export-" + EXPORT_FILE_TIME_FORMATTER.format(LocalDateTime.now()) + ".xlsx";
     }
 }

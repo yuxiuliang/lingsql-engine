@@ -50,6 +50,24 @@ public class ChatHistory {
     private Long userId;
 
     /**
+     * 对话会话标识。
+     *
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    @Column(name = "conversation_id", length = 64)
+    private String conversationId;
+
+    /**
+     * 会话标题。
+     *
+     * @author 余炘洋
+     * @date 2026-04-10
+     */
+    @Column(name = "conversation_title", columnDefinition = "TEXT")
+    private String conversationTitle;
+
+    /**
      * 用户问题。
      *
      * @author 余炘洋

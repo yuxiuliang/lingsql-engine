@@ -20,6 +20,7 @@ public enum ErrorCode {
     ROLE_NOT_FOUND(603, "角色不存在"),
     MODEL_NOT_FOUND(604, "模型不存在"),
     MODEL_UNAVAILABLE(605, "模型不可用"),
+    TENANT_DB_CONFIG_NOT_FOUND(606, "租户数据源配置不存在"),
     CONFIG_INVALID(610, "配置错误"),
     SECURITY_VIOLATION(620, "安全校验失败"),
     SQL_INVALID(621, "SQL 校验失败"),

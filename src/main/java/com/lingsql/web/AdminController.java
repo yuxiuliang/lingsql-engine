@@ -7,6 +7,7 @@ import com.lingsql.agent.ModelHealthService;
 import com.lingsql.agent.model.AiModelConfig;
 import com.lingsql.agent.repository.AiModelConfigRepository;
 import com.lingsql.datasource.DataSourceManager;
+import com.lingsql.datasource.TenantDbConfigErrors;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.schema.MetadataCacheService;
@@ -58,7 +59,7 @@ public class AdminController extends BaseController {
     public ApiResponse<String> syncSchema(@PathVariable String tenantId) {
         String resolvedTenantId = resolveSecureTenantId(tenantId);
         TenantDbConfig config = repository.findByTenantId(resolvedTenantId)
-                .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
+                .orElseThrow(TenantDbConfigErrors::missingConfig);
 
         DataSource ds = dataSourceManager.getDataSource(resolvedTenantId);
         List<TableInfo> tables = schemaScanner.scanSchema(resolvedTenantId, ds, config.getWhiteListTables());

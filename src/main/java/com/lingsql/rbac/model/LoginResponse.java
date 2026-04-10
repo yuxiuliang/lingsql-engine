@@ -31,6 +31,7 @@ public class LoginResponse {
 
     /**
      * Refresh Token。
+     * 启用 HttpOnly Cookie 承载时，响应体不会回传该字段。
      *
      * @author 余炘洋
      * @date 2026-01-27

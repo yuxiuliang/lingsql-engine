@@ -1,6 +1,7 @@
 package com.lingsql.tenant.service;
 
 import com.lingsql.billing.BillingBalanceService;
+import com.lingsql.billing.repository.BillingPlanRepository;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.executor.SqlTaskTracker;
@@ -184,6 +185,7 @@ class TenantAdminServiceLifecycleOpsTest {
                 Mockito.mock(RbacUserRepository.class),
                 Mockito.mock(SqlTaskTracker.class),
                 Mockito.mock(BillingBalanceService.class),
+                Mockito.mock(BillingPlanRepository.class),
                 lifecycleService
         );
     }

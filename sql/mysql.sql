@@ -223,17 +223,20 @@ CREATE TABLE `t_lingsql_engine_digital_employee_run_log`
 -- 聊天历史记录表
 CREATE TABLE `t_lingsql_engine_chat_history`
 (
-    `id`          bigint      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `tenant_id`   varchar(64) NOT NULL COMMENT '租户ID',
-    `user_id`     bigint      NOT NULL COMMENT '用户ID',
-    `question`    text COMMENT '问题',
-    `answer`      text COMMENT '回答',
-    `sql_text`    text COMMENT 'SQL 文本',
-    `data_json`   text COMMENT '结果数据(JSON)',
-    `status`      tinyint     DEFAULT '1' COMMENT '状态: 1-正常, 0-异常',
-    `create_time` datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `id`                 bigint      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`          varchar(64) NOT NULL COMMENT '租户ID',
+    `user_id`            bigint      NOT NULL COMMENT '用户ID',
+    `conversation_id`    varchar(64) DEFAULT NULL COMMENT '会话ID',
+    `conversation_title` text COMMENT '会话标题',
+    `question`           text COMMENT '问题',
+    `answer`             text COMMENT '回答',
+    `sql_text`           text COMMENT 'SQL 文本',
+    `data_json`          text COMMENT '结果数据(JSON)',
+    `status`             tinyint     DEFAULT '1' COMMENT '状态: 1-正常, 0-异常',
+    `create_time`        datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
     KEY `idx_chat_history_tenant_user_time` (`tenant_id`, `user_id`, `create_time`),
+    KEY `idx_chat_history_conversation` (`tenant_id`, `user_id`, `conversation_id`),
     KEY `idx_chat_history_create` (`create_time`)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
