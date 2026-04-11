@@ -71,6 +71,11 @@ public class TenantAdminService {
     private static final String PRIORITY_P2 = "P2";
 
     private static final List<String> BASE_PERMISSION_CODES = List.of(
+            "MENU:ADMIN",
+            "MENU:ADMIN:ORG",
+            "ADMIN:ORG:READ",
+            "ADMIN:ORG:WRITE",
+            "ADMIN:ORG:DELETE",
             "MENU:CHAT",
             "MENU:CHAT:HISTORY",
             "API:CHAT:ASK",

@@ -5,14 +5,24 @@ import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.result.PageResult;
 import com.lingsql.common.pagination.PageParam;
 import com.lingsql.common.pagination.PageParamResolver;
+import com.lingsql.organization.entity.OrgUnit;
+import com.lingsql.organization.entity.UserOrgMembership;
+import com.lingsql.organization.repository.OrgUnitRepository;
+import com.lingsql.organization.repository.UserOrgMembershipRepository;
 import com.lingsql.rbac.entity.RbacRole;
+import com.lingsql.rbac.entity.RbacRoleDataScope;
 import com.lingsql.rbac.entity.RbacUser;
+import com.lingsql.rbac.entity.RbacUserDataScope;
 import com.lingsql.rbac.entity.RbacUserRole;
+import com.lingsql.rbac.model.DataScopeRule;
+import com.lingsql.rbac.model.RbacDataScopeType;
 import com.lingsql.rbac.model.UserCreateRequest;
 import com.lingsql.rbac.model.UserPasswordResetRequest;
 import com.lingsql.rbac.model.UserUpdateRequest;
 import com.lingsql.rbac.model.UserView;
+import com.lingsql.rbac.repository.RbacRoleDataScopeRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
+import com.lingsql.rbac.repository.RbacUserDataScopeRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,14 +31,20 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 用户管理服务。
@@ -41,14 +57,22 @@ import java.util.Set;
 public class UserAdminService {
 
     private static final String EXPERIENCE_ROLE_CODE = "ROLE_EXPERIENCE_TEMPLATE";
+    private static final String INHERIT_SCOPE = "INHERIT";
+    private static final String EFFECTIVE_SOURCE_USER = "USER_OVERRIDE";
+    private static final String EFFECTIVE_SOURCE_ROLE = "ROLE_INHERIT";
+    private static final String EFFECTIVE_SOURCE_DEFAULT = "DEFAULT_TENANT";
 
     private final RbacUserRepository userRepository;
     private final RbacUserRoleRepository userRoleRepository;
+    private final RbacRoleDataScopeRepository roleDataScopeRepository;
     private final RbacRoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
     private final PageParamResolver pageParamResolver;
+    private final OrgUnitRepository orgUnitRepository;
+    private final UserOrgMembershipRepository userOrgMembershipRepository;
+    private final RbacUserDataScopeRepository userDataScopeRepository;
 
     /**
      * 查询用户列表。
@@ -88,6 +112,7 @@ public class UserAdminService {
      * @author 余炘洋
      * @date 2026-01-26
      */
+    @Transactional
     public UserView createUser(UserCreateRequest request, String tenantId, boolean sysAdmin) {
         if (request == null) {
             throw new BizException(ErrorCode.INVALID_PARAM, "请求不能为空");
@@ -112,6 +137,10 @@ public class UserAdminService {
         user.setUpdateTime(LocalDateTime.now());
         user = userRepository.save(user);
         applyUserRoles(user, request.getRoleIds(), sysAdmin);
+        applyUserOrgMembership(user, request.getOrgUnitIds(), request.getPrimaryOrgUnitId());
+        if (request.getDataScope() != null) {
+            applyUserDataScope(user, request.getDataScope());
+        }
         return toView(user);
     }
 
@@ -126,6 +155,7 @@ public class UserAdminService {
      * @author 余炘洋
      * @date 2026-01-26
      */
+    @Transactional
     public UserView updateUser(Long userId, UserUpdateRequest request, String tenantId, boolean sysAdmin) {
         if (userId == null) {
             throw new BizException(ErrorCode.INVALID_PARAM, "用户ID不能为空");
@@ -154,11 +184,24 @@ public class UserAdminService {
         } else if (request != null && request.getIsExperience() != null && request.getIsExperience() == 1) {
             applyUserRoles(user, List.of(), sysAdmin);
         }
+        if (request != null && (request.getOrgUnitIds() != null || request.getPrimaryOrgUnitId() != null)) {
+            List<Long> targetOrgUnitIds = request.getOrgUnitIds();
+            if (targetOrgUnitIds == null) {
+                targetOrgUnitIds = userOrgMembershipRepository.findByUserIdOrderByIsPrimaryDescIdAsc(user.getId()).stream()
+                        .map(UserOrgMembership::getOrgUnitId)
+                        .toList();
+            }
+            applyUserOrgMembership(user, targetOrgUnitIds, request.getPrimaryOrgUnitId());
+        }
+        if (request != null && request.getDataScope() != null) {
+            applyUserDataScope(user, request.getDataScope());
+        }
         if (request != null) {
             boolean statusDisabled = request.getStatus() != null && request.getStatus() == 0;
             boolean experienceChanged = request.getIsExperience() != null && !request.getIsExperience().equals(originalExperience);
             boolean statusChanged = request.getStatus() != null && !request.getStatus().equals(originalStatus);
-            if (statusDisabled || rolesUpdated || experienceChanged || statusChanged) {
+            boolean dataScopeChanged = request.getDataScope() != null;
+            if (statusDisabled || rolesUpdated || experienceChanged || statusChanged || dataScopeChanged) {
                 tokenService.revokeUserTokens(user.getId());
                 refreshTokenService.revokeByUserId(user.getId());
             }
@@ -264,6 +307,113 @@ public class UserAdminService {
     }
 
     /**
+     * 应用用户组织归属关系。
+     *
+     * @param user             用户实体
+     * @param orgUnitIds       组织节点ID列表
+     * @param primaryOrgUnitId 主归属组织ID
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private void applyUserOrgMembership(RbacUser user, List<Long> orgUnitIds, Long primaryOrgUnitId) {
+        if (user == null || user.getId() == null) {
+            return;
+        }
+        LinkedHashSet<Long> normalizedIds = new LinkedHashSet<>();
+        if (!CollectionUtils.isEmpty(orgUnitIds)) {
+            normalizedIds.addAll(orgUnitIds.stream().filter(Objects::nonNull).toList());
+        }
+        if (primaryOrgUnitId != null) {
+            normalizedIds.add(primaryOrgUnitId);
+        }
+        if (normalizedIds.isEmpty()) {
+            userOrgMembershipRepository.deleteByUserId(user.getId());
+            return;
+        }
+        List<Long> orderedIds = new ArrayList<>(normalizedIds);
+        List<OrgUnit> orgUnits = orgUnitRepository.findByIdIn(orderedIds);
+        if (orgUnits.size() != orderedIds.size()) {
+            throw new BizException(ErrorCode.ORG_UNIT_NOT_FOUND, "组织节点不存在");
+        }
+        Map<Long, OrgUnit> orgUnitMapping = orgUnits.stream()
+                .collect(Collectors.toMap(OrgUnit::getId, item -> item));
+        for (Long orgUnitId : orderedIds) {
+            OrgUnit orgUnit = orgUnitMapping.get(orgUnitId);
+            if (orgUnit == null || !Objects.equals(user.getTenantId(), orgUnit.getTenantId())) {
+                throw new BizException(ErrorCode.FORBIDDEN, "组织节点不属于当前租户");
+            }
+        }
+        Long resolvedPrimary = primaryOrgUnitId != null ? primaryOrgUnitId : orderedIds.get(0);
+        userOrgMembershipRepository.deleteByUserId(user.getId());
+        LocalDateTime now = LocalDateTime.now();
+        List<UserOrgMembership> memberships = new ArrayList<>();
+        for (Long orgUnitId : orderedIds) {
+            UserOrgMembership membership = new UserOrgMembership();
+            membership.setTenantId(user.getTenantId());
+            membership.setUserId(user.getId());
+            membership.setOrgUnitId(orgUnitId);
+            membership.setIsPrimary(Objects.equals(orgUnitId, resolvedPrimary) ? 1 : 0);
+            membership.setCreateTime(now);
+            membership.setUpdateTime(now);
+            memberships.add(membership);
+        }
+        userOrgMembershipRepository.saveAll(memberships);
+    }
+
+    /**
+     * 应用用户数据权限覆盖。
+     *
+     * @param user 用户
+     * @param rule 数据权限规则
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private void applyUserDataScope(RbacUser user, DataScopeRule rule) {
+        if (user == null || user.getId() == null) {
+            return;
+        }
+        userDataScopeRepository.deleteByUserId(user.getId());
+        if (rule == null || !StringUtils.hasText(rule.getScopeType())
+                || INHERIT_SCOPE.equalsIgnoreCase(rule.getScopeType())) {
+            return;
+        }
+        DataScopeRule normalizedRule = normalizeDataScope(rule);
+        validateUserDataScope(user, normalizedRule);
+        LocalDateTime now = LocalDateTime.now();
+        RbacUserDataScope entity = new RbacUserDataScope();
+        entity.setUserId(user.getId());
+        entity.setScopeType(normalizedRule.getScopeType());
+        entity.setScopeColumn(normalizedRule.getScopeColumn());
+        entity.setScopeRule(normalizedRule.getScopeRule());
+        entity.setStatus(1);
+        entity.setCreateTime(now);
+        entity.setUpdateTime(now);
+        userDataScopeRepository.save(entity);
+    }
+
+    /**
+     * 校验用户数据权限配置是否满足前置条件。
+     *
+     * @param user 用户
+     * @param rule 数据权限规则
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private void validateUserDataScope(RbacUser user, DataScopeRule rule) {
+        if (user == null || user.getId() == null || rule == null || !StringUtils.hasText(rule.getScopeType())) {
+            return;
+        }
+        if (!RbacDataScopeType.ORG.equals(rule.getScopeType())
+                && !RbacDataScopeType.ORG_SUBTREE.equals(rule.getScopeType())) {
+            return;
+        }
+        if (!userOrgMembershipRepository.findByUserIdOrderByIsPrimaryDescIdAsc(user.getId()).isEmpty()) {
+            return;
+        }
+        throw new BizException(ErrorCode.INVALID_PARAM, "组织数据权限要求用户至少绑定一个组织节点");
+    }
+
+    /**
      * 获取体验账号模板角色ID。
      *
      * @return 角色ID
@@ -356,8 +506,243 @@ public class UserAdminService {
         view.setStatus(user.getStatus());
         view.setIsExperience(user.getIsExperience());
         view.setLastLoginTime(user.getLastLoginTime());
-        view.setRoleIds(userRoleRepository.findRoleIdsByUserId(user.getId()));
+        List<Long> roleIds = userRoleRepository.findRoleIdsByUserId(user.getId());
+        view.setRoleIds(roleIds);
+        List<UserOrgMembership> memberships = userOrgMembershipRepository.findByUserIdOrderByIsPrimaryDescIdAsc(user.getId());
+        List<Long> orgUnitIds = memberships.stream()
+                .map(UserOrgMembership::getOrgUnitId)
+                .toList();
+        view.setOrgUnitIds(orgUnitIds);
+        view.setPrimaryOrgUnitId(memberships.stream()
+                .filter(item -> item.getIsPrimary() != null && item.getIsPrimary() == 1)
+                .map(UserOrgMembership::getOrgUnitId)
+                .findFirst()
+                .orElse(null));
+        if (orgUnitIds.isEmpty()) {
+            view.setOrgUnitNames(List.of());
+        } else {
+            Map<Long, String> orgUnitNames = orgUnitRepository.findByIdIn(orgUnitIds).stream()
+                    .collect(Collectors.toMap(OrgUnit::getId, OrgUnit::getUnitName));
+            view.setOrgUnitNames(orgUnitIds.stream()
+                    .map(orgUnitNames::get)
+                    .filter(Objects::nonNull)
+                    .toList());
+        }
+        DataScopeRule userScope = resolveUserDataScope(user.getId());
+        EffectiveDataScope effectiveDataScope = resolveEffectiveDataScope(userScope, roleIds);
+        view.setDataScope(userScope);
+        view.setEffectiveDataScope(effectiveDataScope.rule());
+        view.setEffectiveDataScopeSource(effectiveDataScope.source());
         return view;
+    }
+
+    /**
+     * 查询用户数据权限覆盖。
+     *
+     * @param userId 用户ID
+     * @return 数据权限规则
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private DataScopeRule resolveUserDataScope(Long userId) {
+        if (userId == null) {
+            return createInheritedDataScope();
+        }
+        return userDataScopeRepository.findByUserId(userId)
+                .filter(scope -> scope.getStatus() == null || scope.getStatus() == 1)
+                .map(this::toDataScopeRule)
+                .orElseGet(this::createInheritedDataScope);
+    }
+
+    /**
+     * 解析当前真正生效的数据权限。
+     *
+     * @param userScope 用户覆盖规则
+     * @param roleIds   角色ID列表
+     * @return 生效规则与来源
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private EffectiveDataScope resolveEffectiveDataScope(DataScopeRule userScope, List<Long> roleIds) {
+        if (userScope != null
+                && StringUtils.hasText(userScope.getScopeType())
+                && !INHERIT_SCOPE.equalsIgnoreCase(userScope.getScopeType())) {
+            return new EffectiveDataScope(normalizeDataScope(userScope), EFFECTIVE_SOURCE_USER);
+        }
+        if (CollectionUtils.isEmpty(roleIds)) {
+            return new EffectiveDataScope(createTenantDataScope(), EFFECTIVE_SOURCE_DEFAULT);
+        }
+        List<RbacRoleDataScope> scopes = roleDataScopeRepository.findActiveByRoleIds(roleIds);
+        if (CollectionUtils.isEmpty(scopes)) {
+            return new EffectiveDataScope(createTenantDataScope(), EFFECTIVE_SOURCE_DEFAULT);
+        }
+        return new EffectiveDataScope(toDataScopeRule(chooseBestScope(scopes)), EFFECTIVE_SOURCE_ROLE);
+    }
+
+    /**
+     * 转换用户数据权限实体为规则模型。
+     *
+     * @param entity 数据权限实体
+     * @return 规则模型
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private DataScopeRule toDataScopeRule(RbacUserDataScope entity) {
+        if (entity == null) {
+            return createInheritedDataScope();
+        }
+        DataScopeRule rule = new DataScopeRule();
+        rule.setScopeType(StringUtils.hasText(entity.getScopeType())
+                ? entity.getScopeType().trim().toUpperCase()
+                : RbacDataScopeType.TENANT);
+        rule.setScopeColumn(StringUtils.hasText(entity.getScopeColumn()) ? entity.getScopeColumn().trim() : "");
+        rule.setScopeRule(StringUtils.hasText(entity.getScopeRule()) ? entity.getScopeRule().trim() : "");
+        return rule;
+    }
+
+    /**
+     * 转换角色数据权限实体为规则模型。
+     *
+     * @param entity 角色数据权限实体
+     * @return 规则模型
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private DataScopeRule toDataScopeRule(RbacRoleDataScope entity) {
+        DataScopeRule rule = new DataScopeRule();
+        if (entity == null) {
+            rule.setScopeType(RbacDataScopeType.TENANT);
+            rule.setScopeColumn("");
+            rule.setScopeRule("");
+            return rule;
+        }
+        rule.setScopeType(StringUtils.hasText(entity.getScopeType())
+                ? entity.getScopeType().trim().toUpperCase()
+                : RbacDataScopeType.TENANT);
+        rule.setScopeColumn(StringUtils.hasText(entity.getScopeColumn()) ? entity.getScopeColumn().trim() : "");
+        rule.setScopeRule(StringUtils.hasText(entity.getScopeRule()) ? entity.getScopeRule().trim() : "");
+        return rule;
+    }
+
+    /**
+     * 按登录态规则挑选最佳角色数据权限。
+     *
+     * @param scopes 角色数据权限列表
+     * @return 最佳规则
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private RbacRoleDataScope chooseBestScope(List<RbacRoleDataScope> scopes) {
+        return scopes.stream()
+                .sorted(Comparator.comparingInt(this::scopePriority))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * 角色数据权限优先级。
+     *
+     * @param scope 规则
+     * @return 优先级
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private int scopePriority(RbacRoleDataScope scope) {
+        String type = scope == null ? null : scope.getScopeType();
+        if (RbacDataScopeType.ALL.equalsIgnoreCase(type)) {
+            return 1;
+        }
+        if (RbacDataScopeType.CUSTOM.equalsIgnoreCase(type)) {
+            return 2;
+        }
+        if (RbacDataScopeType.ORG_SUBTREE.equalsIgnoreCase(type)) {
+            return 3;
+        }
+        if (RbacDataScopeType.ORG.equalsIgnoreCase(type)) {
+            return 4;
+        }
+        if (RbacDataScopeType.SELF.equalsIgnoreCase(type)) {
+            return 5;
+        }
+        return 6;
+    }
+
+    /**
+     * 规范化数据权限规则。
+     *
+     * @param rule 原始规则
+     * @return 规范化后的规则
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private DataScopeRule normalizeDataScope(DataScopeRule rule) {
+        if (rule == null || !StringUtils.hasText(rule.getScopeType())) {
+            return createInheritedDataScope();
+        }
+        String scopeType = rule.getScopeType().trim().toUpperCase();
+        if (!RbacDataScopeType.ALL.equals(scopeType)
+                && !RbacDataScopeType.TENANT.equals(scopeType)
+                && !RbacDataScopeType.SELF.equals(scopeType)
+                && !RbacDataScopeType.ORG.equals(scopeType)
+                && !RbacDataScopeType.ORG_SUBTREE.equals(scopeType)
+                && !RbacDataScopeType.CUSTOM.equals(scopeType)) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "数据权限范围不支持");
+        }
+        DataScopeRule normalized = new DataScopeRule();
+        normalized.setScopeType(scopeType);
+        if (RbacDataScopeType.CUSTOM.equals(scopeType)) {
+            String scopeRule = StringUtils.hasText(rule.getScopeRule()) ? rule.getScopeRule().trim() : "";
+            if (!StringUtils.hasText(scopeRule)) {
+                throw new BizException(ErrorCode.INVALID_PARAM, "自定义数据权限规则不能为空");
+            }
+            normalized.setScopeColumn("");
+            normalized.setScopeRule(scopeRule);
+            return normalized;
+        }
+        normalized.setScopeColumn(StringUtils.hasText(rule.getScopeColumn()) ? rule.getScopeColumn().trim() : "");
+        normalized.setScopeRule("");
+        return normalized;
+    }
+
+    /**
+     * 创建继承角色的数据权限占位。
+     *
+     * @return 继承规则
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private DataScopeRule createInheritedDataScope() {
+        DataScopeRule rule = new DataScopeRule();
+        rule.setScopeType(INHERIT_SCOPE);
+        rule.setScopeColumn("");
+        rule.setScopeRule("");
+        return rule;
+    }
+
+    /**
+     * 创建默认租户级数据权限。
+     *
+     * @return 租户级规则
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private DataScopeRule createTenantDataScope() {
+        DataScopeRule rule = new DataScopeRule();
+        rule.setScopeType(RbacDataScopeType.TENANT);
+        rule.setScopeColumn("");
+        rule.setScopeRule("");
+        return rule;
+    }
+
+    /**
+     * 生效数据权限结果。
+     *
+     * @param rule   生效规则
+     * @param source 来源
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private record EffectiveDataScope(DataScopeRule rule, String source) {
     }
 
     /**

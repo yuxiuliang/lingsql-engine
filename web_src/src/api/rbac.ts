@@ -28,6 +28,12 @@ export interface UserView {
   isExperience?: number;
   lastLoginTime?: string;
   roleIds?: number[];
+  orgUnitIds?: number[];
+  primaryOrgUnitId?: number;
+  orgUnitNames?: string[];
+  dataScope?: DataScopeRule;
+  effectiveDataScope?: DataScopeRule;
+  effectiveDataScopeSource?: string;
 }
 
 /**
@@ -44,6 +50,9 @@ export interface UserCreateRequest {
   status?: number;
   isExperience?: number;
   roleIds?: number[];
+  orgUnitIds?: number[];
+  primaryOrgUnitId?: number;
+  dataScope?: DataScopeRule;
 }
 
 /**
@@ -57,6 +66,9 @@ export interface UserUpdateRequest {
   status?: number;
   isExperience?: number;
   roleIds?: number[];
+  orgUnitIds?: number[];
+  primaryOrgUnitId?: number;
+  dataScope?: DataScopeRule;
 }
 
 /**
@@ -82,6 +94,7 @@ export interface RoleView {
   roleName: string;
   status?: number;
   permIds?: number[];
+  dataScope?: DataScopeRule;
 }
 
 /**
@@ -96,6 +109,7 @@ export interface RoleCreateRequest {
   roleName: string;
   status?: number;
   permIds?: number[];
+  dataScope?: DataScopeRule;
 }
 
 /**
@@ -108,6 +122,7 @@ export interface RoleUpdateRequest {
   roleName?: string;
   status?: number;
   permIds?: number[];
+  dataScope?: DataScopeRule;
 }
 
 /**

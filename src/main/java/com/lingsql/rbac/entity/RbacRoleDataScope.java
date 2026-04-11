@@ -41,7 +41,7 @@ public class RbacRoleDataScope {
     private Long roleId;
 
     /**
-     * 范围类型: ALL/TENANT/SELF/CUSTOM。
+     * 范围类型: ALL/TENANT/SELF/ORG/ORG_SUBTREE/CUSTOM。
      *
      * @author 余炘洋
      * @date 2026-01-23
@@ -50,7 +50,7 @@ public class RbacRoleDataScope {
     private String scopeType;
 
     /**
-     * SELF 默认字段名。
+     * SELF / ORG / ORG_SUBTREE 默认字段名。
      *
      * @author 余炘洋
      * @date 2026-01-23

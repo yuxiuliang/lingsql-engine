@@ -68,6 +68,13 @@ const routes: Array<RouteRecordRaw> = [
                 component: () => import('@/views/plan/index.vue'),
                 meta: {title: '套餐管理', icon: 'Tickets'}
             },
+            // 数字员工管理页，修复菜单点击与刷新后 404。
+            {
+                path: '/digital-employee',
+                name: 'DigitalEmployee',
+                component: () => import('@/views/digital-employee/index.vue'),
+                meta: {title: '数字员工', icon: 'Cpu'}
+            },
             {
                 path: '/billing',
                 name: 'BillingManage',
@@ -103,6 +110,12 @@ const routes: Array<RouteRecordRaw> = [
                 name: 'Experience',
                 component: () => import('@/views/experience/index.vue'),
                 meta: {title: '体验账号', icon: 'User'}
+            },
+            {
+                path: '/organization',
+                name: 'OrganizationManage',
+                component: () => import('@/views/organization/index.vue'),
+                meta: {title: '组织架构', icon: 'OfficeBuilding'}
             },
             {
                 path: '/user',

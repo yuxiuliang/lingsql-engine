@@ -44,6 +44,7 @@ const ICON_PATHS: Record<string, string> = {
   dashboard: 'M4 13h4v7H4v-7zm6-6h4v13h-4V7zm6 3h4v10h-4V10z',
   billing: 'M6 2h12a2 2 0 0 1 2 2v18l-4-2-4 2-4-2-4 2V4a2 2 0 0 1 2-2zm2 5h8v2H8V7zm0 4h8v2H8v-2z',
   plan: 'M4 4h16v4H4V4zm0 6h16v4H4v-4zm0 6h16v4H4v-4z',
+  robot: 'M9 2h6v2h2a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-1v2h2v2H6v-2h2v-2H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h2V2zm-2 4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1H7zm2 2h2v2H9V8zm4 0h2v2h-2V8zm-4 5h6v2H9v-2z',
   default: 'M12 2a9 9 0 1 1-9 9 9 9 0 0 1 9-9zm0 5a4 4 0 1 0 4 4 4 4 0 0 0-4-4z'
 };
 
@@ -186,7 +187,7 @@ const resolveIconType = (icon?: string): string => {
     return 'default';
   }
   const normalized = icon.trim().toLowerCase();
-  if (['chat', 'tenant', 'metadata', 'lexicon', 'join', 'model', 'user', 'role', 'permission', 'audit', 'sql', 'dashboard', 'billing', 'plan'].includes(normalized)) {
+  if (['chat', 'tenant', 'metadata', 'lexicon', 'join', 'model', 'user', 'role', 'permission', 'audit', 'sql', 'dashboard', 'billing', 'plan', 'robot'].includes(normalized)) {
     return normalized;
   }
   if (['history'].includes(normalized)) {
@@ -218,6 +219,9 @@ const resolveIconType = (icon?: string): string => {
   }
   if (['package', 'tier'].includes(normalized)) {
     return 'plan';
+  }
+  if (['robot', 'bot', 'employee'].includes(normalized)) {
+    return 'robot';
   }
   if (['table', 'notebook'].includes(normalized)) {
     return 'metadata';

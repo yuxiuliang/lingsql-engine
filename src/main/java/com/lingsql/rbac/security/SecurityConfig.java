@@ -40,6 +40,7 @@ public class SecurityConfig {
             "/model",
             "/tenant",
             "/plan",
+            "/digital-employee",
             "/billing",
             "/datasource",
             "/lexicon",

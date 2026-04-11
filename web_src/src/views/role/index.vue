@@ -4,6 +4,7 @@ import {ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
 import {
   createRole,
+  DataScopeRule,
   fetchPermissions,
   fetchRoles,
   PermissionView,
@@ -19,14 +20,98 @@ const permissions = ref<PermissionView[]>([]);
 const loading = ref(false);
 const dialogVisible = ref(false);
 const editingId = ref<number | null>(null);
+const scopeTypeOptions = [
+  {label: '全部数据', value: 'ALL'},
+  {label: '本租户', value: 'TENANT'},
+  {label: '仅本人', value: 'SELF'},
+  {label: '指定组织', value: 'ORG'},
+  {label: '组织及下级', value: 'ORG_SUBTREE'},
+  {label: '自定义条件', value: 'CUSTOM'}
+];
 
 const form = reactive<RoleCreateRequest & RoleUpdateRequest>({
   tenantId: '',
   roleCode: '',
   roleName: '',
   status: 1,
-  permIds: []
+  permIds: [],
+  dataScope: {
+    scopeType: 'TENANT',
+    scopeColumn: '',
+    scopeRule: ''
+  }
 });
+
+/**
+ * 创建默认数据权限表单。
+ *
+ * @return 默认数据权限
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+const createDefaultDataScope = (): DataScopeRule => {
+  return {
+    scopeType: 'TENANT',
+    scopeColumn: '',
+    scopeRule: ''
+  };
+};
+
+/**
+ * 格式化数据权限标签。
+ *
+ * @param scopeType 范围类型
+ * @return 展示文本
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+const formatScopeType = (scopeType?: string) => {
+  const mapping: Record<string, string> = {
+    ALL: '全部数据',
+    TENANT: '本租户',
+    SELF: '仅本人',
+    ORG: '指定组织',
+    ORG_SUBTREE: '组织及下级',
+    CUSTOM: '自定义条件'
+  };
+  return mapping[scopeType || 'TENANT'] || scopeType || '本租户';
+};
+
+/**
+ * 规范化数据权限请求。
+ *
+ * @return 数据权限配置
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+const buildDataScopePayload = (): DataScopeRule => {
+  const scopeType = form.dataScope?.scopeType || 'TENANT';
+  const scopeColumn = form.dataScope?.scopeColumn || '';
+  const scopeRule = form.dataScope?.scopeRule || '';
+  return {
+    scopeType,
+    scopeColumn,
+    scopeRule
+  };
+};
+
+/**
+ * 校验数据权限表单。
+ *
+ * @return 是否通过
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+const validateDataScope = () => {
+  if (form.dataScope?.scopeType !== 'CUSTOM') {
+    return true;
+  }
+  if (form.dataScope.scopeRule?.trim()) {
+    return true;
+  }
+  ElMessage.warning('选择自定义条件时必须填写 SQL 条件片段');
+  return false;
+};
 
 /**
  * 判断是否系统管理员。
@@ -120,7 +205,8 @@ const handleCreate = () => {
     roleCode: '',
     roleName: '',
     status: 1,
-    permIds: []
+    permIds: [],
+    dataScope: createDefaultDataScope()
   });
   dialogVisible.value = true;
 };
@@ -139,7 +225,12 @@ const handleEdit = (row: RoleView) => {
     roleCode: row.roleCode,
     roleName: row.roleName,
     status: row.status ?? 1,
-    permIds: row.permIds || []
+    permIds: row.permIds || [],
+    dataScope: {
+      scopeType: row.dataScope?.scopeType || 'TENANT',
+      scopeColumn: row.dataScope?.scopeColumn || '',
+      scopeRule: row.dataScope?.scopeRule || ''
+    }
   });
   dialogVisible.value = true;
 };
@@ -155,12 +246,16 @@ const handleSave = async () => {
     ElMessage.warning('请输入角色名称');
     return;
   }
+  if (!validateDataScope()) {
+    return;
+  }
   try {
     if (editingId.value) {
       await updateRole(editingId.value, {
         roleName: form.roleName,
         status: form.status,
-        permIds: form.permIds
+        permIds: form.permIds,
+        dataScope: buildDataScopePayload()
       });
       ElMessage.success('角色已更新');
     } else {
@@ -173,7 +268,8 @@ const handleSave = async () => {
         roleCode: form.roleCode,
         roleName: form.roleName,
         status: form.status,
-        permIds: form.permIds
+        permIds: form.permIds,
+        dataScope: buildDataScopePayload()
       });
       ElMessage.success('角色已创建');
     }
@@ -240,6 +336,11 @@ loadPermissions();
         <el-table-column prop="tenantId" label="租户" min-width="120"/>
         <el-table-column prop="roleCode" label="角色编码" min-width="160"/>
         <el-table-column prop="roleName" label="角色名称" min-width="140"/>
+        <el-table-column label="数据权限" min-width="160">
+          <template #default="scope">
+            <el-tag type="warning" effect="plain">{{ formatScopeType(scope.row.dataScope?.scopeType) }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
           <template #default="scope">
             <el-tag :type="scope.row.status === 0 ? 'info' : 'success'">{{ scope.row.status === 0 ? '停用' : '启用' }}</el-tag>
@@ -279,6 +380,32 @@ loadPermissions();
               :label="`${perm.permName} (${perm.permCode})`"
             />
           </el-select>
+        </el-form-item>
+        <el-form-item label="数据权限">
+          <el-select v-model="form.dataScope!.scopeType" style="width: 100%">
+            <el-option v-for="item in scopeTypeOptions" :key="item.value" :label="item.label" :value="item.value"/>
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="form.dataScope?.scopeType === 'ORG' || form.dataScope?.scopeType === 'ORG_SUBTREE'">
+          <el-alert
+            type="info"
+            :closable="false"
+            title="组织范围会基于用户绑定的组织归属生效，角色本身不直接选择组织节点。"
+          />
+        </el-form-item>
+        <el-form-item label="范围字段">
+          <el-input
+            v-model="form.dataScope!.scopeColumn"
+            placeholder="SELF/ORG/ORG_SUBTREE 时可填写字段名，如 creator_id 或 org_code"
+          />
+        </el-form-item>
+        <el-form-item label="自定义规则" v-if="form.dataScope?.scopeType === 'CUSTOM'">
+          <el-input
+            v-model="form.dataScope!.scopeRule"
+            type="textarea"
+            :rows="3"
+            placeholder="例如 status = 1 and dept_code in ('A', 'B')"
+          />
         </el-form-item>
       </el-form>
       <template #footer>

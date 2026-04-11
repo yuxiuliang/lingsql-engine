@@ -20,6 +20,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -115,5 +116,31 @@ class ChatApplicationServiceTest {
         assertEquals("租户数据源未配置", result.getTrace().get(1).getTitle());
         verify(resultRefiner, never()).refine(anyString(), any(SqlExecutionResult.class));
         verify(chatMemoryService, never()).saveSuccessExchange(anyString(), anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void askShouldRejectBlankQuestionBeforeExecution() {
+        SmartSqlExecutor sqlExecutor = Mockito.mock(SmartSqlExecutor.class);
+        ResultRefiner resultRefiner = Mockito.mock(ResultRefiner.class);
+        ChatHistoryService chatHistoryService = Mockito.mock(ChatHistoryService.class);
+        ChatMemoryService chatMemoryService = Mockito.mock(ChatMemoryService.class);
+
+        ChatApplicationService service = new ChatApplicationService(
+                sqlExecutor,
+                resultRefiner,
+                chatHistoryService,
+                chatMemoryService
+        );
+        TenantContext.setSessionInfo(new SessionInfo("TENANT_A", 1001L));
+
+        ChatRequest request = new ChatRequest();
+        request.setQuestion("   ");
+
+        BizException ex = assertThrows(BizException.class, () -> service.ask(request));
+
+        assertEquals(ErrorCode.INVALID_PARAM, ex.getErrorCode());
+        assertEquals("问题不能为空", ex.getMessage());
+        verify(sqlExecutor, never()).execute(anyString(), anyString(), anyString());
+        verify(chatHistoryService, never()).saveHistory(anyString(), anyLong(), anyString(), anyString(), anyString(), anyString(), any(), any());
     }
 }

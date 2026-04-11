@@ -4,11 +4,15 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacRole;
+import com.lingsql.rbac.entity.RbacRoleDataScope;
 import com.lingsql.rbac.entity.RbacRolePermission;
+import com.lingsql.rbac.model.DataScopeRule;
+import com.lingsql.rbac.model.RbacDataScopeType;
 import com.lingsql.rbac.model.RoleCreateRequest;
 import com.lingsql.rbac.model.RoleUpdateRequest;
 import com.lingsql.rbac.model.RoleView;
 import com.lingsql.rbac.repository.RbacPermissionRepository;
+import com.lingsql.rbac.repository.RbacRoleDataScopeRepository;
 import com.lingsql.rbac.repository.RbacRolePermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
@@ -37,6 +41,7 @@ public class RoleAdminService {
 
     private final RbacRoleRepository roleRepository;
     private final RbacRolePermissionRepository rolePermissionRepository;
+    private final RbacRoleDataScopeRepository roleDataScopeRepository;
     private final RbacPermissionRepository permissionRepository;
     private final TenantPermissionService tenantPermissionService;
     private final RbacUserRoleRepository userRoleRepository;
@@ -60,7 +65,8 @@ public class RoleAdminService {
             roles = roleRepository.findByTenantId(tenantId);
         }
         Map<Long, List<Long>> rolePermMap = resolveRolePermMap(roles);
-        return roles.stream().map(role -> toView(role, rolePermMap.get(role.getId()))).toList();
+        Map<Long, DataScopeRule> roleScopeMap = resolveRoleScopeMap(roles);
+        return roles.stream().map(role -> toView(role, rolePermMap.get(role.getId()), roleScopeMap.get(role.getId()))).toList();
     }
 
     /**
@@ -99,8 +105,11 @@ public class RoleAdminService {
         if (request.getPermIds() != null) {
             applyRolePermissions(role, request.getPermIds(), sysAdmin, resolvedTenantId);
         }
+        if (request.getDataScope() != null) {
+            applyRoleDataScope(role, request.getDataScope());
+        }
         List<Long> permIds = rolePermissionRepository.findPermIdsByRoleIds(List.of(role.getId()));
-        return toView(role, permIds);
+        return toView(role, permIds, resolveRoleDataScope(role.getId()));
     }
 
     /**
@@ -135,11 +144,14 @@ public class RoleAdminService {
         if (request != null && request.getPermIds() != null) {
             applyRolePermissions(role, request.getPermIds(), sysAdmin, role.getTenantId());
         }
+        if (request != null && request.getDataScope() != null) {
+            applyRoleDataScope(role, request.getDataScope());
+        }
         if (request != null && shouldInvalidateRoleSessions(request, originalStatus)) {
             revokeRoleSessions(role.getId());
         }
         List<Long> permIds = rolePermissionRepository.findPermIdsByRoleIds(List.of(role.getId()));
-        return toView(role, permIds);
+        return toView(role, permIds, resolveRoleDataScope(role.getId()));
     }
 
     /**
@@ -209,6 +221,81 @@ public class RoleAdminService {
     }
 
     /**
+     * 解析角色数据权限映射。
+     *
+     * @param roles 角色列表
+     * @return 数据权限映射
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private Map<Long, DataScopeRule> resolveRoleScopeMap(List<RbacRole> roles) {
+        if (CollectionUtils.isEmpty(roles)) {
+            return Map.of();
+        }
+        List<Long> roleIds = roles.stream().map(RbacRole::getId).filter(id -> id != null).toList();
+        if (CollectionUtils.isEmpty(roleIds)) {
+            return Map.of();
+        }
+        Map<Long, DataScopeRule> mapping = new HashMap<>();
+        for (RbacRoleDataScope scope : roleDataScopeRepository.findActiveByRoleIds(roleIds)) {
+            if (scope.getRoleId() != null && !mapping.containsKey(scope.getRoleId())) {
+                mapping.put(scope.getRoleId(), toDataScopeRule(scope));
+            }
+        }
+        for (Long roleId : roleIds) {
+            mapping.putIfAbsent(roleId, createDefaultDataScope());
+        }
+        return mapping;
+    }
+
+    /**
+     * 查询单个角色的数据权限配置。
+     *
+     * @param roleId 角色ID
+     * @return 数据权限规则
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private DataScopeRule resolveRoleDataScope(Long roleId) {
+        if (roleId == null) {
+            return createDefaultDataScope();
+        }
+        return roleDataScopeRepository.findActiveByRoleIds(List.of(roleId)).stream()
+                .findFirst()
+                .map(this::toDataScopeRule)
+                .orElseGet(this::createDefaultDataScope);
+    }
+
+    /**
+     * 应用角色数据权限配置。
+     *
+     * @param role 角色
+     * @param rule 数据权限规则
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private void applyRoleDataScope(RbacRole role, DataScopeRule rule) {
+        if (role == null || role.getId() == null) {
+            return;
+        }
+        roleDataScopeRepository.deleteByRoleId(role.getId());
+        DataScopeRule normalizedRule = normalizeDataScope(rule);
+        if (RbacDataScopeType.TENANT.equals(normalizedRule.getScopeType())) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        RbacRoleDataScope entity = new RbacRoleDataScope();
+        entity.setRoleId(role.getId());
+        entity.setScopeType(normalizedRule.getScopeType());
+        entity.setScopeColumn(normalizedRule.getScopeColumn());
+        entity.setScopeRule(normalizedRule.getScopeRule());
+        entity.setStatus(1);
+        entity.setCreateTime(now);
+        entity.setUpdateTime(now);
+        roleDataScopeRepository.save(entity);
+    }
+
+    /**
      * 判断是否需要失效角色绑定用户的会话。
      *
      * @param request        更新请求
@@ -223,7 +310,8 @@ public class RoleAdminService {
         }
         boolean permChanged = request.getPermIds() != null;
         boolean statusChanged = request.getStatus() != null && !request.getStatus().equals(originalStatus);
-        return permChanged || statusChanged;
+        boolean dataScopeChanged = request.getDataScope() != null;
+        return permChanged || statusChanged || dataScopeChanged;
     }
 
     /**
@@ -297,7 +385,7 @@ public class RoleAdminService {
      * @author 余炘洋
      * @date 2026-01-26
      */
-    private RoleView toView(RbacRole role, List<Long> permIds) {
+    private RoleView toView(RbacRole role, List<Long> permIds, DataScopeRule dataScope) {
         RoleView view = new RoleView();
         view.setId(role.getId());
         view.setTenantId(role.getTenantId());
@@ -305,7 +393,81 @@ public class RoleAdminService {
         view.setRoleName(role.getRoleName());
         view.setStatus(role.getStatus());
         view.setPermIds(permIds == null ? List.of() : permIds);
+        view.setDataScope(dataScope == null ? createDefaultDataScope() : dataScope);
         return view;
+    }
+
+    /**
+     * 转换角色数据权限实体为规则模型。
+     *
+     * @param entity 数据权限实体
+     * @return 规则模型
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private DataScopeRule toDataScopeRule(RbacRoleDataScope entity) {
+        if (entity == null) {
+            return createDefaultDataScope();
+        }
+        DataScopeRule rule = new DataScopeRule();
+        rule.setScopeType(StringUtils.hasText(entity.getScopeType())
+                ? entity.getScopeType().trim().toUpperCase()
+                : RbacDataScopeType.TENANT);
+        rule.setScopeColumn(StringUtils.hasText(entity.getScopeColumn()) ? entity.getScopeColumn().trim() : "");
+        rule.setScopeRule(StringUtils.hasText(entity.getScopeRule()) ? entity.getScopeRule().trim() : "");
+        return rule;
+    }
+
+    /**
+     * 规范化角色数据权限规则。
+     *
+     * @param rule 原始规则
+     * @return 规范化后的规则
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private DataScopeRule normalizeDataScope(DataScopeRule rule) {
+        if (rule == null || !StringUtils.hasText(rule.getScopeType())) {
+            return createDefaultDataScope();
+        }
+        String scopeType = rule.getScopeType().trim().toUpperCase();
+        if (!RbacDataScopeType.ALL.equals(scopeType)
+                && !RbacDataScopeType.TENANT.equals(scopeType)
+                && !RbacDataScopeType.SELF.equals(scopeType)
+                && !RbacDataScopeType.ORG.equals(scopeType)
+                && !RbacDataScopeType.ORG_SUBTREE.equals(scopeType)
+                && !RbacDataScopeType.CUSTOM.equals(scopeType)) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "数据权限范围不支持");
+        }
+        DataScopeRule normalized = new DataScopeRule();
+        normalized.setScopeType(scopeType);
+        if (RbacDataScopeType.CUSTOM.equals(scopeType)) {
+            String scopeRule = StringUtils.hasText(rule.getScopeRule()) ? rule.getScopeRule().trim() : "";
+            if (!StringUtils.hasText(scopeRule)) {
+                throw new BizException(ErrorCode.INVALID_PARAM, "自定义数据权限规则不能为空");
+            }
+            normalized.setScopeColumn("");
+            normalized.setScopeRule(scopeRule);
+            return normalized;
+        }
+        normalized.setScopeColumn(StringUtils.hasText(rule.getScopeColumn()) ? rule.getScopeColumn().trim() : "");
+        normalized.setScopeRule("");
+        return normalized;
+    }
+
+    /**
+     * 创建默认租户级数据权限。
+     *
+     * @return 默认规则
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private DataScopeRule createDefaultDataScope() {
+        DataScopeRule rule = new DataScopeRule();
+        rule.setScopeType(RbacDataScopeType.TENANT);
+        rule.setScopeColumn("");
+        rule.setScopeRule("");
+        return rule;
     }
 
     /**

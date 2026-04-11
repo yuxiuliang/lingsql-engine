@@ -174,6 +174,66 @@ class SqlGuardrailTest {
         }
     }
 
+    @Test
+    void rewriteShouldInjectOrgScopeCondition() {
+        LingSqlProperties properties = createProperties(100);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        Mockito.when(metadataExtService.resolveIsolationField(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        SqlRewriter rewriter = new SqlRewriter(properties, metadataExtService);
+
+        DataScopeRule rule = new DataScopeRule();
+        rule.setScopeType(RbacDataScopeType.ORG);
+        rule.setScopeColumn("org_code");
+
+        RbacUserSession session = new RbacUserSession();
+        session.setDataScope(rule);
+        session.setOrgUnitCodes(List.of("CS001", "CS002"));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(session, "token", List.of())
+        );
+
+        String rewritten = rewriter.rewrite(
+                "SELECT order_id FROM orders WHERE amount > 0 LIMIT 50",
+                createTenantConfig("PHYSICAL", "tenant_id"),
+                "TENANT_A"
+        );
+
+        assertTrue(rewritten.contains("org_code"), "应包含组织字段条件");
+        assertTrue(rewritten.contains("CS001"), "应包含直属组织编码");
+        assertTrue(rewritten.contains("CS002"), "应包含多组织编码");
+    }
+
+    @Test
+    void checkerShouldAllowOrgSubtreeScopeWhenAllCodesPresent() {
+        LingSqlProperties properties = createProperties(100);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        Mockito.when(metadataExtService.resolveIsolationField(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        SqlSecurityChecker checker = new SqlSecurityChecker(properties, metadataExtService);
+
+        DataScopeRule rule = new DataScopeRule();
+        rule.setScopeType(RbacDataScopeType.ORG_SUBTREE);
+        rule.setScopeColumn("org_code");
+
+        RbacUserSession session = new RbacUserSession();
+        session.setDataScope(rule);
+        session.setOrgSubtreeCodes(List.of("HN", "HN_CS", "HN_CS_YL"));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(session, "token", List.of())
+        );
+
+        try {
+            checker.check(
+                    "SELECT order_id FROM orders WHERE org_code IN ('HN', 'HN_CS', 'HN_CS_YL') LIMIT 10",
+                    createTenantConfig("PHYSICAL", "tenant_id"),
+                    "TENANT_A"
+            );
+        } catch (Exception ex) {
+            fail("组织子树条件完整时不应抛出异常: " + ex.getMessage());
+        }
+    }
+
     private LingSqlProperties createProperties(int limit) {
         LingSqlProperties properties = new LingSqlProperties();
         LingSqlProperties.Security security = new LingSqlProperties.Security();

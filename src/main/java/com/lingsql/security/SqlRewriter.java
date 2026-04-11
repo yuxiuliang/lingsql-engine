@@ -12,6 +12,8 @@ import com.lingsql.rbac.security.RbacUserSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
+import net.sf.jsqlparser.expression.operators.relational.InExpression;
 import net.sf.jsqlparser.expression.LongValue;
 import net.sf.jsqlparser.expression.NullValue;
 import net.sf.jsqlparser.expression.StringValue;
@@ -226,6 +228,18 @@ public class SqlRewriter {
         if (RbacDataScopeType.ALL.equals(normalized) || RbacDataScopeType.TENANT.equals(normalized)) {
             return;
         }
+        if (RbacDataScopeType.ORG.equals(normalized) || RbacDataScopeType.ORG_SUBTREE.equals(normalized)) {
+            String columnName = rule.getScopeColumn();
+            if (!StringUtils.hasText(columnName)) {
+                columnName = "org_code";
+            }
+            List<String> orgCodes = resolveScopedOrgCodes(session, normalized);
+            if (orgCodes.isEmpty()) {
+                throw new BizException(ErrorCode.SECURITY_VIOLATION, "数据权限缺少组织归属信息");
+            }
+            injectInCondition(plainSelect, buildColumn(plainSelect, columnName), orgCodes);
+            return;
+        }
         if (RbacDataScopeType.SELF.equals(normalized)) {
             String columnName = rule.getScopeColumn();
             if (columnName == null || columnName.isBlank()) {
@@ -257,6 +271,32 @@ public class SqlRewriter {
     }
 
     /**
+     * 解析组织范围编码列表。
+     *
+     * @param session    当前会话
+     * @param scopeType  范围类型
+     * @return 组织编码列表
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private List<String> resolveScopedOrgCodes(RbacUserSession session, String scopeType) {
+        if (session == null) {
+            return List.of();
+        }
+        List<String> codes = RbacDataScopeType.ORG_SUBTREE.equalsIgnoreCase(scopeType)
+                ? session.getOrgSubtreeCodes()
+                : session.getOrgUnitCodes();
+        if (codes == null || codes.isEmpty()) {
+            return List.of();
+        }
+        return codes.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+    }
+
+    /**
      * 追加等值条件，避免原条件被覆盖。
      *
      * @param plainSelect 查询体
@@ -275,6 +315,36 @@ public class SqlRewriter {
             return;
         }
         plainSelect.setWhere(new AndExpression(where, equalsTo));
+    }
+
+    /**
+     * 追加 IN 条件，避免原条件被覆盖。
+     *
+     * @param plainSelect 查询体
+     * @param left        左表达式
+     * @param values      右值列表
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private void injectInCondition(PlainSelect plainSelect, Expression left, List<String> values) {
+        if (plainSelect == null || left == null || values == null || values.isEmpty()) {
+            return;
+        }
+        List<Expression> items = values.stream()
+                .filter(StringUtils::hasText)
+                .map(StringValue::new)
+                .map(Expression.class::cast)
+                .toList();
+        if (items.isEmpty()) {
+            return;
+        }
+        InExpression inExpression = new InExpression(left, new ExpressionList<>(items));
+        Expression where = plainSelect.getWhere();
+        if (where == null) {
+            plainSelect.setWhere(inExpression);
+            return;
+        }
+        plainSelect.setWhere(new AndExpression(where, inExpression));
     }
 
     /**

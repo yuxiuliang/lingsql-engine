@@ -359,7 +359,10 @@ public class AuditLogService {
         return "USER".equals(normalized)
                 || "ROLE".equals(normalized)
                 || "TENANT".equals(normalized)
-                || "MODEL".equals(normalized);
+                || "MODEL".equals(normalized)
+                || "ORG_TYPE".equals(normalized)
+                || "ORG_UNIT".equals(normalized)
+                || "ORG_RELATION".equals(normalized);
     }
 
     /**
@@ -390,6 +393,15 @@ public class AuditLogService {
             case "MODEL_UPDATE" -> "更新模型配置";
             case "MODEL_DELETE" -> "删除模型配置";
             case "TENANT_PERMISSION_UPDATE" -> "更新租户权限池";
+            case "ORG_TYPE_CREATE" -> "创建组织类型";
+            case "ORG_TYPE_UPDATE" -> "更新组织类型";
+            case "ORG_TYPE_DELETE" -> "删除组织类型";
+            case "ORG_UNIT_CREATE" -> "创建组织节点";
+            case "ORG_UNIT_UPDATE" -> "更新组织节点";
+            case "ORG_UNIT_DELETE" -> "删除组织节点";
+            case "ORG_RELATION_CREATE" -> "创建组织关系";
+            case "ORG_RELATION_UPDATE" -> "更新组织关系";
+            case "ORG_RELATION_DELETE" -> "删除组织关系";
             default -> "执行操作(" + normalized + ")";
         };
     }

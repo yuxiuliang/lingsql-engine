@@ -25,4 +25,13 @@ public interface RbacRoleDataScopeRepository extends JpaRepository<RbacRoleDataS
      */
     @Query("select ds from RbacRoleDataScope ds where ds.roleId in :roleIds and ds.status = 1")
     List<RbacRoleDataScope> findActiveByRoleIds(@Param("roleIds") List<Long> roleIds);
+
+    /**
+     * 按角色删除数据权限配置。
+     *
+     * @param roleId 角色ID
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    void deleteByRoleId(Long roleId);
 }

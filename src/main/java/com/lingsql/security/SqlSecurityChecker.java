@@ -70,6 +70,7 @@ public class SqlSecurityChecker {
             validateLimit(plainSelect);
             validateTenantCondition(config, plainSelect, tenantId);
             validateSelfDataScopeCondition(plainSelect.getWhere());
+            validateOrgDataScopeCondition(plainSelect.getWhere());
             validateTables(statement, config);
             validateColumns(plainSelect, config);
         } catch (BizException ex) {
@@ -160,6 +161,36 @@ public class SqlSecurityChecker {
         String scopeColumn = StringUtils.hasText(rule.getScopeColumn()) ? rule.getScopeColumn() : "creator_id";
         if (!containsEqualsCondition(where, scopeColumn, null, session.getUserId())) {
             throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：SELF 数据权限条件不合法");
+        }
+    }
+
+    /**
+     * 校验组织数据权限条件是否存在。
+     *
+     * @param where WHERE 条件
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private void validateOrgDataScopeCondition(Expression where) {
+        RbacUserSession session = RbacSecurityUtils.currentSession();
+        if (session == null || session.getDataScope() == null) {
+            return;
+        }
+        DataScopeRule rule = session.getDataScope();
+        String scopeType = rule.getScopeType();
+        if (!RbacDataScopeType.ORG.equalsIgnoreCase(scopeType)
+                && !RbacDataScopeType.ORG_SUBTREE.equalsIgnoreCase(scopeType)) {
+            return;
+        }
+        String scopeColumn = StringUtils.hasText(rule.getScopeColumn()) ? rule.getScopeColumn() : "org_code";
+        List<String> allowedCodes = RbacDataScopeType.ORG_SUBTREE.equalsIgnoreCase(scopeType)
+                ? session.getOrgSubtreeCodes()
+                : session.getOrgUnitCodes();
+        if (where == null || allowedCodes == null || allowedCodes.isEmpty()) {
+            throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：组织数据权限缺少组织条件");
+        }
+        if (!containsInCondition(where, scopeColumn, allowedCodes)) {
+            throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：组织数据权限条件不合法");
         }
     }
 
@@ -371,6 +402,39 @@ public class SqlSecurityChecker {
                     || Pattern.compile(valuePattern + "\\s*=\\s*" + columnPattern, Pattern.CASE_INSENSITIVE).matcher(normalized).find();
         }
         return false;
+    }
+
+    /**
+     * 判断 WHERE 条件中是否包含指定字段的 IN 条件。
+     *
+     * @param where        WHERE 条件
+     * @param columnName   字段名
+     * @param expectedText 期望值列表
+     * @return 是否匹配
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private boolean containsInCondition(Expression where, String columnName, List<String> expectedText) {
+        if (where == null || !StringUtils.hasText(columnName) || expectedText == null || expectedText.isEmpty()) {
+            return false;
+        }
+        String whereText = where.toString().replace("`", "");
+        String normalizedColumn = normalizeColumnName(columnName);
+        String columnPattern = "(?:\\b\\w+\\.)?" + Pattern.quote(normalizedColumn);
+        if (!Pattern.compile(columnPattern + "\\s+IN\\s*\\(", Pattern.CASE_INSENSITIVE).matcher(whereText).find()) {
+            return false;
+        }
+        String normalizedWhere = whereText.toUpperCase();
+        for (String value : expectedText) {
+            if (!StringUtils.hasText(value)) {
+                continue;
+            }
+            String expected = "'" + value.trim().toUpperCase() + "'";
+            if (!normalizedWhere.contains(expected)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -657,4 +721,5 @@ public class SqlSecurityChecker {
      */
     private record TableRef(String tableName, String qualifier) {
     }
+
 }

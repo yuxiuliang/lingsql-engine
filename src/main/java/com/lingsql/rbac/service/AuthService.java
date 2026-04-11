@@ -1,6 +1,10 @@
 package com.lingsql.rbac.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lingsql.organization.entity.OrgUnit;
+import com.lingsql.organization.entity.UserOrgMembership;
+import com.lingsql.organization.repository.OrgUnitRepository;
+import com.lingsql.organization.repository.UserOrgMembershipRepository;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
@@ -34,6 +38,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -68,6 +75,8 @@ public class AuthService {
     private final LingSqlProperties properties;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
+    private final OrgUnitRepository orgUnitRepository;
+    private final UserOrgMembershipRepository userOrgMembershipRepository;
 
     /**
      * 登录并生成 Token。
@@ -270,6 +279,9 @@ public class AuthService {
         session.setRoles(roles == null ? List.of() : roles);
         session.setPermissions(permissions == null ? List.of() : permissions);
         session.setDataScope(sanitizeDataScope(dataScope));
+        session.setOrgUnitIds(resolveUserOrgUnitIds(user.getId()));
+        session.setOrgUnitCodes(resolveUserOrgUnitCodes(session.getOrgUnitIds()));
+        session.setOrgSubtreeCodes(resolveUserOrgSubtreeCodes(user.getTenantId(), session.getOrgUnitIds()));
         session.setMenuWhitelist(menuWhitelist == null ? List.of() : menuWhitelist);
         return session;
     }
@@ -373,8 +385,14 @@ public class AuthService {
         if (RbacDataScopeType.CUSTOM.equalsIgnoreCase(type)) {
             return 2;
         }
-        if (RbacDataScopeType.SELF.equalsIgnoreCase(type)) {
+        if (RbacDataScopeType.ORG_SUBTREE.equalsIgnoreCase(type)) {
             return 3;
+        }
+        if (RbacDataScopeType.ORG.equalsIgnoreCase(type)) {
+            return 4;
+        }
+        if (RbacDataScopeType.SELF.equalsIgnoreCase(type)) {
+            return 5;
         }
         return 4;
     }
@@ -455,6 +473,88 @@ public class AuthService {
             rule.setScopeRule("");
         }
         return rule;
+    }
+
+    /**
+     * 解析用户组织节点ID列表。
+     *
+     * @param userId 用户ID
+     * @return 组织节点ID列表
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private List<Long> resolveUserOrgUnitIds(Long userId) {
+        if (userId == null) {
+            return List.of();
+        }
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        for (UserOrgMembership membership : userOrgMembershipRepository.findByUserIdOrderByIsPrimaryDescIdAsc(userId)) {
+            if (membership.getOrgUnitId() != null) {
+                ids.add(membership.getOrgUnitId());
+            }
+        }
+        return new ArrayList<>(ids);
+    }
+
+    /**
+     * 解析用户组织编码列表。
+     *
+     * @param orgUnitIds 组织节点ID列表
+     * @return 组织编码列表
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private List<String> resolveUserOrgUnitCodes(List<Long> orgUnitIds) {
+        if (CollectionUtils.isEmpty(orgUnitIds)) {
+            return List.of();
+        }
+        LinkedHashSet<String> codes = new LinkedHashSet<>();
+        for (OrgUnit orgUnit : orgUnitRepository.findByIdIn(orgUnitIds)) {
+            if (StringUtils.hasText(orgUnit.getUnitCode())) {
+                codes.add(orgUnit.getUnitCode().trim().toUpperCase());
+            }
+        }
+        return new ArrayList<>(codes);
+    }
+
+    /**
+     * 解析用户组织及下级编码列表。
+     *
+     * @param tenantId   租户ID
+     * @param orgUnitIds 组织节点ID列表
+     * @return 组织及下级编码列表
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private List<String> resolveUserOrgSubtreeCodes(String tenantId, List<Long> orgUnitIds) {
+        if (!StringUtils.hasText(tenantId) || CollectionUtils.isEmpty(orgUnitIds)) {
+            return List.of();
+        }
+        List<OrgUnit> tenantUnits = orgUnitRepository.findByTenantId(tenantId);
+        Map<Long, OrgUnit> selectedMapping = tenantUnits.stream()
+                .filter(unit -> unit.getId() != null && orgUnitIds.contains(unit.getId()))
+                .collect(Collectors.toMap(OrgUnit::getId, item -> item));
+        if (selectedMapping.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> codes = new LinkedHashSet<>();
+        for (OrgUnit unit : tenantUnits) {
+            if (!StringUtils.hasText(unit.getUnitCode())) {
+                continue;
+            }
+            for (OrgUnit selected : selectedMapping.values()) {
+                if (!StringUtils.hasText(selected.getTreePath())) {
+                    continue;
+                }
+                if (Objects.equals(unit.getId(), selected.getId())
+                        || (StringUtils.hasText(unit.getTreePath())
+                        && unit.getTreePath().startsWith(selected.getTreePath() + "/"))) {
+                    codes.add(unit.getUnitCode().trim().toUpperCase());
+                    break;
+                }
+            }
+        }
+        return new ArrayList<>(codes);
     }
 
     private boolean isSuperAdmin(RbacUserSession session) {

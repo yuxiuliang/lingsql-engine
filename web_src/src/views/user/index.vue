@@ -2,8 +2,10 @@
 import {computed, reactive, ref, watch} from 'vue';
 import {ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
+import {fetchOrgUnits, OrgUnitView} from '@/api/organization';
 import {
   createUser,
+  DataScopeRule,
   fetchRoles,
   fetchUsers,
   resetUserPassword,
@@ -24,6 +26,16 @@ const total = ref(0);
 const page = ref(1);
 const size = ref(10);
 const roleOptions = ref<RoleView[]>([]);
+const orgTree = ref<OrgUnitView[]>([]);
+const scopeTypeOptions = [
+  {label: '继承角色', value: 'INHERIT'},
+  {label: '全部数据', value: 'ALL'},
+  {label: '本租户', value: 'TENANT'},
+  {label: '仅本人', value: 'SELF'},
+  {label: '指定组织', value: 'ORG'},
+  {label: '组织及下级', value: 'ORG_SUBTREE'},
+  {label: '自定义条件', value: 'CUSTOM'}
+];
 
 const searchForm = reactive({
   keyword: ''
@@ -36,12 +48,109 @@ const form = reactive<UserCreateRequest & UserUpdateRequest>({
   nickname: '',
   status: 1,
   isExperience: 0,
-  roleIds: []
+  roleIds: [],
+  orgUnitIds: [],
+  primaryOrgUnitId: undefined,
+  dataScope: {
+    scopeType: 'INHERIT',
+    scopeColumn: '',
+    scopeRule: ''
+  }
 });
 
 const resetForm = reactive({
   newPassword: ''
 });
+
+/**
+ * 创建默认数据权限配置。
+ *
+ * @return 默认数据权限
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+const createDefaultDataScope = (): DataScopeRule => {
+  return {
+    scopeType: 'INHERIT',
+    scopeColumn: '',
+    scopeRule: ''
+  };
+};
+
+/**
+ * 格式化数据权限文本。
+ *
+ * @param scopeType 范围类型
+ * @return 文本
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+const formatScopeType = (scopeType?: string) => {
+  const mapping: Record<string, string> = {
+    INHERIT: '继承角色',
+    ALL: '全部数据',
+    TENANT: '本租户',
+    SELF: '仅本人',
+    ORG: '指定组织',
+    ORG_SUBTREE: '组织及下级',
+    CUSTOM: '自定义条件'
+  };
+  return mapping[scopeType || 'INHERIT'] || scopeType || '继承角色';
+};
+
+/**
+ * 组装数据权限请求。
+ *
+ * @return 数据权限配置
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+const buildDataScopePayload = (): DataScopeRule => {
+  return {
+    scopeType: form.dataScope?.scopeType || 'INHERIT',
+    scopeColumn: form.dataScope?.scopeColumn || '',
+    scopeRule: form.dataScope?.scopeRule || ''
+  };
+};
+
+/**
+ * 解析当前表单的生效数据权限预览。
+ *
+ * @return 预览信息
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+const effectiveScopePreview = computed(() => {
+  const source = form.dataScope?.scopeType && form.dataScope.scopeType !== 'INHERIT' ? '用户覆盖' : '继承角色';
+  const rule = buildDataScopePayload();
+  const extra = rule.scopeType === 'CUSTOM'
+    ? `自定义条件：${rule.scopeRule || '未填写'}`
+    : `字段：${rule.scopeColumn || (rule.scopeType === 'SELF' ? 'creator_id' : rule.scopeType === 'ORG' || rule.scopeType === 'ORG_SUBTREE' ? 'org_code' : '默认')}`;
+  return {
+    title: `当前配置：${formatScopeType(rule.scopeType)}（${source}）`,
+    description: extra
+  };
+});
+
+/**
+ * 校验用户数据权限表单。
+ *
+ * @return 是否通过
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+const validateDataScope = () => {
+  const scopeType = form.dataScope?.scopeType || 'INHERIT';
+  if (scopeType === 'CUSTOM' && !form.dataScope?.scopeRule?.trim()) {
+    ElMessage.warning('选择自定义条件时必须填写 SQL 条件片段');
+    return false;
+  }
+  if ((scopeType === 'ORG' || scopeType === 'ORG_SUBTREE') && !(form.orgUnitIds || []).length) {
+    ElMessage.warning('组织范围权限要求当前用户至少绑定一个组织节点');
+    return false;
+  }
+  return true;
+};
 
 /**
  * 判断是否系统管理员。
@@ -81,6 +190,27 @@ const activeTenantName = computed(() => {
  */
 const hasTenantSelected = computed(() => {
   return !isSysAdmin.value || !!authStore.activeTenantId;
+});
+
+/**
+ * 组织节点选项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+const orgOptions = computed(() => {
+  const options: Array<{label: string; value: number}> = [];
+  const walk = (nodes: OrgUnitView[], prefix = '') => {
+    nodes.forEach((node) => {
+      options.push({
+        label: `${prefix}${node.unitName} [${node.typeName || node.typeCode}]`,
+        value: node.id
+      });
+      walk(node.children || [], `${prefix}└ `);
+    });
+  };
+  walk(orgTree.value);
+  return options;
 });
 
 /**
@@ -131,6 +261,29 @@ const loadRoles = async () => {
 };
 
 /**
+ * 加载组织树。
+ *
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+const loadOrgs = async () => {
+  try {
+    if (!hasTenantSelected.value) {
+      orgTree.value = [];
+      return;
+    }
+    orgTree.value = await fetchOrgUnits(activeTenantId.value || undefined);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '加载组织架构失败';
+    if (message.includes('无权限')) {
+      orgTree.value = [];
+      return;
+    }
+    ElMessage.error(message);
+  }
+};
+
+/**
  * 新增用户。
  *
  * @author 余炘洋
@@ -149,9 +302,12 @@ const handleCreate = async () => {
     nickname: '',
     status: 1,
     isExperience: 0,
-    roleIds: []
+    roleIds: [],
+    orgUnitIds: [],
+    primaryOrgUnitId: undefined,
+    dataScope: createDefaultDataScope()
   });
-  await loadRoles();
+  await Promise.all([loadRoles(), loadOrgs()]);
   dialogVisible.value = true;
 };
 
@@ -171,9 +327,16 @@ const handleEdit = async (row: UserView) => {
     nickname: row.nickname || '',
     status: row.status ?? 1,
     isExperience: row.isExperience ?? 0,
-    roleIds: row.roleIds || []
+    roleIds: row.roleIds || [],
+    orgUnitIds: row.orgUnitIds || [],
+    primaryOrgUnitId: row.primaryOrgUnitId,
+    dataScope: {
+      scopeType: row.dataScope?.scopeType || 'INHERIT',
+      scopeColumn: row.dataScope?.scopeColumn || '',
+      scopeRule: row.dataScope?.scopeRule || ''
+    }
   });
-  await loadRoles();
+  await Promise.all([loadRoles(), loadOrgs()]);
   dialogVisible.value = true;
 };
 
@@ -192,13 +355,19 @@ const handleSave = async () => {
     ElMessage.warning('请输入初始密码');
     return;
   }
+  if (!validateDataScope()) {
+    return;
+  }
   try {
     if (editingId.value) {
       await updateUser(editingId.value, {
         nickname: form.nickname,
         status: form.status,
         isExperience: form.isExperience,
-        roleIds: form.roleIds
+        roleIds: form.roleIds,
+        orgUnitIds: form.orgUnitIds,
+        primaryOrgUnitId: form.primaryOrgUnitId,
+        dataScope: buildDataScopePayload()
       });
       ElMessage.success('用户已更新');
     } else {
@@ -209,7 +378,10 @@ const handleSave = async () => {
         nickname: form.nickname,
         status: form.status,
         isExperience: form.isExperience,
-        roleIds: form.roleIds
+        roleIds: form.roleIds,
+        orgUnitIds: form.orgUnitIds,
+        primaryOrgUnitId: form.primaryOrgUnitId,
+        dataScope: buildDataScopePayload()
       });
       ElMessage.success('用户已创建');
     }
@@ -322,8 +494,23 @@ const handleSearch = () => {
  * @date 2026-01-26
  */
 const handleRefresh = () => {
-  loadUsers();
+  Promise.all([loadUsers(), loadRoles()]);
 };
+
+watch(
+  () => form.orgUnitIds,
+  (value) => {
+    const ids = value || [];
+    if (!ids.length) {
+      form.primaryOrgUnitId = undefined;
+      return;
+    }
+    if (!form.primaryOrgUnitId || !ids.includes(form.primaryOrgUnitId)) {
+      form.primaryOrgUnitId = ids[0];
+    }
+  },
+  {deep: true}
+);
 
 watch(
   () => activeTenantId.value,
@@ -332,6 +519,8 @@ watch(
     dialogVisible.value = false;
     passwordVisible.value = false;
     editingId.value = null;
+    loadOrgs();
+    loadRoles();
     loadUsers();
   },
   {immediate: true}
@@ -362,6 +551,21 @@ watch(
         <el-table-column prop="tenantId" label="租户" min-width="120"/>
         <el-table-column prop="username" label="账号" min-width="120"/>
         <el-table-column prop="nickname" label="昵称" min-width="120"/>
+        <el-table-column label="组织归属" min-width="220">
+          <template #default="scope">
+            <span>{{ (scope.row.orgUnitNames || []).join(' / ') || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="数据权限" min-width="140">
+          <template #default="scope">
+            <el-tag type="warning" effect="plain">{{ formatScopeType(scope.row.dataScope?.scopeType) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="生效权限" min-width="140">
+          <template #default="scope">
+            <el-tag type="success" effect="plain">{{ formatScopeType(scope.row.effectiveDataScope?.scopeType) }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="isExperience" label="体验账号" width="100">
           <template #default="scope">
             <el-tag v-if="scope.row.isExperience === 1" type="warning">是</el-tag>
@@ -425,6 +629,62 @@ watch(
           <el-select v-model="form.roleIds" multiple filterable style="width: 100%">
             <el-option v-for="role in roleOptions" :key="role.id" :value="role.id" :label="`${role.roleName} (${role.roleCode})`"/>
           </el-select>
+        </el-form-item>
+        <el-form-item label="组织归属">
+          <el-select v-model="form.orgUnitIds" multiple filterable clearable style="width: 100%" placeholder="可选多个组织节点">
+            <el-option v-for="org in orgOptions" :key="org.value" :value="org.value" :label="org.label"/>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="主归属组织">
+          <el-select v-model="form.primaryOrgUnitId" clearable style="width: 100%" placeholder="默认取首个归属节点">
+            <el-option
+              v-for="org in orgOptions.filter((item) => (form.orgUnitIds || []).includes(item.value))"
+              :key="org.value"
+              :value="org.value"
+              :label="org.label"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="数据权限">
+          <el-select v-model="form.dataScope!.scopeType" style="width: 100%">
+            <el-option v-for="item in scopeTypeOptions" :key="item.value" :label="item.label" :value="item.value"/>
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="form.dataScope?.scopeType === 'INHERIT'">
+          <el-alert
+            type="info"
+            :closable="false"
+            title="继承角色时，不会写入用户覆盖配置，实际范围由角色数据权限决定。"
+          />
+        </el-form-item>
+        <el-form-item v-if="form.dataScope?.scopeType === 'ORG' || form.dataScope?.scopeType === 'ORG_SUBTREE'">
+          <el-alert
+            type="warning"
+            :closable="false"
+            title="组织范围权限要求当前用户至少绑定一个组织节点，否则查询会被安全策略拦截。"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-alert
+            type="success"
+            :closable="false"
+            :title="effectiveScopePreview.title"
+            :description="effectiveScopePreview.description"
+          />
+        </el-form-item>
+        <el-form-item label="范围字段">
+          <el-input
+            v-model="form.dataScope!.scopeColumn"
+            placeholder="SELF/ORG/ORG_SUBTREE 时可填写字段名，如 creator_id 或 org_code"
+          />
+        </el-form-item>
+        <el-form-item label="自定义规则" v-if="form.dataScope?.scopeType === 'CUSTOM'">
+          <el-input
+            v-model="form.dataScope!.scopeRule"
+            type="textarea"
+            :rows="3"
+            placeholder="例如 status = 1 and org_code in ('HN_CS')"
+          />
         </el-form-item>
       </el-form>
       <template #footer>

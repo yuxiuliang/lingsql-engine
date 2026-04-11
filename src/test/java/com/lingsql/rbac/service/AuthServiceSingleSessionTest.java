@@ -2,6 +2,10 @@ package com.lingsql.rbac.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.config.LingSqlProperties;
+import com.lingsql.organization.entity.OrgUnit;
+import com.lingsql.organization.entity.UserOrgMembership;
+import com.lingsql.organization.repository.OrgUnitRepository;
+import com.lingsql.organization.repository.UserOrgMembershipRepository;
 import com.lingsql.rbac.entity.RbacUser;
 import com.lingsql.rbac.model.LoginRequest;
 import com.lingsql.rbac.model.LoginResponse;
@@ -98,6 +102,44 @@ class AuthServiceSingleSessionTest {
         verify(ctx.tokenService).revokeUserTokens(100L);
     }
 
+    @Test
+    void loginShouldResolveOrgScopePayloads() {
+        TestContext ctx = new TestContext(true);
+        RbacUser user = buildActiveUser();
+        when(ctx.userRepository.findByTenantIdAndUsername("TENANT_A", "alice")).thenReturn(Optional.of(user));
+        when(ctx.passwordEncoder.matches("pwd", "hashed_pwd")).thenReturn(true);
+        when(ctx.userRoleRepository.findRoleIdsByUserId(100L)).thenReturn(List.of());
+        when(ctx.userDataScopeRepository.findByUserId(100L)).thenReturn(Optional.empty());
+        when(ctx.tokenService.createToken(any())).thenReturn("access_token");
+        when(ctx.tokenService.getExpireSeconds(any())).thenReturn(3600L);
+        when(ctx.refreshTokenService.issueRefreshToken(any(), any())).thenReturn("refresh_token");
+        when(ctx.userRepository.save(any(RbacUser.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(ctx.tenantRepository.findByTenantIdAndIsDeleted(anyString(), anyInt())).thenReturn(Optional.empty());
+
+        UserOrgMembership membership = new UserOrgMembership();
+        membership.setUserId(100L);
+        membership.setOrgUnitId(200L);
+        when(ctx.userOrgMembershipRepository.findByUserIdOrderByIsPrimaryDescIdAsc(100L)).thenReturn(List.of(membership));
+
+        OrgUnit root = new OrgUnit();
+        root.setId(200L);
+        root.setTenantId("TENANT_A");
+        root.setUnitCode("HN");
+        root.setTreePath("/200");
+        OrgUnit child = new OrgUnit();
+        child.setId(201L);
+        child.setTenantId("TENANT_A");
+        child.setUnitCode("HN_CS");
+        child.setTreePath("/200/201");
+        when(ctx.orgUnitRepository.findByIdIn(List.of(200L))).thenReturn(List.of(root));
+        when(ctx.orgUnitRepository.findByTenantId("TENANT_A")).thenReturn(List.of(root, child));
+
+        LoginResponse response = ctx.authService.login(buildLoginRequest());
+
+        assertEquals("access_token", response.getToken());
+        verify(ctx.orgUnitRepository).findByTenantId("TENANT_A");
+    }
+
     private static RbacUser buildActiveUser() {
         RbacUser user = new RbacUser();
         user.setId(100L);
@@ -131,6 +173,8 @@ class AuthServiceSingleSessionTest {
         private final RefreshTokenService refreshTokenService = Mockito.mock(RefreshTokenService.class);
         private final TenantRepository tenantRepository = Mockito.mock(TenantRepository.class);
         private final PasswordEncoder passwordEncoder = Mockito.mock(PasswordEncoder.class);
+        private final OrgUnitRepository orgUnitRepository = Mockito.mock(OrgUnitRepository.class);
+        private final UserOrgMembershipRepository userOrgMembershipRepository = Mockito.mock(UserOrgMembershipRepository.class);
         private final AuthService authService;
 
         private TestContext(boolean singleSessionEnabled) {
@@ -150,7 +194,9 @@ class AuthServiceSingleSessionTest {
                     tenantRepository,
                     properties,
                     passwordEncoder,
-                    new ObjectMapper()
+                    new ObjectMapper(),
+                    orgUnitRepository,
+                    userOrgMembershipRepository
             );
         }
     }

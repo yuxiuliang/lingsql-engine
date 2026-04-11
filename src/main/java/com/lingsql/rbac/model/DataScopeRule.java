@@ -12,7 +12,7 @@ import lombok.Data;
 public class DataScopeRule {
 
     /**
-     * 范围类型: ALL/TENANT/SELF/CUSTOM。
+     * 范围类型: ALL/TENANT/SELF/ORG/ORG_SUBTREE/CUSTOM。
      *
      * @author 余炘洋
      * @date 2026-01-23
@@ -20,7 +20,7 @@ public class DataScopeRule {
     private String scopeType = "TENANT";
 
     /**
-     * SELF 默认字段名。
+     * SELF / ORG / ORG_SUBTREE 默认字段名。
      *
      * @author 余炘洋
      * @date 2026-01-23
@@ -34,4 +34,5 @@ public class DataScopeRule {
      * @date 2026-01-23
      */
     private String scopeRule = "";
+
 }

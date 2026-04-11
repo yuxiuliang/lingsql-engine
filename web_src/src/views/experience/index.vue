@@ -266,12 +266,14 @@ onMounted(loadMenus);
           <el-select v-model="form.scopeType" style="width: 100%">
             <el-option label="租户" value="TENANT"/>
             <el-option label="全部" value="ALL"/>
+            <el-option label="指定组织" value="ORG"/>
+            <el-option label="组织及下级" value="ORG_SUBTREE"/>
             <el-option label="仅自己" value="SELF"/>
             <el-option label="自定义" value="CUSTOM"/>
           </el-select>
         </el-form-item>
         <el-form-item label="范围字段">
-          <el-input v-model="form.scopeColumn" placeholder="SELF 时可填写字段名"/>
+          <el-input v-model="form.scopeColumn" placeholder="SELF/ORG/ORG_SUBTREE 时可填写字段名，如 creator_id 或 org_code"/>
         </el-form-item>
         <el-form-item label="自定义规则">
           <el-input v-model="form.scopeRule" placeholder="CUSTOM 时填写 SQL 片段"/>

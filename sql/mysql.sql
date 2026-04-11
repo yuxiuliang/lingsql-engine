@@ -344,6 +344,92 @@ CREATE TABLE `t_lingsql_engine_user`
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='用户表';
 
+-- 组织单元类型表
+CREATE TABLE `t_lingsql_engine_org_unit_type`
+(
+    `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`   varchar(64)  NOT NULL COMMENT '租户ID',
+    `type_code`   varchar(64)  NOT NULL COMMENT '组织类型编码',
+    `type_name`   varchar(128) NOT NULL COMMENT '组织类型名称',
+    `sort`        int          DEFAULT 0 COMMENT '排序值',
+    `status`      tinyint      DEFAULT 1 COMMENT '状态: 1-启用, 0-停用',
+    `remark`      varchar(255) DEFAULT NULL COMMENT '备注',
+    `create_time` datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_org_unit_type_tenant_code` (`tenant_id`, `type_code`),
+    KEY `idx_org_unit_type_tenant_sort` (`tenant_id`, `sort`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='组织单元类型表';
+
+-- 组织单元表
+CREATE TABLE `t_lingsql_engine_org_unit`
+(
+    `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`   varchar(64)  NOT NULL COMMENT '租户ID',
+    `unit_code`   varchar(64)  NOT NULL COMMENT '组织节点编码',
+    `unit_name`   varchar(128) NOT NULL COMMENT '组织节点名称',
+    `type_code`   varchar(64)  NOT NULL COMMENT '组织类型编码',
+    `leader_user_id` bigint    DEFAULT NULL COMMENT '负责人用户ID',
+    `parent_id`   bigint       DEFAULT NULL COMMENT '父节点ID',
+    `tree_path`   varchar(512) DEFAULT NULL COMMENT '树路径',
+    `tree_level`  int          DEFAULT 1 COMMENT '树层级',
+    `sort`        int          DEFAULT 0 COMMENT '排序值',
+    `status`      tinyint      DEFAULT 1 COMMENT '状态: 1-启用, 0-停用',
+    `remark`      varchar(255) DEFAULT NULL COMMENT '备注',
+    `tag_text`    text COMMENT '标签文本，逗号分隔',
+    `attribute_json` text COMMENT '扩展属性 JSON',
+    `create_time` datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_org_unit_tenant_code` (`tenant_id`, `unit_code`),
+    KEY `idx_org_unit_tenant_parent` (`tenant_id`, `parent_id`),
+    KEY `idx_org_unit_tenant_type` (`tenant_id`, `type_code`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='组织单元表';
+
+-- 组织关系表
+CREATE TABLE `t_lingsql_engine_org_unit_relation`
+(
+    `id`                 bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`          varchar(64)  NOT NULL COMMENT '租户ID',
+    `source_org_unit_id` bigint       NOT NULL COMMENT '源组织节点ID',
+    `target_org_unit_id` bigint       NOT NULL COMMENT '目标组织节点ID',
+    `relation_type`      varchar(64)  NOT NULL COMMENT '关系类型编码',
+    `relation_name`      varchar(128) DEFAULT NULL COMMENT '关系名称',
+    `sort`               int          DEFAULT 0 COMMENT '排序值',
+    `status`             tinyint      DEFAULT 1 COMMENT '状态: 1-启用, 0-停用',
+    `remark`             varchar(255) DEFAULT NULL COMMENT '备注',
+    `create_time`        datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`        datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_org_relation_unique` (`tenant_id`, `source_org_unit_id`, `target_org_unit_id`, `relation_type`),
+    KEY `idx_org_relation_source` (`tenant_id`, `source_org_unit_id`),
+    KEY `idx_org_relation_target` (`tenant_id`, `target_org_unit_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='组织关系表';
+
+-- 用户组织归属表
+CREATE TABLE `t_lingsql_engine_user_org`
+(
+    `id`          bigint      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`   varchar(64) NOT NULL COMMENT '租户ID',
+    `user_id`     bigint      NOT NULL COMMENT '用户ID',
+    `org_unit_id` bigint      NOT NULL COMMENT '组织节点ID',
+    `is_primary`  tinyint     DEFAULT 0 COMMENT '是否主归属: 1-是, 0-否',
+    `create_time` datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` datetime    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_org_membership` (`user_id`, `org_unit_id`),
+    KEY `idx_user_org_tenant` (`tenant_id`),
+    KEY `idx_user_org_org_unit` (`org_unit_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='用户组织归属表';
+
 -- 角色表
 CREATE TABLE `t_lingsql_engine_role`
 (

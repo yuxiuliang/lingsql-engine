@@ -36,4 +36,12 @@ public class RoleUpdateRequest {
      * @date 2026-01-26
      */
     private List<Long> permIds;
+
+    /**
+     * 数据权限配置。
+     *
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private DataScopeRule dataScope;
 }

@@ -29,6 +29,7 @@ public class ChatApplicationService {
 
     private static final String EXECUTION_ERROR_MESSAGE = "SQL 执行失败，请检查查询条件";
     private static final String TENANT_DB_CONFIG_USER_MESSAGE = "当前租户未完成数据源配置，请联系管理员补充数据库连接信息";
+    private static final String QUESTION_REQUIRED_MESSAGE = "问题不能为空";
 
     private final SmartSqlExecutor sqlExecutor;
     private final ResultRefiner resultRefiner;
@@ -44,23 +45,27 @@ public class ChatApplicationService {
      * @date 2026-01-28
      */
     public ChatResult ask(ChatRequest request) {
+        if (request == null || !StringUtils.hasText(request.getQuestion())) {
+            throw new BizException(ErrorCode.INVALID_PARAM, QUESTION_REQUIRED_MESSAGE);
+        }
+        String question = request.getQuestion().trim();
         String tenantId = TenantContext.getTenantId();
         Long userId = TenantContext.getUserId();
         String conversationId = resolveConversationId(request.getConversationId());
         TenantContext.setConversationId(conversationId);
         SqlExecutionResult executionResult;
         try {
-            executionResult = sqlExecutor.execute(tenantId, request.getQuestion(), "WEB");
+            executionResult = sqlExecutor.execute(tenantId, question, "WEB");
         } catch (Exception ex) {
             executionResult = buildFailureResult(ex);
         }
         executionResult = sanitizeForUser(executionResult);
-        String finalAnswer = resolveFinalAnswer(request.getQuestion(), executionResult);
+        String finalAnswer = resolveFinalAnswer(question, executionResult);
         String sqlText = normalizeSqlForView(executionResult);
         if (executionResult.isSuccess()) {
             chatMemoryService.saveSuccessExchange(
                     tenantId,
-                    request.getQuestion(),
+                    question,
                     finalAnswer,
                     executionResult.getSql(),
                     executionResult.getData()
@@ -70,7 +75,7 @@ public class ChatApplicationService {
                 tenantId,
                 userId,
                 conversationId,
-                request.getQuestion(),
+                question,
                 finalAnswer,
                 sqlText,
                 executionResult.getData(),

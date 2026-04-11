@@ -54,7 +54,7 @@ export interface AuthState {
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     token: localStorage.getItem('token') || '',
-    refreshToken: '',
+    refreshToken: localStorage.getItem('refreshToken') || '',
     userId: Number(localStorage.getItem('userId') || 0),
     tenantId: localStorage.getItem('tenantId') || '',
     tenantName: localStorage.getItem('tenantName') || '',
@@ -131,7 +131,11 @@ export const useAuthStore = defineStore('auth', {
       }
       localStorage.setItem('userId', String(this.userId || 0));
       localStorage.setItem('token', this.token || '');
-      localStorage.removeItem('refreshToken');
+      if (this.refreshToken) {
+        localStorage.setItem('refreshToken', this.refreshToken);
+      } else {
+        localStorage.removeItem('refreshToken');
+      }
       localStorage.setItem('tenantId', tenantId);
       localStorage.setItem('tenantName', tenantName || '');
       localStorage.setItem('username', username);
@@ -238,7 +242,11 @@ export const useAuthStore = defineStore('auth', {
       this.token = token || '';
       this.refreshToken = refreshToken || '';
       localStorage.setItem('token', this.token || '');
-      localStorage.removeItem('refreshToken');
+      if (this.refreshToken) {
+        localStorage.setItem('refreshToken', this.refreshToken);
+      } else {
+        localStorage.removeItem('refreshToken');
+      }
     },
     /**
      * 更新租户标识。

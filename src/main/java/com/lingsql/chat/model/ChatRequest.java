@@ -1,6 +1,7 @@
 package com.lingsql.chat.model;
 
 import com.lingsql.common.validation.ChatQuestionLength;
+import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 /**
@@ -17,6 +18,7 @@ public class ChatRequest {
      * @author 余炘洋
      * @date 2026-01-22
      */
+    @NotBlank(message = "问题不能为空")
     @ChatQuestionLength
     private String question;
 

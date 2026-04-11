@@ -81,6 +81,30 @@ public class RbacUserSession implements Serializable {
     private DataScopeRule dataScope;
 
     /**
+     * 组织节点ID列表。
+     *
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private List<Long> orgUnitIds = new ArrayList<>();
+
+    /**
+     * 组织编码列表。
+     *
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private List<String> orgUnitCodes = new ArrayList<>();
+
+    /**
+     * 组织及下级编码列表。
+     *
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private List<String> orgSubtreeCodes = new ArrayList<>();
+
+    /**
      * 菜单白名单(体验账号使用)。
      *
      * @author 余炘洋

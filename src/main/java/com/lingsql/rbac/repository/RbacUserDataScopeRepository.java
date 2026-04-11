@@ -22,4 +22,13 @@ public interface RbacUserDataScopeRepository extends JpaRepository<RbacUserDataS
      * @date 2026-01-23
      */
     Optional<RbacUserDataScope> findByUserId(Long userId);
+
+    /**
+     * 按用户删除数据权限覆盖。
+     *
+     * @param userId 用户ID
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    void deleteByUserId(Long userId);
 }

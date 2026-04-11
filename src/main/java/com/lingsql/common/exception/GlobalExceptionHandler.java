@@ -13,6 +13,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -91,6 +92,22 @@ public class GlobalExceptionHandler {
                 .findFirst()
                 .orElse("参数校验失败");
         return attachRequestId(ApiResponse.fail(ErrorCode.INVALID_PARAM, message));
+    }
+
+    /**
+     * 处理请求体无法解析异常。
+     *
+     * @param ex 异常
+     * @return 统一响应
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ApiResponse<Void> handleHttpMessageNotReadableException(HttpMessageNotReadableException ex, HttpServletRequest request) {
+        if (isLoginRequest(request)) {
+            return attachRequestId(ApiResponse.fail(ErrorCode.UNAUTHORIZED, LOGIN_ERROR_MESSAGE));
+        }
+        return attachRequestId(ApiResponse.fail(ErrorCode.INVALID_PARAM, "请求体格式错误"));
     }
 
     /**
