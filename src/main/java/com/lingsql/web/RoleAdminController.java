@@ -2,12 +2,15 @@ package com.lingsql.web;
 
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
+import com.lingsql.rbac.model.DataScopePreviewView;
 import com.lingsql.rbac.model.RoleCreateRequest;
+import com.lingsql.rbac.model.RoleDataScopePreviewRequest;
 import com.lingsql.rbac.model.RoleUpdateRequest;
 import com.lingsql.rbac.model.RoleView;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.rbac.security.SecureTenantResolver;
+import com.lingsql.rbac.service.DataScopePreviewService;
 import com.lingsql.rbac.service.RoleAdminService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -38,6 +41,7 @@ import java.util.List;
 public class RoleAdminController {
 
     private final RoleAdminService roleAdminService;
+    private final DataScopePreviewService dataScopePreviewService;
     private final AuditOperationExecutor auditOperationExecutor;
 
     /**
@@ -78,6 +82,22 @@ public class RoleAdminController {
                 http,
                 () -> roleAdminService.createRole(request, session.getTenantId(), sysAdmin)
         );
+    }
+
+    /**
+     * 预览角色数据权限命中范围。
+     *
+     * @param request 预览请求
+     * @return 预览结果
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @PostMapping("/preview-data-scope")
+    @PreAuthorize("hasAuthority('ADMIN:ROLE:READ')")
+    public ApiResponse<DataScopePreviewView> previewDataScope(@RequestBody RoleDataScopePreviewRequest request) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return ApiResponse.success(dataScopePreviewService.previewRoleScope(request, session.getTenantId(), sysAdmin));
     }
 
     /**

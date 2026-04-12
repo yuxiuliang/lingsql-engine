@@ -34,6 +34,16 @@ public final class RbacDataScopeType {
     public static final String ORG_SUBTREE = "ORG_SUBTREE";
 
     /**
+     * 关系目标组织。
+     */
+    public static final String RELATION = "RELATION";
+
+    /**
+     * 关系目标组织及下级。
+     */
+    public static final String RELATION_SUBTREE = "RELATION_SUBTREE";
+
+    /**
      * 自定义规则。
      */
     public static final String CUSTOM = "CUSTOM";

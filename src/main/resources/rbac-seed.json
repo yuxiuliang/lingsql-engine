@@ -12,6 +12,7 @@
     {"permCode": "MENU:ADMIN:USER", "permName": "菜单-用户管理", "permType": "MENU", "status": 1},
     {"permCode": "MENU:ADMIN:ROLE", "permName": "菜单-角色管理", "permType": "MENU", "status": 1},
     {"permCode": "MENU:ADMIN:PERMISSION", "permName": "菜单-权限管理", "permType": "MENU", "status": 1},
+    {"permCode": "MENU:ADMIN:MENU", "permName": "菜单-菜单治理", "permType": "MENU", "status": 1},
     {"permCode": "MENU:ADMIN:AUDIT", "permName": "菜单-审计日志", "permType": "MENU", "status": 1},
     {"permCode": "MENU:ADMIN:SQLLOG", "permName": "菜单-SQL日志", "permType": "MENU", "status": 1},
     {"permCode": "MENU:ADMIN:DASHBOARD", "permName": "菜单-仪表盘", "permType": "MENU", "status": 1},
@@ -57,6 +58,8 @@
     {"permCode": "ADMIN:PLAN:WRITE", "permName": "接口-套餐维护", "permType": "API", "status": 1},
     {"permCode": "ADMIN:PLAN:DELETE", "permName": "接口-套餐删除", "permType": "API", "status": 1},
     {"permCode": "ADMIN:PERM:READ", "permName": "接口-权限读取", "permType": "API", "status": 1},
+    {"permCode": "ADMIN:MENU:READ", "permName": "接口-菜单治理读取", "permType": "API", "status": 1},
+    {"permCode": "ADMIN:MENU:WRITE", "permName": "接口-菜单治理维护", "permType": "API", "status": 1},
     {"permCode": "ADMIN:TENANT:POOL", "permName": "接口-租户权限池维护", "permType": "API", "status": 1},
     {"permCode": "ADMIN:AUDIT:READ", "permName": "接口-审计日志读取", "permType": "API", "status": 1},
     {"permCode": "ADMIN:SQLLOG:READ", "permName": "接口-SQL日志读取", "permType": "API", "status": 1},
@@ -82,6 +85,7 @@
     {"menuCode": "MENU_ADMIN_USER", "menuName": "用户管理", "parentCode": "MENU_ADMIN", "path": "/user", "component": "UserManage", "icon": "user", "sort": 170, "visible": 1, "status": 1, "permCode": "MENU:ADMIN:USER"},
     {"menuCode": "MENU_ADMIN_ROLE", "menuName": "角色管理", "parentCode": "MENU_ADMIN", "path": "/role", "component": "RoleManage", "icon": "role", "sort": 180, "visible": 1, "status": 1, "permCode": "MENU:ADMIN:ROLE"},
     {"menuCode": "MENU_ADMIN_PERMISSION", "menuName": "权限管理", "parentCode": "MENU_ADMIN", "path": "/permission", "component": "PermissionManage", "icon": "permission", "sort": 190, "visible": 1, "status": 1, "permCode": "MENU:ADMIN:PERMISSION"},
+    {"menuCode": "MENU_ADMIN_MENU", "menuName": "菜单治理", "parentCode": "MENU_ADMIN", "path": "/menu", "component": "MenuManage", "icon": "permission", "sort": 195, "visible": 1, "status": 1, "permCode": "MENU:ADMIN:MENU"},
     {"menuCode": "MENU_ADMIN_AUDIT", "menuName": "审计日志", "parentCode": "MENU_ADMIN", "path": "/audit", "component": "AuditLog", "icon": "audit", "sort": 200, "visible": 1, "status": 1, "permCode": "MENU:ADMIN:AUDIT"},
     {"menuCode": "MENU_ADMIN_SQLLOG", "menuName": "SQL日志", "parentCode": "MENU_ADMIN", "path": "/sql-log", "component": "SqlLog", "icon": "sql", "sort": 210, "visible": 1, "status": 1, "permCode": "MENU:ADMIN:SQLLOG"}
   ]

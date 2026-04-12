@@ -84,6 +84,36 @@ class RoleAdminServiceTest {
         verify(ctx.roleDataScopeRepository).deleteByRoleId(11L);
     }
 
+    @Test
+    void createRoleShouldPersistRelationSubtreeDataScope() {
+        TestContext ctx = new TestContext();
+
+        RoleCreateRequest request = new RoleCreateRequest();
+        request.setRoleCode("ROLE_SERVICE");
+        request.setRoleName("服务归口角色");
+        DataScopeRule dataScope = new DataScopeRule();
+        dataScope.setScopeType(RbacDataScopeType.RELATION_SUBTREE);
+        dataScope.setScopeColumn("org_code");
+        dataScope.setRelationTypes(List.of("service", "matrix"));
+        request.setDataScope(dataScope);
+
+        when(ctx.roleRepository.findByTenantIdAndRoleCode("TENANT_A", "ROLE_SERVICE")).thenReturn(Optional.empty());
+        when(ctx.roleRepository.save(any(RbacRole.class))).thenAnswer(invocation -> {
+            RbacRole role = invocation.getArgument(0);
+            role.setId(12L);
+            return role;
+        });
+        when(ctx.rolePermissionRepository.findPermIdsByRoleIds(List.of(12L))).thenReturn(List.of());
+        when(ctx.roleDataScopeRepository.findActiveByRoleIds(List.of(12L)))
+                .thenReturn(List.of(buildScope(12L, RbacDataScopeType.RELATION_SUBTREE, "org_code", "SERVICE,MATRIX")));
+
+        RoleView view = ctx.roleAdminService.createRole(request, "TENANT_A", false);
+
+        assertEquals(RbacDataScopeType.RELATION_SUBTREE, view.getDataScope().getScopeType());
+        assertEquals(List.of("SERVICE", "MATRIX"), view.getDataScope().getRelationTypes());
+        verify(ctx.roleDataScopeRepository).save(any(RbacRoleDataScope.class));
+    }
+
     private static RbacRoleDataScope buildScope(Long roleId, String scopeType, String scopeColumn, String scopeRule) {
         RbacRoleDataScope entity = new RbacRoleDataScope();
         entity.setRoleId(roleId);

@@ -61,6 +61,16 @@ public interface RbacUserRepository extends JpaRepository<RbacUser, Long> {
     Page<RbacUser> findByTenantId(String tenantId, Pageable pageable);
 
     /**
+     * 按租户查询全部用户（按 ID 升序）。
+     *
+     * @param tenantId 租户ID
+     * @return 用户列表
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    List<RbacUser> findByTenantIdOrderByIdAsc(String tenantId);
+
+    /**
      * 统计租户下指定状态用户数量。
      *
      * @param tenantId 租户ID

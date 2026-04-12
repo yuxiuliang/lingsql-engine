@@ -2,11 +2,14 @@ package com.lingsql.web;
 
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
+import com.lingsql.rbac.model.DataScopePreviewView;
 import com.lingsql.rbac.model.DataScopeRule;
 import com.lingsql.rbac.model.RbacDataScopeType;
 import com.lingsql.rbac.model.RoleCreateRequest;
+import com.lingsql.rbac.model.RoleDataScopePreviewRequest;
 import com.lingsql.rbac.model.RoleView;
 import com.lingsql.rbac.security.RbacUserSession;
+import com.lingsql.rbac.service.DataScopePreviewService;
 import com.lingsql.rbac.service.RoleAdminService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,14 +33,16 @@ import static org.mockito.Mockito.when;
 class RoleAdminControllerTest {
 
     private RoleAdminService roleAdminService;
+    private DataScopePreviewService dataScopePreviewService;
     private AuditOperationExecutor auditOperationExecutor;
     private RoleAdminController controller;
 
     @BeforeEach
     void setUp() {
         roleAdminService = Mockito.mock(RoleAdminService.class);
+        dataScopePreviewService = Mockito.mock(DataScopePreviewService.class);
         auditOperationExecutor = Mockito.mock(AuditOperationExecutor.class);
-        controller = new RoleAdminController(roleAdminService, auditOperationExecutor);
+        controller = new RoleAdminController(roleAdminService, dataScopePreviewService, auditOperationExecutor);
     }
 
     @AfterEach
@@ -100,6 +105,24 @@ class RoleAdminControllerTest {
                 any(),
                 any()
         );
+    }
+
+    @Test
+    void previewDataScopeShouldUseSessionTenantForTenantAdmin() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        RoleDataScopePreviewRequest request = new RoleDataScopePreviewRequest();
+        DataScopeRule scope = new DataScopeRule();
+        scope.setScopeType(RbacDataScopeType.RELATION_SUBTREE);
+        request.setDataScope(scope);
+        DataScopePreviewView view = new DataScopePreviewView();
+        view.setSummary("角色继承预览");
+        when(dataScopePreviewService.previewRoleScope(request, "tenant-a", false)).thenReturn(view);
+
+        ApiResponse<DataScopePreviewView> response = controller.previewDataScope(request);
+
+        assertEquals(200, response.getCode());
+        assertEquals("角色继承预览", response.getData().getSummary());
+        verify(dataScopePreviewService).previewRoleScope(request, "tenant-a", false);
     }
 
     private void mockAuditExecute() {

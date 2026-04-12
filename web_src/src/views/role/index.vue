@@ -2,13 +2,17 @@
 import {computed, reactive, ref, watch} from 'vue';
 import {ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
+import {fetchOrgUnits, OrgUnitView} from '@/api/organization';
 import {
   createRole,
+  DataScopePreviewView,
   DataScopeRule,
   fetchPermissions,
   fetchRoles,
   PermissionView,
+  previewRoleDataScope,
   RoleCreateRequest,
+  RoleDataScopePreviewRequest,
   RoleUpdateRequest,
   RoleView,
   updateRole
@@ -17,16 +21,31 @@ import {
 const authStore = useAuthStore();
 const roles = ref<RoleView[]>([]);
 const permissions = ref<PermissionView[]>([]);
+const orgTree = ref<OrgUnitView[]>([]);
 const loading = ref(false);
 const dialogVisible = ref(false);
 const editingId = ref<number | null>(null);
+const previewLoading = ref(false);
+const previewResult = ref<DataScopePreviewView | null>(null);
+const previewOrgUnitIds = ref<number[]>([]);
+const baselineDataScope = ref<DataScopeRule | null>(null);
 const scopeTypeOptions = [
   {label: '全部数据', value: 'ALL'},
   {label: '本租户', value: 'TENANT'},
   {label: '仅本人', value: 'SELF'},
   {label: '指定组织', value: 'ORG'},
   {label: '组织及下级', value: 'ORG_SUBTREE'},
+  {label: '关系目标组织', value: 'RELATION'},
+  {label: '关系目标组织及下级', value: 'RELATION_SUBTREE'},
   {label: '自定义条件', value: 'CUSTOM'}
+];
+
+const relationTypeOptions = [
+  {label: '主管', value: 'SUPERVISE'},
+  {label: '协同', value: 'COOPERATE'},
+  {label: '服务', value: 'SERVICE'},
+  {label: '归口', value: 'OWNERSHIP'},
+  {label: '矩阵', value: 'MATRIX'}
 ];
 
 const form = reactive<RoleCreateRequest & RoleUpdateRequest>({
@@ -38,7 +57,8 @@ const form = reactive<RoleCreateRequest & RoleUpdateRequest>({
   dataScope: {
     scopeType: 'TENANT',
     scopeColumn: '',
-    scopeRule: ''
+    scopeRule: '',
+    relationTypes: []
   }
 });
 
@@ -53,7 +73,8 @@ const createDefaultDataScope = (): DataScopeRule => {
   return {
     scopeType: 'TENANT',
     scopeColumn: '',
-    scopeRule: ''
+    scopeRule: '',
+    relationTypes: []
   };
 };
 
@@ -72,6 +93,8 @@ const formatScopeType = (scopeType?: string) => {
     SELF: '仅本人',
     ORG: '指定组织',
     ORG_SUBTREE: '组织及下级',
+    RELATION: '关系目标组织',
+    RELATION_SUBTREE: '关系目标组织及下级',
     CUSTOM: '自定义条件'
   };
   return mapping[scopeType || 'TENANT'] || scopeType || '本租户';
@@ -91,7 +114,8 @@ const buildDataScopePayload = (): DataScopeRule => {
   return {
     scopeType,
     scopeColumn,
-    scopeRule
+    scopeRule,
+    relationTypes: (form.dataScope?.relationTypes || []).filter(Boolean)
   };
 };
 
@@ -103,6 +127,13 @@ const buildDataScopePayload = (): DataScopeRule => {
  * @date 2026-04-11
  */
 const validateDataScope = () => {
+  if (form.dataScope?.scopeType === 'RELATION' || form.dataScope?.scopeType === 'RELATION_SUBTREE') {
+    if ((form.dataScope?.relationTypes || []).length) {
+      return true;
+    }
+    ElMessage.warning('选择关系型数据权限时必须至少选择一个关系类型');
+    return false;
+  }
   if (form.dataScope?.scopeType !== 'CUSTOM') {
     return true;
   }
@@ -154,6 +185,27 @@ const hasTenantSelected = computed(() => {
 });
 
 /**
+ * 组织节点选项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+const orgOptions = computed(() => {
+  const options: Array<{label: string; value: number}> = [];
+  const walk = (nodes: OrgUnitView[], prefix = '') => {
+    nodes.forEach((node) => {
+      options.push({
+        label: `${prefix}${node.unitName} [${node.typeName || node.typeCode}]`,
+        value: node.id
+      });
+      walk(node.children || [], `${prefix}└ `);
+    });
+  };
+  walk(orgTree.value);
+  return options;
+});
+
+/**
  * 加载角色列表。
  *
  * @author 余炘洋
@@ -189,6 +241,29 @@ const loadPermissions = async () => {
 };
 
 /**
+ * 加载组织树。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+const loadOrgs = async () => {
+  try {
+    if (!hasTenantSelected.value) {
+      orgTree.value = [];
+      return;
+    }
+    orgTree.value = await fetchOrgUnits(activeTenantId.value || undefined);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '加载组织架构失败';
+    if (message.includes('无权限')) {
+      orgTree.value = [];
+      return;
+    }
+    ElMessage.error(message);
+  }
+};
+
+/**
  * 新增角色。
  *
  * @author 余炘洋
@@ -208,6 +283,9 @@ const handleCreate = () => {
     permIds: [],
     dataScope: createDefaultDataScope()
   });
+  previewOrgUnitIds.value = [];
+  previewResult.value = null;
+  baselineDataScope.value = createDefaultDataScope();
   dialogVisible.value = true;
 };
 
@@ -229,9 +307,18 @@ const handleEdit = (row: RoleView) => {
     dataScope: {
       scopeType: row.dataScope?.scopeType || 'TENANT',
       scopeColumn: row.dataScope?.scopeColumn || '',
-      scopeRule: row.dataScope?.scopeRule || ''
+      scopeRule: row.dataScope?.scopeRule || '',
+      relationTypes: row.dataScope?.relationTypes || []
     }
   });
+  previewOrgUnitIds.value = [];
+  previewResult.value = null;
+  baselineDataScope.value = {
+    scopeType: row.dataScope?.scopeType || 'TENANT',
+    scopeColumn: row.dataScope?.scopeColumn || '',
+    scopeRule: row.dataScope?.scopeRule || '',
+    relationTypes: row.dataScope?.relationTypes || []
+  };
   dialogVisible.value = true;
 };
 
@@ -300,12 +387,38 @@ const handleRefresh = () => {
   loadRoles();
 };
 
+/**
+ * 预览角色数据权限命中范围。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+const handlePreviewDataScope = async () => {
+  const payload: RoleDataScopePreviewRequest = {
+    tenantId: activeTenantId.value || undefined,
+    dataScope: buildDataScopePayload(),
+    roleId: editingId.value || undefined,
+    baselineDataScope: baselineDataScope.value || createDefaultDataScope(),
+    orgUnitIds: previewOrgUnitIds.value || []
+  };
+  previewLoading.value = true;
+  try {
+    previewResult.value = await previewRoleDataScope(payload);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '预览数据权限失败');
+  } finally {
+    previewLoading.value = false;
+  }
+};
+
 watch(
   () => activeTenantId.value,
   () => {
     dialogVisible.value = false;
     editingId.value = null;
+    previewResult.value = null;
     loadRoles();
+    loadOrgs();
   },
   {immediate: true}
 );
@@ -354,7 +467,7 @@ loadPermissions();
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" title="角色信息" width="560px" :close-on-click-modal="false">
+    <el-dialog v-model="dialogVisible" title="角色信息" width="760px" :close-on-click-modal="false">
       <el-form label-width="110px">
         <el-form-item label="当前租户" v-if="isSysAdmin">
           <el-tag type="success">{{ activeTenantName || activeTenantId || '未选择' }}</el-tag>
@@ -393,10 +506,22 @@ loadPermissions();
             title="组织范围会基于用户绑定的组织归属生效，角色本身不直接选择组织节点。"
           />
         </el-form-item>
+        <el-form-item v-if="form.dataScope?.scopeType === 'RELATION' || form.dataScope?.scopeType === 'RELATION_SUBTREE'">
+          <el-alert
+            type="warning"
+            :closable="false"
+            title="关系型数据权限会基于用户所属组织的关系语义命中目标组织，适用于主管、服务、矩阵等跨组织访问场景。"
+          />
+        </el-form-item>
+        <el-form-item label="关系类型" v-if="form.dataScope?.scopeType === 'RELATION' || form.dataScope?.scopeType === 'RELATION_SUBTREE'">
+          <el-select v-model="form.dataScope!.relationTypes" multiple filterable allow-create default-first-option style="width: 100%">
+            <el-option v-for="item in relationTypeOptions" :key="item.value" :label="`${item.label} (${item.value})`" :value="item.value"/>
+          </el-select>
+        </el-form-item>
         <el-form-item label="范围字段">
           <el-input
             v-model="form.dataScope!.scopeColumn"
-            placeholder="SELF/ORG/ORG_SUBTREE 时可填写字段名，如 creator_id 或 org_code"
+            placeholder="SELF/ORG/ORG_SUBTREE/RELATION/RELATION_SUBTREE 时可填写字段名，如 creator_id 或 org_code"
           />
         </el-form-item>
         <el-form-item label="自定义规则" v-if="form.dataScope?.scopeType === 'CUSTOM'">
@@ -406,6 +531,91 @@ loadPermissions();
             :rows="3"
             placeholder="例如 status = 1 and dept_code in ('A', 'B')"
           />
+        </el-form-item>
+        <el-form-item label="样本组织">
+          <el-select v-model="previewOrgUnitIds" multiple filterable clearable style="width: 100%" placeholder="用于预览角色数据权限命中范围，不会参与保存">
+            <el-option v-for="org in orgOptions" :key="org.value" :value="org.value" :label="org.label"/>
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <div class="preview-toolbar">
+            <el-button type="primary" plain :loading="previewLoading" @click="handlePreviewDataScope">预览权限命中</el-button>
+            <span class="preview-tip">建议至少选择一个样本组织，便于展开组织型/关系型权限的命中范围。</span>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="previewResult">
+          <div class="preview-panel">
+            <div class="preview-summary">{{ previewResult.summary || '暂无预览摘要' }}</div>
+            <div class="preview-description">{{ previewResult.description || '暂无预览说明' }}</div>
+            <div class="preview-impact">{{ previewResult.impactSummary || '暂无影响范围说明' }}</div>
+            <div v-if="previewResult.warnings?.length" class="preview-warning-list">
+              <el-alert
+                v-for="item in previewResult.warnings"
+                :key="item"
+                type="warning"
+                :closable="false"
+                :title="item"
+              />
+            </div>
+            <div class="preview-stat-grid">
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">直属组织</div>
+                <div class="preview-stat-value">{{ (previewResult.directOrgCodes || []).join(' / ') || '无' }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">直属组织及下级</div>
+                <div class="preview-stat-value">{{ (previewResult.directOrgSubtreeCodes || []).join(' / ') || '无' }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">命中组织数</div>
+                <div class="preview-stat-value">{{ previewResult.matchedOrgCount || 0 }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">生效来源</div>
+                <div class="preview-stat-value">{{ previewResult.effectiveSource || 'ROLE_CONFIG' }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">受影响用户数</div>
+                <div class="preview-stat-value">{{ previewResult.affectedUserCount || 0 }}</div>
+              </div>
+            </div>
+            <div v-if="previewResult.diff" class="diff-panel">
+              <div class="diff-title">变更前后差异</div>
+              <div class="diff-summary-grid">
+                <div class="diff-summary-item">
+                  <div class="diff-summary-label">基线</div>
+                  <div class="diff-summary-value">{{ previewResult.diff.baselineSummary || '无' }}</div>
+                </div>
+                <div class="diff-summary-item">
+                  <div class="diff-summary-label">调整后</div>
+                  <div class="diff-summary-value">{{ previewResult.diff.targetSummary || '无' }}</div>
+                </div>
+                <div class="diff-summary-item">
+                  <div class="diff-summary-label">新增组织</div>
+                  <div class="diff-summary-value success">{{ previewResult.diff.addedOrgCount || 0 }}</div>
+                </div>
+                <div class="diff-summary-item">
+                  <div class="diff-summary-label">移除组织</div>
+                  <div class="diff-summary-value danger">{{ previewResult.diff.removedOrgCount || 0 }}</div>
+                </div>
+              </div>
+              <div v-if="previewResult.diff.addedOrgs?.length" class="preview-tag-list">
+                <el-tag v-for="item in previewResult.diff.addedOrgs" :key="`added-${item.orgUnitId}-${item.hitSource}`" type="success" class="preview-tag">
+                  + {{ item.unitName || item.unitCode }}
+                </el-tag>
+              </div>
+              <div v-if="previewResult.diff.removedOrgs?.length" class="preview-tag-list">
+                <el-tag v-for="item in previewResult.diff.removedOrgs" :key="`removed-${item.orgUnitId}-${item.hitSource}`" type="danger" class="preview-tag">
+                  - {{ item.unitName || item.unitCode }}
+                </el-tag>
+              </div>
+            </div>
+            <div v-if="previewResult.matchedOrgs?.length" class="preview-tag-list">
+              <el-tag v-for="item in previewResult.matchedOrgs" :key="`${item.orgUnitId}-${item.hitSource}`" class="preview-tag">
+                {{ item.unitName || item.unitCode }} · {{ item.hitSource }}
+              </el-tag>
+            </div>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -459,5 +669,132 @@ loadPermissions();
 .tips {
   color: #94a3b8;
   font-size: 13px;
+}
+
+.preview-toolbar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.preview-tip {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.preview-panel {
+  width: 100%;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 16px;
+}
+
+.preview-summary {
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.preview-description {
+  margin-top: 8px;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.preview-impact {
+  margin-top: 8px;
+  color: #1d4ed8;
+  line-height: 1.7;
+}
+
+.preview-warning-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-stat-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.preview-stat-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.preview-stat-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.preview-stat-value {
+  margin-top: 8px;
+  color: #0f172a;
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+.preview-tag-list {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview-tag {
+  margin-right: 0;
+}
+
+.diff-panel {
+  margin-top: 14px;
+}
+
+.diff-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 10px;
+}
+
+.diff-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.diff-summary-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.diff-summary-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.diff-summary-value {
+  margin-top: 8px;
+  color: #0f172a;
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+.diff-summary-value.success {
+  color: #15803d;
+}
+
+.diff-summary-value.danger {
+  color: #b91c1c;
 }
 </style>

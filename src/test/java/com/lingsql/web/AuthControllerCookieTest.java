@@ -4,15 +4,23 @@ import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.model.LoginRequest;
 import com.lingsql.rbac.model.LoginResponse;
 import com.lingsql.rbac.security.RbacSecurityConstants;
+import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.rbac.security.RefreshTokenCookieManager;
 import com.lingsql.rbac.service.AuthService;
 import com.lingsql.rbac.service.MenuService;
 import com.lingsql.rbac.service.RefreshTokenService;
 import com.lingsql.rbac.service.TokenService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -22,6 +30,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AuthControllerCookieTest {
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
 
     @Test
     void loginShouldWriteRefreshTokenCookie() {
@@ -148,6 +161,34 @@ class AuthControllerCookieTest {
         verify(cookieManager).clearRefreshTokenCookie(request, response);
     }
 
+    @Test
+    void profileShouldExposeRelationScopesFromSession() {
+        AuthController controller = new AuthController(
+                Mockito.mock(AuthService.class),
+                Mockito.mock(MenuService.class),
+                Mockito.mock(TokenService.class),
+                Mockito.mock(RefreshTokenService.class),
+                Mockito.mock(RefreshTokenCookieManager.class)
+        );
+        RbacUserSession session = new RbacUserSession();
+        session.setUserId(7L);
+        session.setTenantId("TENANT_A");
+        session.setUsername("leader");
+        Map<String, List<String>> relationScopes = new LinkedHashMap<>();
+        relationScopes.put("SUPERVISE", List.of("CITY", "CITY_DISTRICT"));
+        relationScopes.put("COOPERATE", List.of("CAMPUS_B"));
+        session.setRelationScopes(relationScopes);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(session, "token", List.of())
+        );
+
+        ApiResponse<com.lingsql.rbac.model.UserProfileView> result = controller.profile();
+
+        assertEquals(200, result.getCode());
+        assertEquals(List.of("CITY", "CITY_DISTRICT"), result.getData().getRelationScopes().get("SUPERVISE"));
+        assertEquals(List.of("CAMPUS_B"), result.getData().getRelationScopes().get("COOPERATE"));
+    }
+
     private LoginResponse buildLoginResponse(String token, String refreshToken, long refreshExpiresIn) {
         LoginResponse response = new LoginResponse();
         response.setToken(token);
@@ -157,6 +198,7 @@ class AuthControllerCookieTest {
         response.setUserId(1L);
         response.setTenantId("TENANT_A");
         response.setUsername("admin");
+        response.setRelationScopes(Map.of("OWNERSHIP", List.of("ORG_A")));
         return response;
     }
 }

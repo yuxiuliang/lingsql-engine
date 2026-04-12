@@ -3,14 +3,23 @@ package com.lingsql.web;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.organization.model.OrgUnitCreateRequest;
+import com.lingsql.organization.model.OrgRelationExecutionCreateRequest;
+import com.lingsql.organization.model.OrgRelationExecutionTimelineView;
+import com.lingsql.organization.model.OrgRelationExecutionUpdateRequest;
+import com.lingsql.organization.model.OrgRelationExecutionView;
 import com.lingsql.organization.model.OrgUnitRelationCreateRequest;
 import com.lingsql.organization.model.OrgUnitRelationUpdateRequest;
+import com.lingsql.organization.model.OrgRelationRouteResolveView;
+import com.lingsql.organization.model.OrgRelationWorkbenchView;
 import com.lingsql.organization.model.OrgUnitRelationView;
+import com.lingsql.organization.model.OrgTemplateApplyRequest;
+import com.lingsql.organization.model.OrgTemplateView;
 import com.lingsql.organization.model.OrgUnitTypeCreateRequest;
 import com.lingsql.organization.model.OrgUnitTypeUpdateRequest;
 import com.lingsql.organization.model.OrgUnitTypeView;
 import com.lingsql.organization.model.OrgUnitUpdateRequest;
 import com.lingsql.organization.model.OrgUnitView;
+import com.lingsql.organization.service.OrgRelationExecutionService;
 import com.lingsql.organization.service.OrganizationAdminService;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
@@ -44,6 +53,7 @@ import java.util.List;
 public class OrganizationAdminController {
 
     private final OrganizationAdminService organizationAdminService;
+    private final OrgRelationExecutionService orgRelationExecutionService;
     private final AuditOperationExecutor auditOperationExecutor;
 
     /**
@@ -241,6 +251,169 @@ public class OrganizationAdminController {
         boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
         String resolvedTenant = sysAdmin ? normalize(tenantId) : session.getTenantId();
         return ApiResponse.success(organizationAdminService.listRelations(resolvedTenant));
+    }
+
+    /**
+     * 查询组织关系消费工作台。
+     *
+     * @param tenantId 租户ID
+     * @return 工作台视图
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @GetMapping("/workbench")
+    @PreAuthorize("hasAuthority('ADMIN:ORG:READ')")
+    public ApiResponse<OrgRelationWorkbenchView> relationWorkbench(@RequestParam(required = false) String tenantId) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        String resolvedTenant = sysAdmin ? normalize(tenantId) : session.getTenantId();
+        return ApiResponse.success(organizationAdminService.relationWorkbench(resolvedTenant));
+    }
+
+    /**
+     * 解析组织关系路由。
+     *
+     * @param tenantId        租户ID
+     * @param sourceOrgUnitId 源组织ID
+     * @param relationType    关系类型
+     * @return 路由解析结果
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @GetMapping("/routes/resolve")
+    @PreAuthorize("hasAuthority('ADMIN:ORG:READ')")
+    public ApiResponse<OrgRelationRouteResolveView> resolveRelationRoute(@RequestParam(required = false) String tenantId,
+                                                                         @RequestParam Long sourceOrgUnitId,
+                                                                         @RequestParam String relationType) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        String resolvedTenant = sysAdmin ? normalize(tenantId) : session.getTenantId();
+        return ApiResponse.success(organizationAdminService.resolveRelationRoute(resolvedTenant, sourceOrgUnitId, relationType));
+    }
+
+    /**
+     * 查询组织关系执行台账。
+     *
+     * @param tenantId     租户ID
+     * @param status       状态
+     * @param relationType 关系类型
+     * @return 台账列表
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @GetMapping("/executions")
+    @PreAuthorize("hasAuthority('ADMIN:ORG:READ')")
+    public ApiResponse<List<OrgRelationExecutionView>> listExecutions(@RequestParam(required = false) String tenantId,
+                                                                      @RequestParam(required = false) String status,
+                                                                      @RequestParam(required = false) String relationType) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        String resolvedTenant = sysAdmin ? normalize(tenantId) : session.getTenantId();
+        return ApiResponse.success(orgRelationExecutionService.listExecutions(resolvedTenant, status, relationType));
+    }
+
+    /**
+     * 查询执行轨迹。
+     *
+     * @param id 执行项ID
+     * @return 轨迹列表
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @GetMapping("/executions/{id}/timeline")
+    @PreAuthorize("hasAuthority('ADMIN:ORG:READ')")
+    public ApiResponse<List<OrgRelationExecutionTimelineView>> executionTimeline(@PathVariable Long id) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return ApiResponse.success(orgRelationExecutionService.listExecutionTimeline(id, session.getTenantId(), sysAdmin));
+    }
+
+    /**
+     * 创建组织关系执行项。
+     *
+     * @param request 请求体
+     * @param http    请求
+     * @return 执行项
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @PostMapping("/executions")
+    @PreAuthorize("hasAuthority('ADMIN:ORG:WRITE')")
+    public ApiResponse<OrgRelationExecutionView> createExecution(@Valid @RequestBody OrgRelationExecutionCreateRequest request,
+                                                                 HttpServletRequest http) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return auditOperationExecutor.execute(
+                "ORG_RELATION_EXECUTION_CREATE",
+                "ORG_RELATION_EXECUTION",
+                request,
+                http,
+                () -> orgRelationExecutionService.createExecution(request, session.getTenantId(), sysAdmin, session)
+        );
+    }
+
+    /**
+     * 更新组织关系执行项。
+     *
+     * @param id      执行项ID
+     * @param request 请求体
+     * @param http    请求
+     * @return 执行项
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @PutMapping("/executions/{id}")
+    @PreAuthorize("hasAuthority('ADMIN:ORG:WRITE')")
+    public ApiResponse<OrgRelationExecutionView> updateExecution(@PathVariable Long id,
+                                                                 @Valid @RequestBody OrgRelationExecutionUpdateRequest request,
+                                                                 HttpServletRequest http) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return auditOperationExecutor.execute(
+                "ORG_RELATION_EXECUTION_UPDATE",
+                "ORG_RELATION_EXECUTION",
+                request,
+                http,
+                () -> orgRelationExecutionService.updateExecution(id, request, session.getTenantId(), sysAdmin, session)
+        );
+    }
+
+    /**
+     * 查询组织模板列表。
+     *
+     * @return 模板列表
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    @GetMapping("/templates")
+    @PreAuthorize("hasAuthority('ADMIN:ORG:READ')")
+    public ApiResponse<List<OrgTemplateView>> listTemplates() {
+        requireSession();
+        return ApiResponse.success(organizationAdminService.listTemplates());
+    }
+
+    /**
+     * 应用组织模板。
+     *
+     * @param request 请求体
+     * @param http    请求
+     * @return 初始化结果
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    @PostMapping("/templates/apply")
+    @PreAuthorize("hasAuthority('ADMIN:ORG:WRITE')")
+    public ApiResponse<String> applyTemplate(@Valid @RequestBody OrgTemplateApplyRequest request,
+                                             HttpServletRequest http) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return auditOperationExecutor.execute(
+                "ORG_TEMPLATE_APPLY",
+                "ORG_TEMPLATE",
+                request,
+                http,
+                () -> organizationAdminService.applyTemplate(request, session.getTenantId(), sysAdmin)
+        );
     }
 
     /**

@@ -25,6 +25,8 @@ public enum ErrorCode {
     ORG_UNIT_TYPE_NOT_FOUND(608, "组织类型不存在"),
     ORG_RELATION_NOT_FOUND(609, "组织关系不存在"),
     CONFIG_INVALID(610, "配置错误"),
+    ORG_RELATION_EXECUTION_NOT_FOUND(611, "组织关系执行项不存在"),
+    MENU_NOT_FOUND(612, "菜单不存在"),
     SECURITY_VIOLATION(620, "安全校验失败"),
     SQL_INVALID(621, "SQL 校验失败"),
     DATA_SCOPE_INVALID(622, "数据权限规则错误"),

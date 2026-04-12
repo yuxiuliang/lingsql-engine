@@ -2,7 +2,9 @@ package com.lingsql.rbac.model;
 
 import lombok.Data;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 登录响应。
@@ -109,4 +111,12 @@ public class LoginResponse {
      * @date 2026-01-23
      */
     private List<String> permissions;
+
+    /**
+     * 按关系类型归集的组织可见范围。
+     *
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private Map<String, List<String>> relationScopes = new LinkedHashMap<>();
 }

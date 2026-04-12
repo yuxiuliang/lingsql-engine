@@ -3,13 +3,16 @@ package com.lingsql.web;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.common.result.PageResult;
+import com.lingsql.rbac.model.DataScopePreviewView;
 import com.lingsql.rbac.model.UserCreateRequest;
+import com.lingsql.rbac.model.UserDataScopePreviewRequest;
 import com.lingsql.rbac.model.UserPasswordResetRequest;
 import com.lingsql.rbac.model.UserUpdateRequest;
 import com.lingsql.rbac.model.UserView;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.rbac.security.SecureTenantResolver;
+import com.lingsql.rbac.service.DataScopePreviewService;
 import com.lingsql.rbac.service.UserAdminService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -38,6 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserAdminController {
 
     private final UserAdminService userAdminService;
+    private final DataScopePreviewService dataScopePreviewService;
     private final AuditOperationExecutor auditOperationExecutor;
 
     /**
@@ -135,6 +139,22 @@ public class UserAdminController {
                 () -> userAdminService.resetPassword(id, request, session.getTenantId(), sysAdmin),
                 "密码已重置"
         );
+    }
+
+    /**
+     * 预览用户数据权限命中范围。
+     *
+     * @param request 预览请求
+     * @return 预览结果
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @PostMapping("/preview-data-scope")
+    @PreAuthorize("hasAuthority('ADMIN:USER:READ')")
+    public ApiResponse<DataScopePreviewView> previewDataScope(@RequestBody UserDataScopePreviewRequest request) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return ApiResponse.success(dataScopePreviewService.previewUserScope(request, session.getTenantId(), sysAdmin));
     }
 
     /**

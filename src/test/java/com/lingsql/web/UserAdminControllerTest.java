@@ -3,11 +3,14 @@ package com.lingsql.web;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.common.result.PageResult;
+import com.lingsql.rbac.model.DataScopePreviewView;
 import com.lingsql.rbac.model.DataScopeRule;
 import com.lingsql.rbac.model.RbacDataScopeType;
 import com.lingsql.rbac.model.UserCreateRequest;
+import com.lingsql.rbac.model.UserDataScopePreviewRequest;
 import com.lingsql.rbac.model.UserView;
 import com.lingsql.rbac.security.RbacUserSession;
+import com.lingsql.rbac.service.DataScopePreviewService;
 import com.lingsql.rbac.service.UserAdminService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,14 +35,16 @@ import static org.mockito.Mockito.when;
 class UserAdminControllerTest {
 
     private UserAdminService userAdminService;
+    private DataScopePreviewService dataScopePreviewService;
     private AuditOperationExecutor auditOperationExecutor;
     private UserAdminController controller;
 
     @BeforeEach
     void setUp() {
         userAdminService = Mockito.mock(UserAdminService.class);
+        dataScopePreviewService = Mockito.mock(DataScopePreviewService.class);
         auditOperationExecutor = Mockito.mock(AuditOperationExecutor.class);
-        controller = new UserAdminController(userAdminService, auditOperationExecutor);
+        controller = new UserAdminController(userAdminService, dataScopePreviewService, auditOperationExecutor);
     }
 
     @AfterEach
@@ -102,6 +107,21 @@ class UserAdminControllerTest {
                 any(),
                 any()
         );
+    }
+
+    @Test
+    void previewDataScopeShouldUseSessionTenantForTenantAdmin() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        UserDataScopePreviewRequest request = new UserDataScopePreviewRequest();
+        DataScopePreviewView view = new DataScopePreviewView();
+        view.setSummary("用户权限命中 3 个组织");
+        when(dataScopePreviewService.previewUserScope(request, "tenant-a", false)).thenReturn(view);
+
+        ApiResponse<DataScopePreviewView> response = controller.previewDataScope(request);
+
+        assertEquals(200, response.getCode());
+        assertEquals("用户权限命中 3 个组织", response.getData().getSummary());
+        verify(dataScopePreviewService).previewUserScope(request, "tenant-a", false);
     }
 
     private void mockAuditExecute() {

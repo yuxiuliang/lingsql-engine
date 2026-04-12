@@ -383,6 +383,10 @@ public class SuperAdminInitializer implements ApplicationRunner {
                 menu.setVisible(seed.visible);
                 menu.setStatus(seed.status);
                 menu.setPermCode(seed.permCode);
+                menu.setOrgTypeCodes(normalize(seed.orgTypeCodes));
+                menu.setOrgUnitCodes(normalize(seed.orgUnitCodes));
+                menu.setOrgTags(normalize(seed.orgTags));
+                menu.setRequiredRelationTypes(normalize(seed.requiredRelationTypes));
                 menu.setCreateTime(now);
                 menu.setUpdateTime(now);
                 try {
@@ -463,6 +467,7 @@ public class SuperAdminInitializer implements ApplicationRunner {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record MenuSeed(String menuCode, String menuName, String parentCode, String path, String component,
-                            String icon, Integer sort, Integer visible, Integer status, String permCode) {
+                            String icon, Integer sort, Integer visible, Integer status, String permCode,
+                            String orgTypeCodes, String orgUnitCodes, String orgTags, String requiredRelationTypes) {
     }
 }

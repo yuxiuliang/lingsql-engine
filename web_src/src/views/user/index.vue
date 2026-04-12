@@ -5,12 +5,15 @@ import {useAuthStore} from '@/store/auth';
 import {fetchOrgUnits, OrgUnitView} from '@/api/organization';
 import {
   createUser,
+  DataScopePreviewView,
   DataScopeRule,
   fetchRoles,
   fetchUsers,
+  previewUserDataScope,
   resetUserPassword,
   RoleView,
   updateUser,
+  UserDataScopePreviewRequest,
   UserCreateRequest,
   UserUpdateRequest,
   UserView
@@ -21,6 +24,11 @@ const loading = ref(false);
 const dialogVisible = ref(false);
 const passwordVisible = ref(false);
 const editingId = ref<number | null>(null);
+const previewLoading = ref(false);
+const previewResult = ref<DataScopePreviewView | null>(null);
+const baselineDataScope = ref<DataScopeRule | null>(null);
+const baselineRoleIds = ref<number[]>([]);
+const baselineOrgUnitIds = ref<number[]>([]);
 const users = ref<UserView[]>([]);
 const total = ref(0);
 const page = ref(1);
@@ -34,7 +42,17 @@ const scopeTypeOptions = [
   {label: '仅本人', value: 'SELF'},
   {label: '指定组织', value: 'ORG'},
   {label: '组织及下级', value: 'ORG_SUBTREE'},
+  {label: '关系目标组织', value: 'RELATION'},
+  {label: '关系目标组织及下级', value: 'RELATION_SUBTREE'},
   {label: '自定义条件', value: 'CUSTOM'}
+];
+
+const relationTypeOptions = [
+  {label: '主管', value: 'SUPERVISE'},
+  {label: '协同', value: 'COOPERATE'},
+  {label: '服务', value: 'SERVICE'},
+  {label: '归口', value: 'OWNERSHIP'},
+  {label: '矩阵', value: 'MATRIX'}
 ];
 
 const searchForm = reactive({
@@ -54,7 +72,8 @@ const form = reactive<UserCreateRequest & UserUpdateRequest>({
   dataScope: {
     scopeType: 'INHERIT',
     scopeColumn: '',
-    scopeRule: ''
+    scopeRule: '',
+    relationTypes: []
   }
 });
 
@@ -73,7 +92,8 @@ const createDefaultDataScope = (): DataScopeRule => {
   return {
     scopeType: 'INHERIT',
     scopeColumn: '',
-    scopeRule: ''
+    scopeRule: '',
+    relationTypes: []
   };
 };
 
@@ -93,6 +113,8 @@ const formatScopeType = (scopeType?: string) => {
     SELF: '仅本人',
     ORG: '指定组织',
     ORG_SUBTREE: '组织及下级',
+    RELATION: '关系目标组织',
+    RELATION_SUBTREE: '关系目标组织及下级',
     CUSTOM: '自定义条件'
   };
   return mapping[scopeType || 'INHERIT'] || scopeType || '继承角色';
@@ -109,7 +131,8 @@ const buildDataScopePayload = (): DataScopeRule => {
   return {
     scopeType: form.dataScope?.scopeType || 'INHERIT',
     scopeColumn: form.dataScope?.scopeColumn || '',
-    scopeRule: form.dataScope?.scopeRule || ''
+    scopeRule: form.dataScope?.scopeRule || '',
+    relationTypes: (form.dataScope?.relationTypes || []).filter(Boolean)
   };
 };
 
@@ -125,6 +148,8 @@ const effectiveScopePreview = computed(() => {
   const rule = buildDataScopePayload();
   const extra = rule.scopeType === 'CUSTOM'
     ? `自定义条件：${rule.scopeRule || '未填写'}`
+    : rule.scopeType === 'RELATION' || rule.scopeType === 'RELATION_SUBTREE'
+      ? `关系类型：${(rule.relationTypes || []).join(' / ') || '未选择'}`
     : `字段：${rule.scopeColumn || (rule.scopeType === 'SELF' ? 'creator_id' : rule.scopeType === 'ORG' || rule.scopeType === 'ORG_SUBTREE' ? 'org_code' : '默认')}`;
   return {
     title: `当前配置：${formatScopeType(rule.scopeType)}（${source}）`,
@@ -143,6 +168,10 @@ const validateDataScope = () => {
   const scopeType = form.dataScope?.scopeType || 'INHERIT';
   if (scopeType === 'CUSTOM' && !form.dataScope?.scopeRule?.trim()) {
     ElMessage.warning('选择自定义条件时必须填写 SQL 条件片段');
+    return false;
+  }
+  if ((scopeType === 'RELATION' || scopeType === 'RELATION_SUBTREE') && !(form.dataScope?.relationTypes || []).length) {
+    ElMessage.warning('关系型数据权限至少选择一个关系类型');
     return false;
   }
   if ((scopeType === 'ORG' || scopeType === 'ORG_SUBTREE') && !(form.orgUnitIds || []).length) {
@@ -307,6 +336,10 @@ const handleCreate = async () => {
     primaryOrgUnitId: undefined,
     dataScope: createDefaultDataScope()
   });
+  previewResult.value = null;
+  baselineDataScope.value = createDefaultDataScope();
+  baselineRoleIds.value = [];
+  baselineOrgUnitIds.value = [];
   await Promise.all([loadRoles(), loadOrgs()]);
   dialogVisible.value = true;
 };
@@ -333,9 +366,19 @@ const handleEdit = async (row: UserView) => {
     dataScope: {
       scopeType: row.dataScope?.scopeType || 'INHERIT',
       scopeColumn: row.dataScope?.scopeColumn || '',
-      scopeRule: row.dataScope?.scopeRule || ''
+      scopeRule: row.dataScope?.scopeRule || '',
+      relationTypes: row.dataScope?.relationTypes || []
     }
   });
+  previewResult.value = null;
+  baselineDataScope.value = {
+    scopeType: row.dataScope?.scopeType || 'INHERIT',
+    scopeColumn: row.dataScope?.scopeColumn || '',
+    scopeRule: row.dataScope?.scopeRule || '',
+    relationTypes: row.dataScope?.relationTypes || []
+  };
+  baselineRoleIds.value = [...(row.roleIds || [])];
+  baselineOrgUnitIds.value = [...(row.orgUnitIds || [])];
   await Promise.all([loadRoles(), loadOrgs()]);
   dialogVisible.value = true;
 };
@@ -497,6 +540,33 @@ const handleRefresh = () => {
   Promise.all([loadUsers(), loadRoles()]);
 };
 
+/**
+ * 预览用户数据权限命中范围。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+const handlePreviewDataScope = async () => {
+  const payload: UserDataScopePreviewRequest = {
+    tenantId: activeTenantId.value || undefined,
+    dataScope: buildDataScopePayload(),
+    userId: editingId.value || undefined,
+    baselineDataScope: baselineDataScope.value || createDefaultDataScope(),
+    orgUnitIds: form.orgUnitIds || [],
+    baselineOrgUnitIds: baselineOrgUnitIds.value || [],
+    roleIds: form.roleIds || [],
+    baselineRoleIds: baselineRoleIds.value || []
+  };
+  previewLoading.value = true;
+  try {
+    previewResult.value = await previewUserDataScope(payload);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '预览数据权限失败');
+  } finally {
+    previewLoading.value = false;
+  }
+};
+
 watch(
   () => form.orgUnitIds,
   (value) => {
@@ -519,6 +589,7 @@ watch(
     dialogVisible.value = false;
     passwordVisible.value = false;
     editingId.value = null;
+    previewResult.value = null;
     loadOrgs();
     loadRoles();
     loadUsers();
@@ -599,7 +670,7 @@ watch(
       </div>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" title="用户信息" width="520px" :close-on-click-modal="false">
+    <el-dialog v-model="dialogVisible" title="用户信息" width="760px" :close-on-click-modal="false">
       <el-form label-width="100px">
         <el-form-item label="当前租户" v-if="isSysAdmin">
           <el-tag type="success">{{ activeTenantName || activeTenantId || '未选择' }}</el-tag>
@@ -664,6 +735,13 @@ watch(
             title="组织范围权限要求当前用户至少绑定一个组织节点，否则查询会被安全策略拦截。"
           />
         </el-form-item>
+        <el-form-item v-if="form.dataScope?.scopeType === 'RELATION' || form.dataScope?.scopeType === 'RELATION_SUBTREE'">
+          <el-alert
+            type="warning"
+            :closable="false"
+            title="关系型数据权限同样要求当前用户至少绑定一个组织节点，系统会按所选关系类型匹配目标组织。"
+          />
+        </el-form-item>
         <el-form-item>
           <el-alert
             type="success"
@@ -672,10 +750,15 @@ watch(
             :description="effectiveScopePreview.description"
           />
         </el-form-item>
+        <el-form-item label="关系类型" v-if="form.dataScope?.scopeType === 'RELATION' || form.dataScope?.scopeType === 'RELATION_SUBTREE'">
+          <el-select v-model="form.dataScope!.relationTypes" multiple filterable allow-create default-first-option style="width: 100%">
+            <el-option v-for="item in relationTypeOptions" :key="item.value" :label="`${item.label} (${item.value})`" :value="item.value"/>
+          </el-select>
+        </el-form-item>
         <el-form-item label="范围字段">
           <el-input
             v-model="form.dataScope!.scopeColumn"
-            placeholder="SELF/ORG/ORG_SUBTREE 时可填写字段名，如 creator_id 或 org_code"
+            placeholder="SELF/ORG/ORG_SUBTREE/RELATION/RELATION_SUBTREE 时可填写字段名，如 creator_id 或 org_code"
           />
         </el-form-item>
         <el-form-item label="自定义规则" v-if="form.dataScope?.scopeType === 'CUSTOM'">
@@ -685,6 +768,100 @@ watch(
             :rows="3"
             placeholder="例如 status = 1 and org_code in ('HN_CS')"
           />
+        </el-form-item>
+        <el-form-item>
+          <div class="preview-toolbar">
+            <el-button type="primary" plain :loading="previewLoading" @click="handlePreviewDataScope">预览权限命中</el-button>
+            <span class="preview-tip">预览会同时考虑用户覆盖、角色继承、直属组织和关系型数据权限。</span>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="previewResult">
+          <div class="preview-panel">
+            <div class="preview-summary">{{ previewResult.summary || '暂无预览摘要' }}</div>
+            <div class="preview-description">{{ previewResult.description || '暂无预览说明' }}</div>
+            <div class="preview-impact">{{ previewResult.impactSummary || '暂无影响范围说明' }}</div>
+            <div v-if="previewResult.warnings?.length" class="preview-warning-list">
+              <el-alert
+                v-for="item in previewResult.warnings"
+                :key="item"
+                type="warning"
+                :closable="false"
+                :title="item"
+              />
+            </div>
+            <div class="preview-stat-grid">
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">直属组织</div>
+                <div class="preview-stat-value">{{ (previewResult.directOrgCodes || []).join(' / ') || '无' }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">直属组织及下级</div>
+                <div class="preview-stat-value">{{ (previewResult.directOrgSubtreeCodes || []).join(' / ') || '无' }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">命中组织数</div>
+                <div class="preview-stat-value">{{ previewResult.matchedOrgCount || 0 }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">生效来源</div>
+                <div class="preview-stat-value">{{ previewResult.effectiveSource || 'DEFAULT_TENANT' }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">受影响角色数</div>
+                <div class="preview-stat-value">{{ previewResult.affectedRoleCount || 0 }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">受影响用户数</div>
+                <div class="preview-stat-value">{{ previewResult.affectedUserCount || 0 }}</div>
+              </div>
+            </div>
+            <div v-if="previewResult.diff" class="diff-panel">
+              <div class="diff-title">变更前后差异</div>
+              <div class="diff-summary-grid">
+                <div class="diff-summary-item">
+                  <div class="diff-summary-label">基线</div>
+                  <div class="diff-summary-value">{{ previewResult.diff.baselineSummary || '无' }}</div>
+                </div>
+                <div class="diff-summary-item">
+                  <div class="diff-summary-label">调整后</div>
+                  <div class="diff-summary-value">{{ previewResult.diff.targetSummary || '无' }}</div>
+                </div>
+                <div class="diff-summary-item">
+                  <div class="diff-summary-label">新增组织</div>
+                  <div class="diff-summary-value success">{{ previewResult.diff.addedOrgCount || 0 }}</div>
+                </div>
+                <div class="diff-summary-item">
+                  <div class="diff-summary-label">移除组织</div>
+                  <div class="diff-summary-value danger">{{ previewResult.diff.removedOrgCount || 0 }}</div>
+                </div>
+              </div>
+              <div v-if="previewResult.diff.addedOrgs?.length" class="preview-tag-list">
+                <el-tag v-for="item in previewResult.diff.addedOrgs" :key="`added-${item.orgUnitId}-${item.hitSource}`" type="success" class="preview-tag">
+                  + {{ item.unitName || item.unitCode }}
+                </el-tag>
+              </div>
+              <div v-if="previewResult.diff.removedOrgs?.length" class="preview-tag-list">
+                <el-tag v-for="item in previewResult.diff.removedOrgs" :key="`removed-${item.orgUnitId}-${item.hitSource}`" type="danger" class="preview-tag">
+                  - {{ item.unitName || item.unitCode }}
+                </el-tag>
+              </div>
+            </div>
+            <div v-if="previewResult.roleCandidates?.length" class="candidate-list">
+              <div class="candidate-title">角色叠加解释</div>
+              <div class="candidate-grid">
+                <div v-for="item in previewResult.roleCandidates" :key="item.roleId || item.roleCode" class="candidate-item" :class="{selected: item.selected}">
+                  <div class="candidate-name">{{ item.roleName || item.roleCode }}</div>
+                  <div class="candidate-desc">{{ item.summary || '-' }}</div>
+                  <div class="candidate-flag">{{ item.selected ? '当前生效' : '候选规则' }}</div>
+                </div>
+              </div>
+            </div>
+            <div v-if="previewResult.matchedOrgs?.length" class="preview-tag-list">
+              <el-tag v-for="item in previewResult.matchedOrgs" :key="`${item.orgUnitId}-${item.hitSource}`" class="preview-tag">
+                {{ item.unitName || item.unitCode }} · {{ item.hitSource }}
+              </el-tag>
+            </div>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -757,5 +934,179 @@ watch(
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
+}
+
+.preview-toolbar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.preview-tip {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.preview-panel {
+  width: 100%;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 16px;
+}
+
+.preview-summary {
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.preview-description {
+  margin-top: 8px;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.preview-impact {
+  margin-top: 8px;
+  color: #1d4ed8;
+  line-height: 1.7;
+}
+
+.preview-warning-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-stat-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.preview-stat-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.preview-stat-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.preview-stat-value {
+  margin-top: 8px;
+  color: #0f172a;
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+.candidate-list {
+  margin-top: 14px;
+}
+
+.candidate-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 10px;
+}
+
+.candidate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.candidate-item {
+  border: 1px solid #dbe4f0;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.candidate-item.selected {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.candidate-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.candidate-desc {
+  margin-top: 8px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.candidate-flag {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #2563eb;
+}
+
+.preview-tag-list {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview-tag {
+  margin-right: 0;
+}
+
+.diff-panel {
+  margin-top: 14px;
+}
+
+.diff-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 10px;
+}
+
+.diff-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.diff-summary-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.diff-summary-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.diff-summary-value {
+  margin-top: 8px;
+  color: #0f172a;
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+.diff-summary-value.success {
+  color: #15803d;
+}
+
+.diff-summary-value.danger {
+  color: #b91c1c;
 }
 </style>

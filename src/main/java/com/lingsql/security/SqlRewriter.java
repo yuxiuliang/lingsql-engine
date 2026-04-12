@@ -34,7 +34,10 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -240,6 +243,18 @@ public class SqlRewriter {
             injectInCondition(plainSelect, buildColumn(plainSelect, columnName), orgCodes);
             return;
         }
+        if (RbacDataScopeType.RELATION.equals(normalized) || RbacDataScopeType.RELATION_SUBTREE.equals(normalized)) {
+            String columnName = rule.getScopeColumn();
+            if (!StringUtils.hasText(columnName)) {
+                columnName = "org_code";
+            }
+            List<String> orgCodes = resolveRelationScopedOrgCodes(session, normalized, rule.getRelationTypes());
+            if (orgCodes.isEmpty()) {
+                throw new BizException(ErrorCode.SECURITY_VIOLATION, "关系型数据权限缺少组织归属信息");
+            }
+            injectInCondition(plainSelect, buildColumn(plainSelect, columnName), orgCodes);
+            return;
+        }
         if (RbacDataScopeType.SELF.equals(normalized)) {
             String columnName = rule.getScopeColumn();
             if (columnName == null || columnName.isBlank()) {
@@ -284,10 +299,83 @@ public class SqlRewriter {
             return List.of();
         }
         List<String> codes = RbacDataScopeType.ORG_SUBTREE.equalsIgnoreCase(scopeType)
-                ? session.getOrgSubtreeCodes()
-                : session.getOrgUnitCodes();
+                ? resolveDirectOrgSubtreeCodes(session)
+                : resolveDirectOrgCodes(session);
         if (codes == null || codes.isEmpty()) {
             return List.of();
+        }
+        return codes.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * 解析直属组织编码范围。
+     *
+     * @param session 当前会话
+     * @return 直属组织编码
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> resolveDirectOrgCodes(RbacUserSession session) {
+        if (session == null) {
+            return List.of();
+        }
+        if (session.getMemberOrgUnitCodes() != null && !session.getMemberOrgUnitCodes().isEmpty()) {
+            return session.getMemberOrgUnitCodes();
+        }
+        return session.getOrgUnitCodes();
+    }
+
+    /**
+     * 解析直属组织及下级编码范围。
+     *
+     * @param session 当前会话
+     * @return 直属组织及下级编码
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> resolveDirectOrgSubtreeCodes(RbacUserSession session) {
+        if (session == null) {
+            return List.of();
+        }
+        if (session.getMemberOrgSubtreeCodes() != null && !session.getMemberOrgSubtreeCodes().isEmpty()) {
+            return session.getMemberOrgSubtreeCodes();
+        }
+        return session.getOrgSubtreeCodes();
+    }
+
+    /**
+     * 解析关系型数据权限对应的组织范围。
+     *
+     * @param session       当前会话
+     * @param scopeType     范围类型
+     * @param relationTypes 关系类型列表
+     * @return 组织编码范围
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> resolveRelationScopedOrgCodes(RbacUserSession session, String scopeType, List<String> relationTypes) {
+        if (session == null || relationTypes == null || relationTypes.isEmpty()) {
+            return List.of();
+        }
+        Map<String, List<String>> scopeMapping = RbacDataScopeType.RELATION_SUBTREE.equalsIgnoreCase(scopeType)
+                ? session.getRelationScopes()
+                : session.getRelationDirectScopes();
+        if (scopeMapping == null || scopeMapping.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> codes = new LinkedHashSet<>();
+        for (String relationType : relationTypes) {
+            if (!StringUtils.hasText(relationType)) {
+                continue;
+            }
+            List<String> matchedCodes = scopeMapping.get(relationType.trim().toUpperCase(Locale.ROOT));
+            if (matchedCodes != null) {
+                codes.addAll(matchedCodes);
+            }
         }
         return codes.stream()
                 .filter(StringUtils::hasText)

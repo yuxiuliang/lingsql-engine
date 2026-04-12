@@ -123,6 +123,42 @@ class UserAdminServiceTest {
         verify(ctx.refreshTokenService).revokeByUserId(102L);
     }
 
+    @Test
+    void createUserShouldPersistRelationScopeWhenOrgMembershipExists() {
+        TestContext ctx = new TestContext();
+
+        UserCreateRequest request = new UserCreateRequest();
+        request.setUsername("david");
+        request.setPassword("abc12345");
+        request.setOrgUnitIds(List.of(11L));
+        DataScopeRule dataScope = new DataScopeRule();
+        dataScope.setScopeType(RbacDataScopeType.RELATION);
+        dataScope.setScopeColumn("org_code");
+        dataScope.setRelationTypes(List.of("service"));
+        request.setDataScope(dataScope);
+
+        when(ctx.userRepository.findByTenantIdAndUsername("TENANT_A", "david")).thenReturn(Optional.empty());
+        when(ctx.passwordEncoder.encode("abc12345")).thenReturn("encoded_pwd");
+        when(ctx.orgUnitRepository.findByIdIn(List.of(11L))).thenReturn(List.of(buildOrgUnit(11L, "TENANT_A")));
+        when(ctx.userRepository.save(any(RbacUser.class))).thenAnswer(invocation -> {
+            RbacUser user = invocation.getArgument(0);
+            user.setId(104L);
+            return user;
+        });
+        when(ctx.userRoleRepository.findRoleIdsByUserId(104L)).thenReturn(List.of());
+        when(ctx.userOrgMembershipRepository.findByUserIdOrderByIsPrimaryDescIdAsc(104L))
+                .thenReturn(List.of(buildMembership(104L, 11L, "TENANT_A")));
+        when(ctx.userDataScopeRepository.findByUserId(104L))
+                .thenReturn(Optional.of(buildScope(104L, RbacDataScopeType.RELATION, "org_code", "SERVICE")));
+        when(ctx.orgUnitRepository.findByIdIn(List.of(11L))).thenReturn(List.of(buildOrgUnit(11L, "TENANT_A")));
+
+        UserView view = ctx.userAdminService.createUser(request, "TENANT_A", false);
+
+        assertEquals(RbacDataScopeType.RELATION, view.getDataScope().getScopeType());
+        assertEquals(List.of("SERVICE"), view.getDataScope().getRelationTypes());
+        verify(ctx.userDataScopeRepository).save(any(RbacUserDataScope.class));
+    }
+
     private static RbacUserDataScope buildScope(Long userId, String scopeType, String scopeColumn, String scopeRule) {
         RbacUserDataScope entity = new RbacUserDataScope();
         entity.setUserId(userId);
@@ -131,6 +167,23 @@ class UserAdminServiceTest {
         entity.setScopeRule(scopeRule);
         entity.setStatus(1);
         return entity;
+    }
+
+    private static com.lingsql.organization.entity.OrgUnit buildOrgUnit(Long id, String tenantId) {
+        com.lingsql.organization.entity.OrgUnit unit = new com.lingsql.organization.entity.OrgUnit();
+        unit.setId(id);
+        unit.setTenantId(tenantId);
+        unit.setUnitName("组织" + id);
+        return unit;
+    }
+
+    private static com.lingsql.organization.entity.UserOrgMembership buildMembership(Long userId, Long orgUnitId, String tenantId) {
+        com.lingsql.organization.entity.UserOrgMembership membership = new com.lingsql.organization.entity.UserOrgMembership();
+        membership.setUserId(userId);
+        membership.setOrgUnitId(orgUnitId);
+        membership.setTenantId(tenantId);
+        membership.setIsPrimary(1);
+        return membership;
     }
 
     private static final class TestContext {

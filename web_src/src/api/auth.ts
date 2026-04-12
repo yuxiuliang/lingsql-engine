@@ -1,6 +1,16 @@
 import {request} from '@/utils/request';
 
 /**
+ * 关系语义映射定义。
+ *
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+export interface RelationScopeMap {
+  [relationType: string]: string[];
+}
+
+/**
  * 登录请求定义。
  *
  * @author 余炘洋
@@ -8,12 +18,12 @@ import {request} from '@/utils/request';
  */
 export interface LoginRequest {
   /**
-   * 租户ID（可选，账号唯一时自动识别）。
+   * 租户ID（必填）。
    *
    * @author 余炘洋
    * @date 2026-01-26
    */
-  tenantId?: string;
+  tenantId: string;
   username: string;
   password: string;
 }
@@ -37,6 +47,7 @@ export interface LoginResponse {
   experience?: boolean;
   roles?: string[];
   permissions?: string[];
+  relationScopes?: RelationScopeMap;
 }
 
 /**
@@ -76,6 +87,7 @@ export interface UserProfileView {
     scopeColumn?: string;
     scopeRule?: string;
   };
+  relationScopes?: RelationScopeMap;
 }
 
 /**

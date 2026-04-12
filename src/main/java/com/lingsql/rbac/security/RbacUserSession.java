@@ -5,7 +5,9 @@ import lombok.Data;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 登录用户会话模型。
@@ -89,7 +91,39 @@ public class RbacUserSession implements Serializable {
     private List<Long> orgUnitIds = new ArrayList<>();
 
     /**
-     * 组织编码列表。
+     * 直接归属组织编码列表。
+     *
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> memberOrgUnitCodes = new ArrayList<>();
+
+    /**
+     * 直接归属组织类型编码列表。
+     *
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> memberOrgTypeCodes = new ArrayList<>();
+
+    /**
+     * 直接归属组织标签列表。
+     *
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> memberOrgTags = new ArrayList<>();
+
+    /**
+     * 直属组织及下级编码列表。
+     *
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> memberOrgSubtreeCodes = new ArrayList<>();
+
+    /**
+     * 当前用户可见的组织编码列表（含关系扩展）。
      *
      * @author 余炘洋
      * @date 2026-04-11
@@ -97,12 +131,28 @@ public class RbacUserSession implements Serializable {
     private List<String> orgUnitCodes = new ArrayList<>();
 
     /**
-     * 组织及下级编码列表。
+     * 当前用户可见的组织及下级编码列表（含关系扩展）。
      *
      * @author 余炘洋
      * @date 2026-04-11
      */
     private List<String> orgSubtreeCodes = new ArrayList<>();
+
+    /**
+     * 按关系类型归集的组织可见范围。
+     *
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private Map<String, List<String>> relationScopes = new LinkedHashMap<>();
+
+    /**
+     * 按关系类型归集的目标组织直属编码范围。
+     *
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private Map<String, List<String>> relationDirectScopes = new LinkedHashMap<>();
 
     /**
      * 菜单白名单(体验账号使用)。

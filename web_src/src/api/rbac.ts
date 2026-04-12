@@ -1,4 +1,5 @@
 import {request} from '@/utils/request';
+import type {MenuView} from '@/api/auth';
 
 /**
  * 分页结果定义。
@@ -159,6 +160,7 @@ export interface DataScopeRule {
   scopeType?: string;
   scopeColumn?: string;
   scopeRule?: string;
+  relationTypes?: string[];
 }
 
 /**
@@ -184,6 +186,217 @@ export interface ExperiencePolicyRequest {
   menuWhitelist?: string[];
   dataScopeOverride?: DataScopeRule;
   enabled?: boolean;
+}
+
+/**
+ * 菜单治理视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface MenuAdminView {
+  id?: number;
+  tenantId?: string;
+  menuCode?: string;
+  menuName?: string;
+  parentId?: number;
+  parentMenuCode?: string;
+  path?: string;
+  component?: string;
+  icon?: string;
+  sort?: number;
+  visible?: number;
+  status?: number;
+  permCode?: string;
+  orgTypeCodes?: string[];
+  orgUnitCodes?: string[];
+  orgTags?: string[];
+  requiredRelationTypes?: string[];
+  children?: MenuAdminView[];
+}
+
+/**
+ * 菜单规则更新请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface MenuRuleUpdateRequest {
+  orgTypeCodes?: string[];
+  orgUnitCodes?: string[];
+  orgTags?: string[];
+  requiredRelationTypes?: string[];
+}
+
+/**
+ * 租户菜单覆盖视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface TenantMenuAdminView {
+  id?: number;
+  overrideId?: number;
+  tenantId?: string;
+  menuCode?: string;
+  menuName?: string;
+  parentId?: number;
+  parentMenuCode?: string;
+  path?: string;
+  component?: string;
+  icon?: string;
+  sort?: number;
+  permCode?: string;
+  visible?: number;
+  status?: number;
+  orgTypeCodes?: string[];
+  orgUnitCodes?: string[];
+  orgTags?: string[];
+  requiredRelationTypes?: string[];
+  overrideActive?: boolean;
+  baseVisible?: number;
+  baseStatus?: number;
+  baseOrgTypeCodes?: string[];
+  baseOrgUnitCodes?: string[];
+  baseOrgTags?: string[];
+  baseRequiredRelationTypes?: string[];
+  overrideVisible?: number | null;
+  overrideStatus?: number | null;
+  overrideOrgTypeCodes?: string[];
+  overrideOrgUnitCodes?: string[];
+  overrideOrgTags?: string[];
+  overrideRequiredRelationTypes?: string[];
+  children?: TenantMenuAdminView[];
+}
+
+/**
+ * 租户菜单覆盖更新请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface TenantMenuRuleUpdateRequest {
+  tenantId?: string;
+  visible?: number | null;
+  status?: number | null;
+  orgTypeCodes?: string[];
+  orgUnitCodes?: string[];
+  orgTags?: string[];
+  requiredRelationTypes?: string[];
+}
+
+/**
+ * 菜单命中预览请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface MenuPreviewRequest {
+  tenantId?: string;
+  permissionCodes?: string[];
+  orgTypeCodes?: string[];
+  orgUnitCodes?: string[];
+  orgTags?: string[];
+  relationTypes?: string[];
+  experience?: boolean;
+  menuWhitelist?: string[];
+}
+
+/**
+ * 数据权限命中组织预览项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface DataScopePreviewOrgView {
+  orgUnitId?: number;
+  unitCode?: string;
+  unitName?: string;
+  typeCode?: string;
+  hitSource?: string;
+}
+
+/**
+ * 数据权限角色候选预览项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface DataScopePreviewRoleCandidateView {
+  roleId?: number;
+  roleCode?: string;
+  roleName?: string;
+  dataScope?: DataScopeRule;
+  selected?: boolean;
+  summary?: string;
+  relationTypes?: string[];
+}
+
+/**
+ * 数据权限命中预览结果。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface DataScopePreviewView {
+  effectiveDataScope?: DataScopeRule;
+  effectiveSource?: string;
+  summary?: string;
+  description?: string;
+  directOrgCodes?: string[];
+  directOrgSubtreeCodes?: string[];
+  relationDirectScopes?: Record<string, string[]>;
+  relationSubtreeScopes?: Record<string, string[]>;
+  matchedOrgCount?: number;
+  matchedOrgTruncated?: boolean;
+  matchedOrgs?: DataScopePreviewOrgView[];
+  roleCandidates?: DataScopePreviewRoleCandidateView[];
+  warnings?: string[];
+  affectedRoleCount?: number;
+  affectedUserCount?: number;
+  impactSummary?: string;
+  diff?: {
+    baselineSummary?: string;
+    targetSummary?: string;
+    baselineMatchedOrgCount?: number;
+    targetMatchedOrgCount?: number;
+    addedOrgCount?: number;
+    removedOrgCount?: number;
+    unchangedOrgCount?: number;
+    addedOrgs?: DataScopePreviewOrgView[];
+    removedOrgs?: DataScopePreviewOrgView[];
+  };
+}
+
+/**
+ * 角色数据权限预览请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface RoleDataScopePreviewRequest {
+  tenantId?: string;
+  dataScope?: DataScopeRule;
+  roleId?: number;
+  baselineDataScope?: DataScopeRule;
+  orgUnitIds?: number[];
+}
+
+/**
+ * 用户数据权限预览请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface UserDataScopePreviewRequest {
+  tenantId?: string;
+  dataScope?: DataScopeRule;
+  userId?: number;
+  baselineDataScope?: DataScopeRule;
+  orgUnitIds?: number[];
+  baselineOrgUnitIds?: number[];
+  roleIds?: number[];
+  baselineRoleIds?: number[];
 }
 
 /**
@@ -236,6 +449,21 @@ export const updateUser = async (id: number, payload: UserUpdateRequest): Promis
   return request<UserView>(`/api/v1/admin/users/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 预览用户数据权限命中范围。
+ *
+ * @param payload 请求体
+ * @return 预览结果
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const previewUserDataScope = async (payload: UserDataScopePreviewRequest): Promise<DataScopePreviewView> => {
+  return request<DataScopePreviewView>('/api/v1/admin/users/preview-data-scope', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
   });
 };
 
@@ -296,6 +524,21 @@ export const updateRole = async (id: number, payload: RoleUpdateRequest): Promis
   return request<RoleView>(`/api/v1/admin/roles/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 预览角色数据权限命中范围。
+ *
+ * @param payload 请求体
+ * @return 预览结果
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const previewRoleDataScope = async (payload: RoleDataScopePreviewRequest): Promise<DataScopePreviewView> => {
+  return request<DataScopePreviewView>('/api/v1/admin/roles/preview-data-scope', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
   });
 };
 
@@ -366,4 +609,91 @@ export const saveExperiencePolicy = async (userId: number, payload: ExperiencePo
       method: 'PUT',
       body: JSON.stringify(payload)
     });
+};
+
+/**
+ * 查询菜单治理规则树。
+ *
+ * @return 菜单规则树
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const fetchMenuRules = async (): Promise<MenuAdminView[]> => {
+  return request<MenuAdminView[]>('/api/v1/admin/menus');
+};
+
+/**
+ * 更新菜单组织适配规则。
+ *
+ * @param id 菜单ID
+ * @param payload 请求体
+ * @return 更新后的菜单
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const updateMenuRule = async (id: number, payload: MenuRuleUpdateRequest): Promise<MenuAdminView> => {
+  return request<MenuAdminView>(`/api/v1/admin/menus/${id}/rule`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 查询租户级菜单覆盖树。
+ *
+ * @param tenantId 租户ID
+ * @return 菜单覆盖树
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const fetchTenantMenuRules = async (tenantId?: string): Promise<TenantMenuAdminView[]> => {
+  const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  return request<TenantMenuAdminView[]>(`/api/v1/admin/menus/tenant${query}`);
+};
+
+/**
+ * 更新租户级菜单覆盖。
+ *
+ * @param menuCode 菜单编码
+ * @param payload 请求体
+ * @return 更新后的租户菜单
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const updateTenantMenuRule = async (menuCode: string, payload: TenantMenuRuleUpdateRequest): Promise<TenantMenuAdminView> => {
+  return request<TenantMenuAdminView>(`/api/v1/admin/menus/tenant/${encodeURIComponent(menuCode)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 清除租户级菜单覆盖。
+ *
+ * @param menuCode 菜单编码
+ * @param tenantId 租户ID
+ * @return 清除结果
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const clearTenantMenuRule = async (menuCode: string, tenantId?: string): Promise<string> => {
+  const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  return request<string>(`/api/v1/admin/menus/tenant/${encodeURIComponent(menuCode)}${query}`, {
+    method: 'DELETE'
+  });
+};
+
+/**
+ * 预览指定组织上下文命中的菜单树。
+ *
+ * @param payload 请求体
+ * @return 菜单树
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const previewMenuTree = async (payload: MenuPreviewRequest): Promise<MenuView[]> => {
+  return request<MenuView[]>('/api/v1/admin/menus/preview', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
 };

@@ -126,6 +126,12 @@ lingsql:
     risk-alert-cron: "${LINGSQL_TENANT_RISK_ALERT_CRON:0 30 9 * * ?}"
     risk-alert-threshold: ${LINGSQL_TENANT_RISK_ALERT_THRESHOLD:70}
     risk-alert-top-n: ${LINGSQL_TENANT_RISK_ALERT_TOP_N:20}
+  org-execution:
+    enabled: ${LINGSQL_ORG_EXECUTION_ENABLED:true}
+    overdue-escalation-enabled: ${LINGSQL_ORG_EXECUTION_OVERDUE_ESCALATION_ENABLED:true}
+    overdue-escalation-cron: "${LINGSQL_ORG_EXECUTION_OVERDUE_ESCALATION_CRON:0 0/15 * * * ?}"
+    due-soon-hours: ${LINGSQL_ORG_EXECUTION_DUE_SOON_HOURS:4}
+    escalation-cooldown: ${LINGSQL_ORG_EXECUTION_ESCALATION_COOLDOWN:4h}
   chat:
     max-question-length: 4000
   ai:
