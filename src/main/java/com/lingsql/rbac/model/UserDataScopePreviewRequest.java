@@ -53,4 +53,9 @@ public class UserDataScopePreviewRequest {
      * 基线角色ID列表。
      */
     private List<Long> baselineRoleIds = new ArrayList<>();
+
+    /**
+     * 样本 SQL。
+     */
+    private String sampleSql;
 }

@@ -38,4 +38,9 @@ public class RoleDataScopePreviewRequest {
      * 样本直属组织节点ID列表。
      */
     private List<Long> orgUnitIds = new ArrayList<>();
+
+    /**
+     * 样本 SQL。
+     */
+    private String sampleSql;
 }

@@ -355,6 +355,9 @@ export interface DataScopePreviewView {
   affectedRoleCount?: number;
   affectedUserCount?: number;
   impactSummary?: string;
+  sampleSqlValid?: boolean;
+  sampleSqlMessage?: string;
+  sampleRewrittenSql?: string;
   diff?: {
     baselineSummary?: string;
     targetSummary?: string;
@@ -380,6 +383,7 @@ export interface RoleDataScopePreviewRequest {
   roleId?: number;
   baselineDataScope?: DataScopeRule;
   orgUnitIds?: number[];
+  sampleSql?: string;
 }
 
 /**
@@ -397,6 +401,7 @@ export interface UserDataScopePreviewRequest {
   baselineOrgUnitIds?: number[];
   roleIds?: number[];
   baselineRoleIds?: number[];
+  sampleSql?: string;
 }
 
 /**

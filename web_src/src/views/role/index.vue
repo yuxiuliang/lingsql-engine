@@ -29,6 +29,7 @@ const previewLoading = ref(false);
 const previewResult = ref<DataScopePreviewView | null>(null);
 const previewOrgUnitIds = ref<number[]>([]);
 const baselineDataScope = ref<DataScopeRule | null>(null);
+const sampleSql = ref('');
 const scopeTypeOptions = [
   {label: '全部数据', value: 'ALL'},
   {label: '本租户', value: 'TENANT'},
@@ -286,6 +287,7 @@ const handleCreate = () => {
   previewOrgUnitIds.value = [];
   previewResult.value = null;
   baselineDataScope.value = createDefaultDataScope();
+  sampleSql.value = '';
   dialogVisible.value = true;
 };
 
@@ -319,6 +321,7 @@ const handleEdit = (row: RoleView) => {
     scopeRule: row.dataScope?.scopeRule || '',
     relationTypes: row.dataScope?.relationTypes || []
   };
+  sampleSql.value = '';
   dialogVisible.value = true;
 };
 
@@ -399,7 +402,8 @@ const handlePreviewDataScope = async () => {
     dataScope: buildDataScopePayload(),
     roleId: editingId.value || undefined,
     baselineDataScope: baselineDataScope.value || createDefaultDataScope(),
-    orgUnitIds: previewOrgUnitIds.value || []
+    orgUnitIds: previewOrgUnitIds.value || [],
+    sampleSql: sampleSql.value || undefined
   };
   previewLoading.value = true;
   try {
@@ -537,6 +541,14 @@ loadPermissions();
             <el-option v-for="org in orgOptions" :key="org.value" :value="org.value" :label="org.label"/>
           </el-select>
         </el-form-item>
+        <el-form-item label="样本 SQL">
+          <el-input
+            v-model="sampleSql"
+            type="textarea"
+            :rows="4"
+            placeholder="可选，输入一条典型查询用于验证当前权限是否会通过安全校验，并查看改写后的 SQL"
+          />
+        </el-form-item>
         <el-form-item>
           <div class="preview-toolbar">
             <el-button type="primary" plain :loading="previewLoading" @click="handlePreviewDataScope">预览权限命中</el-button>
@@ -548,6 +560,21 @@ loadPermissions();
             <div class="preview-summary">{{ previewResult.summary || '暂无预览摘要' }}</div>
             <div class="preview-description">{{ previewResult.description || '暂无预览说明' }}</div>
             <div class="preview-impact">{{ previewResult.impactSummary || '暂无影响范围说明' }}</div>
+            <div v-if="previewResult.sampleSqlMessage" class="preview-sql-result">
+              <el-alert
+                :type="previewResult.sampleSqlValid ? 'success' : 'error'"
+                :closable="false"
+                :title="previewResult.sampleSqlMessage"
+              />
+              <el-input
+                v-if="previewResult.sampleRewrittenSql"
+                class="preview-sql-textarea"
+                type="textarea"
+                :rows="4"
+                :model-value="previewResult.sampleRewrittenSql"
+                readonly
+              />
+            </div>
             <div v-if="previewResult.warnings?.length" class="preview-warning-list">
               <el-alert
                 v-for="item in previewResult.warnings"
@@ -708,6 +735,17 @@ loadPermissions();
   margin-top: 8px;
   color: #1d4ed8;
   line-height: 1.7;
+}
+
+.preview-sql-result {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.preview-sql-textarea {
+  width: 100%;
 }
 
 .preview-warning-list {

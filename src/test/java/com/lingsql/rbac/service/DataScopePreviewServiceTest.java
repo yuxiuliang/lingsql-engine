@@ -4,6 +4,8 @@ import com.lingsql.organization.entity.OrgUnit;
 import com.lingsql.organization.entity.OrgUnitRelation;
 import com.lingsql.organization.repository.OrgUnitRelationRepository;
 import com.lingsql.organization.repository.OrgUnitRepository;
+import com.lingsql.datasource.model.TenantDbConfig;
+import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
 import com.lingsql.rbac.model.DataScopePreviewView;
@@ -86,6 +88,32 @@ class DataScopePreviewServiceTest {
         assertTrue(view.getRoleCandidates().stream().anyMatch(item -> item.isSelected() && "ROLE_SERVICE".equals(item.getRoleCode())));
     }
 
+    @Test
+    void previewRoleScopeShouldValidateSampleSql() {
+        TestContext ctx = new TestContext();
+        seedTenantOrgs(ctx);
+        TenantDbConfig config = new TenantDbConfig();
+        config.setTenantId("TENANT_A");
+        config.setIsolationMode("PHYSICAL");
+        when(ctx.tenantDbConfigRepository.findByTenantId("TENANT_A")).thenReturn(java.util.Optional.of(config));
+        when(ctx.sqlRewriter.rewrite("SELECT * FROM orders LIMIT 10", config, "TENANT_A"))
+                .thenReturn("SELECT order_id FROM orders WHERE org_code IN ('SRV') LIMIT 10");
+
+        RoleDataScopePreviewRequest request = new RoleDataScopePreviewRequest();
+        request.setTenantId("TENANT_A");
+        request.setOrgUnitIds(List.of(1L));
+        request.setSampleSql("SELECT * FROM orders LIMIT 10");
+        DataScopeRule rule = new DataScopeRule();
+        rule.setScopeType(RbacDataScopeType.RELATION);
+        rule.setRelationTypes(List.of("service"));
+        request.setDataScope(rule);
+
+        DataScopePreviewView view = ctx.service.previewRoleScope(request, "TENANT_A", false);
+
+        assertEquals(Boolean.TRUE, view.getSampleSqlValid());
+        assertEquals("SELECT order_id FROM orders WHERE org_code IN ('SRV') LIMIT 10", view.getSampleRewrittenSql());
+    }
+
     private void seedTenantOrgs(TestContext ctx) {
         OrgUnit src = buildOrg(1L, "TENANT_A", "SRC", "ROOT", "/1");
         OrgUnit srv = buildOrg(2L, "TENANT_A", "SRV", "DEPT", "/2");
@@ -128,12 +156,18 @@ class DataScopePreviewServiceTest {
         private final RbacRoleRepository roleRepository = Mockito.mock(RbacRoleRepository.class);
         private final RbacRoleDataScopeRepository roleDataScopeRepository = Mockito.mock(RbacRoleDataScopeRepository.class);
         private final RbacUserRoleRepository userRoleRepository = Mockito.mock(RbacUserRoleRepository.class);
+        private final TenantDbConfigRepository tenantDbConfigRepository = Mockito.mock(TenantDbConfigRepository.class);
+        private final com.lingsql.security.SqlRewriter sqlRewriter = Mockito.mock(com.lingsql.security.SqlRewriter.class);
+        private final com.lingsql.security.SqlSecurityChecker sqlSecurityChecker = Mockito.mock(com.lingsql.security.SqlSecurityChecker.class);
         private final DataScopePreviewService service = new DataScopePreviewService(
                 orgUnitRepository,
                 orgUnitRelationRepository,
                 roleRepository,
                 roleDataScopeRepository,
-                userRoleRepository
+                userRoleRepository,
+                tenantDbConfigRepository,
+                sqlRewriter,
+                sqlSecurityChecker
         );
     }
 }

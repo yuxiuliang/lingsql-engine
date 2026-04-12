@@ -97,6 +97,21 @@ public class DataScopePreviewView {
     private String impactSummary;
 
     /**
+     * 样本 SQL 是否验证通过。
+     */
+    private Boolean sampleSqlValid;
+
+    /**
+     * 样本 SQL 校验说明。
+     */
+    private String sampleSqlMessage;
+
+    /**
+     * 样本 SQL 改写结果。
+     */
+    private String sampleRewrittenSql;
+
+    /**
      * 基线对比差异。
      */
     private DataScopePreviewDiffView diff;

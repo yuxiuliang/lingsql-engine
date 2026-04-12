@@ -2,6 +2,8 @@ package com.lingsql.rbac.service;
 
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.datasource.model.TenantDbConfig;
+import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.organization.entity.OrgUnit;
 import com.lingsql.organization.entity.OrgUnitRelation;
 import com.lingsql.organization.repository.OrgUnitRelationRepository;
@@ -19,10 +21,16 @@ import com.lingsql.rbac.model.UserDataScopePreviewRequest;
 import com.lingsql.rbac.repository.RbacRoleDataScopeRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
+import com.lingsql.rbac.security.RbacUserSession;
+import com.lingsql.security.SqlRewriter;
+import com.lingsql.security.SqlSecurityChecker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -51,6 +59,9 @@ public class DataScopePreviewService {
     private final RbacRoleRepository roleRepository;
     private final RbacRoleDataScopeRepository roleDataScopeRepository;
     private final RbacUserRoleRepository userRoleRepository;
+    private final TenantDbConfigRepository tenantDbConfigRepository;
+    private final SqlRewriter sqlRewriter;
+    private final SqlSecurityChecker sqlSecurityChecker;
 
     /**
      * 预览角色数据权限。
@@ -73,6 +84,7 @@ public class DataScopePreviewService {
         DataScopePreviewView baselineView = buildPreview(baselineRule, "ROLE_BASELINE", context);
         view.setDiff(buildDiff(baselineView, view, baselineMatched, targetMatched));
         applyRoleImpactStats(view, request == null ? null : request.getRoleId());
+        applySampleSqlValidation(view, tenantId, request == null ? null : request.getSampleSql(), rule, context, null);
         if (CollectionUtils.isEmpty(context.directOrgCodes())
                 && (RbacDataScopeType.ORG.equals(rule.getScopeType())
                 || RbacDataScopeType.ORG_SUBTREE.equals(rule.getScopeType())
@@ -108,6 +120,7 @@ public class DataScopePreviewService {
         view.setRoleCandidates(roleCandidates);
         view.setDiff(buildDiff(baselineView, view, baselineMatched, targetMatched));
         applyUserImpactStats(view, request == null ? null : request.getUserId(), request == null ? List.of() : request.getRoleIds());
+        applySampleSqlValidation(view, tenantId, request == null ? null : request.getSampleSql(), effectiveRule.rule(), context, request == null ? null : request.getUserId());
         if (CollectionUtils.isEmpty(context.directOrgCodes())
                 && (RbacDataScopeType.ORG.equals(effectiveRule.rule().getScopeType())
                 || RbacDataScopeType.ORG_SUBTREE.equals(effectiveRule.rule().getScopeType())
@@ -277,6 +290,87 @@ public class DataScopePreviewService {
             return;
         }
         view.setImpactSummary("当前用户变更会影响 1 个用户自身的数据可见范围，并涉及 " + affectedRoles + " 个绑定角色的继承关系。");
+    }
+
+    private void applySampleSqlValidation(
+            DataScopePreviewView view,
+            String tenantId,
+            String sampleSql,
+            DataScopeRule rule,
+            ScopeContext context,
+            Long userId
+    ) {
+        if (view == null || !StringUtils.hasText(sampleSql)) {
+            return;
+        }
+        TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId).orElse(null);
+        if (config == null) {
+            view.setSampleSqlValid(false);
+            view.setSampleSqlMessage("当前租户缺少数据源配置，无法验证样本 SQL。");
+            return;
+        }
+        if (RbacDataScopeType.SELF.equalsIgnoreCase(rule.getScopeType()) && userId == null) {
+            view.setSampleSqlValid(false);
+            view.setSampleSqlMessage("SELF 数据权限预览缺少用户ID，无法验证样本 SQL。");
+            return;
+        }
+        RbacUserSession session = buildPreviewSession(rule, context, userId);
+        Authentication previous = SecurityContextHolder.getContext().getAuthentication();
+        try {
+            SecurityContextHolder.getContext().setAuthentication(
+                    new UsernamePasswordAuthenticationToken(session, "preview", List.of())
+            );
+            String rewritten = sqlRewriter.rewrite(sampleSql, config, tenantId);
+            sqlSecurityChecker.check(rewritten, config, tenantId);
+            view.setSampleSqlValid(true);
+            view.setSampleSqlMessage("样本 SQL 在当前权限模型下可通过改写与安全校验。");
+            view.setSampleRewrittenSql(rewritten);
+        } catch (BizException ex) {
+            view.setSampleSqlValid(false);
+            view.setSampleSqlMessage(ex.getMessage());
+        } catch (Exception ex) {
+            view.setSampleSqlValid(false);
+            view.setSampleSqlMessage("样本 SQL 校验失败: " + ex.getMessage());
+        } finally {
+            SecurityContextHolder.getContext().setAuthentication(previous);
+        }
+    }
+
+    private RbacUserSession buildPreviewSession(DataScopeRule rule, ScopeContext context, Long userId) {
+        RbacUserSession session = new RbacUserSession();
+        session.setUserId(userId);
+        session.setDataScope(rule);
+        session.setMemberOrgUnitCodes(context.directOrgCodes());
+        session.setMemberOrgSubtreeCodes(context.directOrgSubtreeCodes());
+        session.setOrgUnitCodes(mergeCodes(context.directOrgCodes(), flattenScopeCodes(context.relationDirectScopes())));
+        session.setOrgSubtreeCodes(mergeCodes(context.directOrgSubtreeCodes(), flattenScopeCodes(context.relationSubtreeScopes())));
+        session.setRelationDirectScopes(context.relationDirectScopes());
+        session.setRelationScopes(context.relationSubtreeScopes());
+        return session;
+    }
+
+    private List<String> flattenScopeCodes(Map<String, List<String>> scopeMapping) {
+        if (scopeMapping == null || scopeMapping.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        for (List<String> values : scopeMapping.values()) {
+            if (!CollectionUtils.isEmpty(values)) {
+                merged.addAll(values);
+            }
+        }
+        return new ArrayList<>(merged);
+    }
+
+    private List<String> mergeCodes(List<String> primary, List<String> secondary) {
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        if (!CollectionUtils.isEmpty(primary)) {
+            merged.addAll(primary);
+        }
+        if (!CollectionUtils.isEmpty(secondary)) {
+            merged.addAll(secondary);
+        }
+        return new ArrayList<>(merged);
     }
 
     private String resolveSummary(DataScopeRule rule, String source, int matchedOrgCount) {
