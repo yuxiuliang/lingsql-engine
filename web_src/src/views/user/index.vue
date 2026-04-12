@@ -2,7 +2,13 @@
 import {computed, reactive, ref, watch} from 'vue';
 import {ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
-import {fetchOrgUnits, OrgUnitView} from '@/api/organization';
+import {
+  fetchOrgGovernanceCatalog,
+  fetchOrgUnits,
+  type OrgGovernanceCatalogView,
+  type OrgGovernanceOptionView,
+  type OrgUnitView
+} from '@/api/organization';
 import {
   createUser,
   DataScopePreviewView,
@@ -30,6 +36,7 @@ const baselineDataScope = ref<DataScopeRule | null>(null);
 const baselineRoleIds = ref<number[]>([]);
 const baselineOrgUnitIds = ref<number[]>([]);
 const sampleSql = ref('');
+const governanceCatalog = ref<OrgGovernanceCatalogView | null>(null);
 const users = ref<UserView[]>([]);
 const total = ref(0);
 const page = ref(1);
@@ -48,13 +55,13 @@ const scopeTypeOptions = [
   {label: '自定义条件', value: 'CUSTOM'}
 ];
 
-const relationTypeOptions = [
-  {label: '主管', value: 'SUPERVISE'},
-  {label: '协同', value: 'COOPERATE'},
-  {label: '服务', value: 'SERVICE'},
-  {label: '归口', value: 'OWNERSHIP'},
-  {label: '矩阵', value: 'MATRIX'}
-];
+const defaultRelationTypeLabelMapping: Record<string, string> = {
+  SUPERVISE: '主管',
+  COOPERATE: '协同',
+  SERVICE: '服务',
+  OWNERSHIP: '归口',
+  MATRIX: '矩阵'
+};
 
 const searchForm = reactive({
   keyword: ''
@@ -222,6 +229,38 @@ const hasTenantSelected = computed(() => {
   return !isSysAdmin.value || !!authStore.activeTenantId;
 });
 
+const resolveCatalogOptions = (
+  options?: OrgGovernanceOptionView[],
+  fallbackNameMapping?: Record<string, string>
+) => {
+  const mapping = new Map<string, {label: string; value: string}>();
+  (options || []).forEach((item) => {
+    if (!item?.code) {
+      return;
+    }
+    const code = item.code.trim().toUpperCase();
+    const name = item.name?.trim() || fallbackNameMapping?.[code] || code;
+    mapping.set(code, {
+      label: name === code ? code : `${name} (${code})`,
+      value: code
+    });
+  });
+  Object.entries(fallbackNameMapping || {}).forEach(([code, name]) => {
+    if (!mapping.has(code)) {
+      mapping.set(code, {
+        label: `${name} (${code})`,
+        value: code
+      });
+    }
+  });
+  return Array.from(mapping.values());
+};
+
+const relationTypeOptions = computed(() => resolveCatalogOptions(
+  governanceCatalog.value?.relationTypeOptions,
+  defaultRelationTypeLabelMapping
+));
+
 /**
  * 组织节点选项。
  *
@@ -307,6 +346,23 @@ const loadOrgs = async () => {
     const message = error instanceof Error ? error.message : '加载组织架构失败';
     if (message.includes('无权限')) {
       orgTree.value = [];
+      return;
+    }
+    ElMessage.error(message);
+  }
+};
+
+const loadGovernanceCatalog = async () => {
+  try {
+    if (!hasTenantSelected.value) {
+      governanceCatalog.value = null;
+      return;
+    }
+    governanceCatalog.value = await fetchOrgGovernanceCatalog(activeTenantId.value || undefined);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '加载组织治理字典失败';
+    if (message.includes('无权限')) {
+      governanceCatalog.value = null;
       return;
     }
     ElMessage.error(message);
@@ -595,6 +651,7 @@ watch(
     editingId.value = null;
     previewResult.value = null;
     loadOrgs();
+    loadGovernanceCatalog();
     loadRoles();
     loadUsers();
   },

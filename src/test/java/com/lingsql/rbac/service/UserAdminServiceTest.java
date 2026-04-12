@@ -2,6 +2,7 @@ package com.lingsql.rbac.service;
 
 import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.rbac.entity.RbacUser;
 import com.lingsql.rbac.entity.RbacUserDataScope;
 import com.lingsql.rbac.model.DataScopeRule;
@@ -15,6 +16,7 @@ import com.lingsql.rbac.repository.RbacUserDataScopeRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import com.lingsql.organization.repository.OrgUnitRepository;
+import com.lingsql.organization.service.OrgGovernanceCatalogService;
 import com.lingsql.organization.repository.UserOrgMembershipRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -157,6 +159,42 @@ class UserAdminServiceTest {
         assertEquals(RbacDataScopeType.RELATION, view.getDataScope().getScopeType());
         assertEquals(List.of("SERVICE"), view.getDataScope().getRelationTypes());
         verify(ctx.userDataScopeRepository).save(any(RbacUserDataScope.class));
+        verify(ctx.orgGovernanceCatalogService).validateRelationTypes(
+                "TENANT_A",
+                List.of("SERVICE"),
+                "数据权限关系类型"
+        );
+    }
+
+    @Test
+    void createUserShouldRejectUnknownRelationType() {
+        TestContext ctx = new TestContext();
+
+        UserCreateRequest request = new UserCreateRequest();
+        request.setUsername("edward");
+        request.setPassword("abc12345");
+        request.setOrgUnitIds(List.of(11L));
+        DataScopeRule dataScope = new DataScopeRule();
+        dataScope.setScopeType(RbacDataScopeType.RELATION);
+        dataScope.setScopeColumn("org_code");
+        dataScope.setRelationTypes(List.of("mystery"));
+        request.setDataScope(dataScope);
+
+        when(ctx.userRepository.findByTenantIdAndUsername("TENANT_A", "edward")).thenReturn(Optional.empty());
+        when(ctx.passwordEncoder.encode("abc12345")).thenReturn("encoded_pwd");
+        when(ctx.orgUnitRepository.findByIdIn(List.of(11L))).thenReturn(List.of(buildOrgUnit(11L, "TENANT_A")));
+        when(ctx.userRepository.save(any(RbacUser.class))).thenAnswer(invocation -> {
+            RbacUser user = invocation.getArgument(0);
+            user.setId(105L);
+            return user;
+        });
+        Mockito.doThrow(new BizException(ErrorCode.INVALID_PARAM, "数据权限关系类型存在未定义项: MYSTERY"))
+                .when(ctx.orgGovernanceCatalogService)
+                .validateRelationTypes("TENANT_A", List.of("MYSTERY"), "数据权限关系类型");
+
+        BizException ex = assertThrows(BizException.class, () -> ctx.userAdminService.createUser(request, "TENANT_A", false));
+
+        assertEquals(ErrorCode.INVALID_PARAM, ex.getErrorCode());
     }
 
     private static RbacUserDataScope buildScope(Long userId, String scopeType, String scopeColumn, String scopeRule) {
@@ -198,6 +236,7 @@ class UserAdminServiceTest {
         private final OrgUnitRepository orgUnitRepository = Mockito.mock(OrgUnitRepository.class);
         private final UserOrgMembershipRepository userOrgMembershipRepository = Mockito.mock(UserOrgMembershipRepository.class);
         private final RbacUserDataScopeRepository userDataScopeRepository = Mockito.mock(RbacUserDataScopeRepository.class);
+        private final OrgGovernanceCatalogService orgGovernanceCatalogService = Mockito.mock(OrgGovernanceCatalogService.class);
         private final UserAdminService userAdminService = new UserAdminService(
                 userRepository,
                 userRoleRepository,
@@ -209,7 +248,8 @@ class UserAdminServiceTest {
                 pageParamResolver,
                 orgUnitRepository,
                 userOrgMembershipRepository,
-                userDataScopeRepository
+                userDataScopeRepository,
+                orgGovernanceCatalogService
         );
     }
 }

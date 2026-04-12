@@ -7,6 +7,7 @@ import com.lingsql.common.pagination.PageParam;
 import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.organization.entity.OrgUnit;
 import com.lingsql.organization.entity.UserOrgMembership;
+import com.lingsql.organization.service.OrgGovernanceCatalogService;
 import com.lingsql.organization.repository.OrgUnitRepository;
 import com.lingsql.organization.repository.UserOrgMembershipRepository;
 import com.lingsql.rbac.entity.RbacRole;
@@ -74,6 +75,7 @@ public class UserAdminService {
     private final OrgUnitRepository orgUnitRepository;
     private final UserOrgMembershipRepository userOrgMembershipRepository;
     private final RbacUserDataScopeRepository userDataScopeRepository;
+    private final OrgGovernanceCatalogService orgGovernanceCatalogService;
 
     /**
      * 查询用户列表。
@@ -378,7 +380,7 @@ public class UserAdminService {
                 || INHERIT_SCOPE.equalsIgnoreCase(rule.getScopeType())) {
             return;
         }
-        DataScopeRule normalizedRule = normalizeDataScope(rule);
+        DataScopeRule normalizedRule = normalizeDataScope(rule, user.getTenantId());
         validateUserDataScope(user, normalizedRule);
         LocalDateTime now = LocalDateTime.now();
         RbacUserDataScope entity = new RbacUserDataScope();
@@ -570,7 +572,7 @@ public class UserAdminService {
         if (userScope != null
                 && StringUtils.hasText(userScope.getScopeType())
                 && !INHERIT_SCOPE.equalsIgnoreCase(userScope.getScopeType())) {
-            return new EffectiveDataScope(normalizeDataScope(userScope), EFFECTIVE_SOURCE_USER);
+            return new EffectiveDataScope(normalizeDataScope(userScope, null), EFFECTIVE_SOURCE_USER);
         }
         if (CollectionUtils.isEmpty(roleIds)) {
             return new EffectiveDataScope(createTenantDataScope(), EFFECTIVE_SOURCE_DEFAULT);
@@ -696,7 +698,7 @@ public class UserAdminService {
      * @author 余炘洋
      * @date 2026-04-11
      */
-    private DataScopeRule normalizeDataScope(DataScopeRule rule) {
+    private DataScopeRule normalizeDataScope(DataScopeRule rule, String tenantId) {
         if (rule == null || !StringUtils.hasText(rule.getScopeType())) {
             return createInheritedDataScope();
         }
@@ -728,6 +730,7 @@ public class UserAdminService {
             if (CollectionUtils.isEmpty(relationTypes)) {
                 throw new BizException(ErrorCode.INVALID_PARAM, "关系型数据权限至少选择一个关系类型");
             }
+            orgGovernanceCatalogService.validateRelationTypes(tenantId, relationTypes, "数据权限关系类型");
             normalized.setScopeColumn(StringUtils.hasText(rule.getScopeColumn()) ? rule.getScopeColumn().trim() : "");
             normalized.setScopeRule("");
             normalized.setRelationTypes(relationTypes);

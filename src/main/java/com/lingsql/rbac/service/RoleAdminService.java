@@ -2,6 +2,7 @@ package com.lingsql.rbac.service;
 
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.organization.service.OrgGovernanceCatalogService;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
@@ -49,6 +50,7 @@ public class RoleAdminService {
     private final RbacUserRoleRepository userRoleRepository;
     private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
+    private final OrgGovernanceCatalogService orgGovernanceCatalogService;
 
     /**
      * 查询角色列表。
@@ -281,7 +283,7 @@ public class RoleAdminService {
             return;
         }
         roleDataScopeRepository.deleteByRoleId(role.getId());
-        DataScopeRule normalizedRule = normalizeDataScope(rule);
+        DataScopeRule normalizedRule = normalizeDataScope(rule, role.getTenantId());
         if (RbacDataScopeType.TENANT.equals(normalizedRule.getScopeType())) {
             return;
         }
@@ -434,7 +436,7 @@ public class RoleAdminService {
      * @author 余炘洋
      * @date 2026-04-11
      */
-    private DataScopeRule normalizeDataScope(DataScopeRule rule) {
+    private DataScopeRule normalizeDataScope(DataScopeRule rule, String tenantId) {
         if (rule == null || !StringUtils.hasText(rule.getScopeType())) {
             return createDefaultDataScope();
         }
@@ -466,6 +468,7 @@ public class RoleAdminService {
             if (CollectionUtils.isEmpty(relationTypes)) {
                 throw new BizException(ErrorCode.INVALID_PARAM, "关系型数据权限至少选择一个关系类型");
             }
+            orgGovernanceCatalogService.validateRelationTypes(tenantId, relationTypes, "数据权限关系类型");
             normalized.setScopeColumn(StringUtils.hasText(rule.getScopeColumn()) ? rule.getScopeColumn().trim() : "");
             normalized.setScopeRule("");
             normalized.setRelationTypes(relationTypes);

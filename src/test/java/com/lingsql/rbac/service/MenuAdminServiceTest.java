@@ -2,6 +2,7 @@ package com.lingsql.rbac.service;
 
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.organization.service.OrgGovernanceCatalogService;
 import com.lingsql.rbac.entity.RbacMenu;
 import com.lingsql.rbac.model.MenuAdminView;
 import com.lingsql.rbac.model.MenuPreviewRequest;
@@ -28,7 +29,11 @@ class MenuAdminServiceTest {
     @Test
     void listGlobalMenusShouldBuildTreeAndParseRules() {
         RbacMenuRepository repository = Mockito.mock(RbacMenuRepository.class);
-        MenuAdminService service = new MenuAdminService(repository, Mockito.mock(MenuService.class));
+        MenuAdminService service = new MenuAdminService(
+                repository,
+                Mockito.mock(MenuService.class),
+                Mockito.mock(OrgGovernanceCatalogService.class)
+        );
 
         RbacMenu parent = buildMenu(1L, "MENU_ADMIN", null);
         RbacMenu child = buildMenu(2L, "MENU_CHAIN", 1L);
@@ -48,7 +53,11 @@ class MenuAdminServiceTest {
     @Test
     void updateGlobalMenuRuleShouldNormalizeAndPersistRules() {
         RbacMenuRepository repository = Mockito.mock(RbacMenuRepository.class);
-        MenuAdminService service = new MenuAdminService(repository, Mockito.mock(MenuService.class));
+        MenuAdminService service = new MenuAdminService(
+                repository,
+                Mockito.mock(MenuService.class),
+                Mockito.mock(OrgGovernanceCatalogService.class)
+        );
 
         RbacMenu menu = buildMenu(5L, "MENU_CHAIN", 1L);
         when(repository.findById(5L)).thenReturn(Optional.of(menu));
@@ -79,7 +88,11 @@ class MenuAdminServiceTest {
     void previewMenusShouldUseSessionTenantForTenantAdmin() {
         RbacMenuRepository repository = Mockito.mock(RbacMenuRepository.class);
         MenuService menuService = Mockito.mock(MenuService.class);
-        MenuAdminService service = new MenuAdminService(repository, menuService);
+        MenuAdminService service = new MenuAdminService(
+                repository,
+                menuService,
+                Mockito.mock(OrgGovernanceCatalogService.class)
+        );
         when(menuService.listMenus(any())).thenReturn(List.of(new MenuView()));
 
         MenuPreviewRequest request = new MenuPreviewRequest();
@@ -101,7 +114,11 @@ class MenuAdminServiceTest {
     @Test
     void previewMenusShouldRejectCrossTenantPreviewForTenantAdmin() {
         RbacMenuRepository repository = Mockito.mock(RbacMenuRepository.class);
-        MenuAdminService service = new MenuAdminService(repository, Mockito.mock(MenuService.class));
+        MenuAdminService service = new MenuAdminService(
+                repository,
+                Mockito.mock(MenuService.class),
+                Mockito.mock(OrgGovernanceCatalogService.class)
+        );
         MenuPreviewRequest request = new MenuPreviewRequest();
         request.setTenantId("tenant-b");
 
@@ -114,7 +131,11 @@ class MenuAdminServiceTest {
     void listTenantMenusShouldMergeGlobalAndTenantOverride() {
         RbacMenuRepository repository = Mockito.mock(RbacMenuRepository.class);
         MenuService menuService = new MenuService(repository);
-        MenuAdminService service = new MenuAdminService(repository, menuService);
+        MenuAdminService service = new MenuAdminService(
+                repository,
+                menuService,
+                Mockito.mock(OrgGovernanceCatalogService.class)
+        );
 
         RbacMenu globalMenu = buildMenu(8L, "MENU_CHAIN", null);
         globalMenu.setVisible(1);
@@ -141,7 +162,8 @@ class MenuAdminServiceTest {
     void upsertTenantMenuRuleShouldCreateOverrideWithExplicitBlankRules() {
         RbacMenuRepository repository = Mockito.mock(RbacMenuRepository.class);
         MenuService menuService = new MenuService(repository);
-        MenuAdminService service = new MenuAdminService(repository, menuService);
+        OrgGovernanceCatalogService orgGovernanceCatalogService = Mockito.mock(OrgGovernanceCatalogService.class);
+        MenuAdminService service = new MenuAdminService(repository, menuService, orgGovernanceCatalogService);
 
         RbacMenu globalMenu = buildMenu(5L, "MENU_CHAIN", 1L);
         globalMenu.setVisible(1);
@@ -183,11 +205,36 @@ class MenuAdminServiceTest {
     void clearTenantMenuRuleShouldDeleteOverride() {
         RbacMenuRepository repository = Mockito.mock(RbacMenuRepository.class);
         MenuService menuService = new MenuService(repository);
-        MenuAdminService service = new MenuAdminService(repository, menuService);
+        MenuAdminService service = new MenuAdminService(
+                repository,
+                menuService,
+                Mockito.mock(OrgGovernanceCatalogService.class)
+        );
 
         service.clearTenantMenuRule("MENU_CHAIN", "tenant-a", "tenant-a", false);
 
         verify(repository).deleteByTenantIdAndMenuCode("tenant-a", "MENU_CHAIN");
+    }
+
+    @Test
+    void upsertTenantMenuRuleShouldRejectUnknownTenantDimension() {
+        RbacMenuRepository repository = Mockito.mock(RbacMenuRepository.class);
+        MenuService menuService = new MenuService(repository);
+        OrgGovernanceCatalogService orgGovernanceCatalogService = Mockito.mock(OrgGovernanceCatalogService.class);
+        MenuAdminService service = new MenuAdminService(repository, menuService, orgGovernanceCatalogService);
+
+        TenantMenuRuleUpdateRequest request = new TenantMenuRuleUpdateRequest();
+        request.setTenantId("tenant-a");
+        request.setOrgTypeCodes(List.of("UNKNOWN_TYPE"));
+
+        Mockito.doThrow(new BizException(ErrorCode.INVALID_PARAM, "组织类型编码存在未定义项: UNKNOWN_TYPE"))
+                .when(orgGovernanceCatalogService)
+                .validateTenantSelections("tenant-a", List.of("UNKNOWN_TYPE"), List.of(), List.of(), List.of());
+
+        BizException ex = assertThrows(BizException.class,
+                () -> service.upsertTenantMenuRule("MENU_CHAIN", request, "tenant-a", false));
+
+        assertEquals(ErrorCode.INVALID_PARAM, ex.getErrorCode());
     }
 
     private RbacMenu buildMenu(Long id, String menuCode, Long parentId) {

@@ -6,12 +6,14 @@ import com.lingsql.organization.model.OrgRelationExecutionCreateRequest;
 import com.lingsql.organization.model.OrgRelationExecutionTimelineView;
 import com.lingsql.organization.model.OrgRelationExecutionUpdateRequest;
 import com.lingsql.organization.model.OrgRelationExecutionView;
+import com.lingsql.organization.model.OrgGovernanceCatalogView;
 import com.lingsql.organization.model.OrgRelationRouteResolveView;
 import com.lingsql.organization.model.OrgRelationWorkbenchView;
 import com.lingsql.organization.model.OrgTemplateApplyRequest;
 import com.lingsql.organization.model.OrgTemplateView;
 import com.lingsql.organization.model.OrgUnitTypeCreateRequest;
 import com.lingsql.organization.model.OrgUnitTypeView;
+import com.lingsql.organization.service.OrgGovernanceCatalogService;
 import com.lingsql.organization.service.OrgRelationExecutionService;
 import com.lingsql.organization.service.OrganizationAdminService;
 import com.lingsql.rbac.security.RbacUserSession;
@@ -37,6 +39,7 @@ import static org.mockito.Mockito.when;
 class OrganizationAdminControllerTest {
 
     private OrganizationAdminService organizationAdminService;
+    private OrgGovernanceCatalogService orgGovernanceCatalogService;
     private OrgRelationExecutionService orgRelationExecutionService;
     private AuditOperationExecutor auditOperationExecutor;
     private OrganizationAdminController controller;
@@ -44,9 +47,15 @@ class OrganizationAdminControllerTest {
     @BeforeEach
     void setUp() {
         organizationAdminService = Mockito.mock(OrganizationAdminService.class);
+        orgGovernanceCatalogService = Mockito.mock(OrgGovernanceCatalogService.class);
         orgRelationExecutionService = Mockito.mock(OrgRelationExecutionService.class);
         auditOperationExecutor = Mockito.mock(AuditOperationExecutor.class);
-        controller = new OrganizationAdminController(organizationAdminService, orgRelationExecutionService, auditOperationExecutor);
+        controller = new OrganizationAdminController(
+                organizationAdminService,
+                orgGovernanceCatalogService,
+                orgRelationExecutionService,
+                auditOperationExecutor
+        );
     }
 
     @AfterEach
@@ -124,6 +133,20 @@ class OrganizationAdminControllerTest {
         assertEquals(200, response.getCode());
         assertEquals(3, response.getData().getTotalTasks());
         verify(organizationAdminService).relationWorkbench("tenant-a");
+    }
+
+    @Test
+    void governanceCatalogShouldUseSessionTenantForTenantAdmin() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        OrgGovernanceCatalogView catalog = new OrgGovernanceCatalogView();
+        catalog.setTenantId("tenant-a");
+        when(orgGovernanceCatalogService.getCatalog("tenant-a")).thenReturn(catalog);
+
+        ApiResponse<OrgGovernanceCatalogView> response = controller.governanceCatalog(null);
+
+        assertEquals(200, response.getCode());
+        assertEquals("tenant-a", response.getData().getTenantId());
+        verify(orgGovernanceCatalogService).getCatalog("tenant-a");
     }
 
     @Test

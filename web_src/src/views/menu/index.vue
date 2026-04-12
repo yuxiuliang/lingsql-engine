@@ -2,6 +2,7 @@
 import {computed, nextTick, reactive, ref, watch} from 'vue';
 import type {ElTree} from 'element-plus';
 import {ElMessage} from 'element-plus';
+import {fetchOrgGovernanceCatalog, type OrgGovernanceCatalogView, type OrgGovernanceOptionView} from '@/api/organization';
 import {useAuthStore} from '@/store/auth';
 import type {MenuView} from '@/api/auth';
 import {
@@ -47,6 +48,11 @@ interface PreviewFormModel {
   menuWhitelist: string[];
 }
 
+interface GovernanceOptionItem {
+  label: string;
+  value: string;
+}
+
 const authStore = useAuthStore();
 const ruleTreeRef = ref<InstanceType<typeof ElTree> | null>(null);
 const tenantTreeRef = ref<InstanceType<typeof ElTree> | null>(null);
@@ -57,23 +63,25 @@ const saving = ref(false);
 const tenantSaving = ref(false);
 const tenantClearing = ref(false);
 const previewLoading = ref(false);
+const governanceLoading = ref(false);
 const ruleFilterText = ref('');
 const tenantRuleFilterText = ref('');
 const menuRules = ref<MenuAdminView[]>([]);
 const tenantMenuRules = ref<TenantMenuAdminView[]>([]);
 const previewMenus = ref<MenuView[]>([]);
 const permissions = ref<PermissionView[]>([]);
+const governanceCatalog = ref<OrgGovernanceCatalogView | null>(null);
 const selectedMenuId = ref<number | null>(null);
 const selectedTenantMenuCode = ref('');
 const previewExecuted = ref(false);
 
-const relationTypeOptions = [
-  {label: '主管', value: 'SUPERVISE'},
-  {label: '协同', value: 'COOPERATE'},
-  {label: '服务', value: 'SERVICE'},
-  {label: '归口', value: 'OWNERSHIP'},
-  {label: '矩阵', value: 'MATRIX'}
-];
+const defaultRelationTypeLabelMapping: Record<string, string> = {
+  SUPERVISE: '主管',
+  COOPERATE: '协同',
+  SERVICE: '服务',
+  OWNERSHIP: '归口',
+  MATRIX: '矩阵'
+};
 
 const ruleTreeProps = {
   label: 'menuName',
@@ -137,6 +145,50 @@ const hasPreviewTenant = computed(() => {
 const hasTenantWorkspace = computed(() => {
   return !isSysAdmin.value || !!activeTenantId.value;
 });
+
+const buildCatalogLabel = (code: string, name?: string) => {
+  if (name && name !== code) {
+    return `${name} (${code})`;
+  }
+  return code;
+};
+
+const resolveCatalogOptions = (
+  options?: OrgGovernanceOptionView[],
+  fallbackNameMapping?: Record<string, string>
+): GovernanceOptionItem[] => {
+  const mapping = new Map<string, GovernanceOptionItem>();
+  (options || []).forEach((item) => {
+    if (!item?.code) {
+      return;
+    }
+    const code = item.code.trim().toUpperCase();
+    mapping.set(code, {
+      label: buildCatalogLabel(code, item.name?.trim()),
+      value: code
+    });
+  });
+  Object.entries(fallbackNameMapping || {}).forEach(([code, name]) => {
+    if (!mapping.has(code)) {
+      mapping.set(code, {
+        label: buildCatalogLabel(code, name),
+        value: code
+      });
+    }
+  });
+  return Array.from(mapping.values());
+};
+
+const orgTypeOptions = computed(() => resolveCatalogOptions(governanceCatalog.value?.orgTypeOptions));
+
+const orgUnitOptions = computed(() => resolveCatalogOptions(governanceCatalog.value?.orgUnitOptions));
+
+const orgTagOptions = computed(() => resolveCatalogOptions(governanceCatalog.value?.orgTagOptions));
+
+const relationTypeOptions = computed(() => resolveCatalogOptions(
+  governanceCatalog.value?.relationTypeOptions,
+  defaultRelationTypeLabelMapping
+));
 
 const allMenuNodes = computed(() => {
   const result: MenuAdminView[] = [];
@@ -376,6 +428,26 @@ const loadPermissions = async () => {
   }
 };
 
+const loadGovernanceCatalog = async () => {
+  if (!hasTenantWorkspace.value || !activeTenantId.value) {
+    governanceCatalog.value = null;
+    return;
+  }
+  governanceLoading.value = true;
+  try {
+    governanceCatalog.value = await fetchOrgGovernanceCatalog(activeTenantId.value || undefined);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '加载组织治理字典失败';
+    if (message.includes('无权限')) {
+      governanceCatalog.value = null;
+      return;
+    }
+    ElMessage.error(message);
+  } finally {
+    governanceLoading.value = false;
+  }
+};
+
 const handleRuleFilter = (keyword: string, data: MenuAdminView) => {
   if (!keyword) {
     return true;
@@ -550,9 +622,13 @@ watch(
       selectedTenantMenuCode.value = '';
       previewMenus.value = [];
       previewExecuted.value = false;
+      governanceCatalog.value = null;
       return;
     }
-    await loadTenantMenuRuleTree();
+    await Promise.all([
+      loadTenantMenuRuleTree(),
+      loadGovernanceCatalog()
+    ]);
   },
   {immediate: true}
 );
@@ -685,9 +761,17 @@ fillPreviewFromSession();
                 default-first-option
                 collapse-tags
                 collapse-tags-tooltip
+                :loading="governanceLoading"
                 style="width: 100%"
                 placeholder="例如 GOVERNMENT_STANDARD / SCHOOL_ORG / CHAIN_STORE"
-              />
+              >
+                <el-option
+                  v-for="item in orgTypeOptions"
+                  :key="`global-org-type-${item.value}`"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
             </el-form-item>
             <el-form-item label="直接组织编码">
               <el-select
@@ -698,9 +782,17 @@ fillPreviewFromSession();
                 default-first-option
                 collapse-tags
                 collapse-tags-tooltip
+                :loading="governanceLoading"
                 style="width: 100%"
                 placeholder="例如 STORE_001 / SCHOOL_MAIN_CAMPUS"
-              />
+              >
+                <el-option
+                  v-for="item in orgUnitOptions"
+                  :key="`global-org-unit-${item.value}`"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
             </el-form-item>
             <el-form-item label="组织标签">
               <el-select
@@ -711,9 +803,17 @@ fillPreviewFromSession();
                 default-first-option
                 collapse-tags
                 collapse-tags-tooltip
+                :loading="governanceLoading"
                 style="width: 100%"
                 placeholder="例如 直营 / 校区 / 政务 / 财务"
-              />
+              >
+                <el-option
+                  v-for="item in orgTagOptions"
+                  :key="`global-org-tag-${item.value}`"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
             </el-form-item>
             <el-form-item label="关系语义">
               <el-select
@@ -724,6 +824,7 @@ fillPreviewFromSession();
                 default-first-option
                 collapse-tags
                 collapse-tags-tooltip
+                :loading="governanceLoading"
                 style="width: 100%"
                 placeholder="命中任一关系类型即可显示"
               >
@@ -854,9 +955,17 @@ fillPreviewFromSession();
                   default-first-option
                   collapse-tags
                   collapse-tags-tooltip
+                  :loading="governanceLoading"
                   style="width: 100%"
                   placeholder="留空表示显式清空该规则"
-                />
+                >
+                  <el-option
+                    v-for="item in orgTypeOptions"
+                    :key="`tenant-org-type-${item.value}`"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </el-select>
               </el-form-item>
               <el-form-item label="组织编码覆盖">
                 <el-select
@@ -867,9 +976,17 @@ fillPreviewFromSession();
                   default-first-option
                   collapse-tags
                   collapse-tags-tooltip
+                  :loading="governanceLoading"
                   style="width: 100%"
                   placeholder="留空表示显式清空该规则"
-                />
+                >
+                  <el-option
+                    v-for="item in orgUnitOptions"
+                    :key="`tenant-org-unit-${item.value}`"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </el-select>
               </el-form-item>
               <el-form-item label="组织标签覆盖">
                 <el-select
@@ -880,9 +997,17 @@ fillPreviewFromSession();
                   default-first-option
                   collapse-tags
                   collapse-tags-tooltip
+                  :loading="governanceLoading"
                   style="width: 100%"
                   placeholder="留空表示显式清空该规则"
-                />
+                >
+                  <el-option
+                    v-for="item in orgTagOptions"
+                    :key="`tenant-org-tag-${item.value}`"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </el-select>
               </el-form-item>
               <el-form-item label="关系语义覆盖">
                 <el-select
@@ -893,6 +1018,7 @@ fillPreviewFromSession();
                   default-first-option
                   collapse-tags
                   collapse-tags-tooltip
+                  :loading="governanceLoading"
                   style="width: 100%"
                   placeholder="留空表示显式清空该规则"
                 >
@@ -960,9 +1086,17 @@ fillPreviewFromSession();
                 default-first-option
                 collapse-tags
                 collapse-tags-tooltip
+                :loading="governanceLoading"
                 style="width: 100%"
                 placeholder="例如 CHAIN_STORE / GOVERNMENT_STANDARD"
-              />
+              >
+                <el-option
+                  v-for="item in orgTypeOptions"
+                  :key="`preview-org-type-${item.value}`"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
             </el-form-item>
             <el-form-item label="直接组织编码">
               <el-select
@@ -973,9 +1107,17 @@ fillPreviewFromSession();
                 default-first-option
                 collapse-tags
                 collapse-tags-tooltip
+                :loading="governanceLoading"
                 style="width: 100%"
                 placeholder="例如 STORE_001 / GOV_SERVICE_HALL"
-              />
+              >
+                <el-option
+                  v-for="item in orgUnitOptions"
+                  :key="`preview-org-unit-${item.value}`"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
             </el-form-item>
             <el-form-item label="组织标签">
               <el-select
@@ -986,9 +1128,17 @@ fillPreviewFromSession();
                 default-first-option
                 collapse-tags
                 collapse-tags-tooltip
+                :loading="governanceLoading"
                 style="width: 100%"
                 placeholder="例如 直营 / 服务 / 教务"
-              />
+              >
+                <el-option
+                  v-for="item in orgTagOptions"
+                  :key="`preview-org-tag-${item.value}`"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
             </el-form-item>
             <el-form-item label="关系语义">
               <el-select
@@ -999,6 +1149,7 @@ fillPreviewFromSession();
                 default-first-option
                 collapse-tags
                 collapse-tags-tooltip
+                :loading="governanceLoading"
                 style="width: 100%"
                 placeholder="例如 SUPERVISE / SERVICE"
               >

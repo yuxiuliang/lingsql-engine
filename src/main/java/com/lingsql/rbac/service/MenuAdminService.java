@@ -2,6 +2,7 @@ package com.lingsql.rbac.service;
 
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.organization.service.OrgGovernanceCatalogService;
 import com.lingsql.rbac.entity.RbacMenu;
 import com.lingsql.rbac.model.MenuAdminView;
 import com.lingsql.rbac.model.MenuPreviewRequest;
@@ -39,6 +40,7 @@ public class MenuAdminService {
 
     private final RbacMenuRepository menuRepository;
     private final MenuService menuService;
+    private final OrgGovernanceCatalogService orgGovernanceCatalogService;
 
     /**
      * 查询全局菜单规则树。
@@ -171,6 +173,13 @@ public class MenuAdminService {
         if (!StringUtils.hasText(tenantId)) {
             throw new BizException(ErrorCode.INVALID_PARAM, "租户ID不能为空");
         }
+        orgGovernanceCatalogService.validateTenantSelections(
+                tenantId,
+                request == null ? null : request.getOrgTypeCodes(),
+                request == null ? null : request.getOrgUnitCodes(),
+                request == null ? null : request.getOrgTags(),
+                request == null ? null : request.getRequiredRelationTypes()
+        );
         RbacMenu globalMenu = menuRepository.findByTenantIdIsNullAndMenuCode(normalizedMenuCode)
                 .orElseThrow(() -> new BizException(ErrorCode.MENU_NOT_FOUND, "菜单不存在"));
         RbacMenu override = menuRepository.findByTenantIdAndMenuCode(tenantId, globalMenu.getMenuCode())
@@ -221,6 +230,13 @@ public class MenuAdminService {
         if (!StringUtils.hasText(tenantId)) {
             throw new BizException(ErrorCode.INVALID_PARAM, "租户ID不能为空");
         }
+        orgGovernanceCatalogService.validateTenantSelections(
+                tenantId,
+                request == null ? null : request.getOrgTypeCodes(),
+                request == null ? null : request.getOrgUnitCodes(),
+                request == null ? null : request.getOrgTags(),
+                request == null ? null : request.getRelationTypes()
+        );
         RbacUserSession session = new RbacUserSession();
         session.setTenantId(tenantId);
         session.setPermissions(normalizeValues(request == null ? null : request.getPermissionCodes()));

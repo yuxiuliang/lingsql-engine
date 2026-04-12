@@ -7,6 +7,7 @@ import com.lingsql.organization.model.OrgRelationExecutionCreateRequest;
 import com.lingsql.organization.model.OrgRelationExecutionTimelineView;
 import com.lingsql.organization.model.OrgRelationExecutionUpdateRequest;
 import com.lingsql.organization.model.OrgRelationExecutionView;
+import com.lingsql.organization.model.OrgGovernanceCatalogView;
 import com.lingsql.organization.model.OrgUnitRelationCreateRequest;
 import com.lingsql.organization.model.OrgUnitRelationUpdateRequest;
 import com.lingsql.organization.model.OrgRelationRouteResolveView;
@@ -19,6 +20,7 @@ import com.lingsql.organization.model.OrgUnitTypeUpdateRequest;
 import com.lingsql.organization.model.OrgUnitTypeView;
 import com.lingsql.organization.model.OrgUnitUpdateRequest;
 import com.lingsql.organization.model.OrgUnitView;
+import com.lingsql.organization.service.OrgGovernanceCatalogService;
 import com.lingsql.organization.service.OrgRelationExecutionService;
 import com.lingsql.organization.service.OrganizationAdminService;
 import com.lingsql.rbac.security.RbacSecurityUtils;
@@ -53,6 +55,7 @@ import java.util.List;
 public class OrganizationAdminController {
 
     private final OrganizationAdminService organizationAdminService;
+    private final OrgGovernanceCatalogService orgGovernanceCatalogService;
     private final OrgRelationExecutionService orgRelationExecutionService;
     private final AuditOperationExecutor auditOperationExecutor;
 
@@ -161,6 +164,23 @@ public class OrganizationAdminController {
         boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
         String resolvedTenant = sysAdmin ? normalize(tenantId) : session.getTenantId();
         return ApiResponse.success(organizationAdminService.listOrgUnits(resolvedTenant));
+    }
+
+    /**
+     * 查询租户组织治理字典。
+     *
+     * @param tenantId 租户ID
+     * @return 治理字典
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    @GetMapping("/catalog")
+    @PreAuthorize("hasAnyAuthority('ADMIN:ORG:READ','ADMIN:MENU:READ','ADMIN:ROLE:READ','ADMIN:USER:READ')")
+    public ApiResponse<OrgGovernanceCatalogView> governanceCatalog(@RequestParam(required = false) String tenantId) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        String resolvedTenant = sysAdmin ? normalize(tenantId) : session.getTenantId();
+        return ApiResponse.success(orgGovernanceCatalogService.getCatalog(resolvedTenant));
     }
 
     /**

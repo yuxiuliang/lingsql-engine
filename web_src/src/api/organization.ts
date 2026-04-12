@@ -192,6 +192,32 @@ export interface OrgTemplateApplyRequest {
 }
 
 /**
+ * 组织治理选项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface OrgGovernanceOptionView {
+  code: string;
+  name: string;
+  description?: string;
+}
+
+/**
+ * 组织治理字典。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface OrgGovernanceCatalogView {
+  tenantId?: string;
+  orgTypeOptions?: OrgGovernanceOptionView[];
+  orgUnitOptions?: OrgGovernanceOptionView[];
+  orgTagOptions?: OrgGovernanceOptionView[];
+  relationTypeOptions?: OrgGovernanceOptionView[];
+}
+
+/**
  * 组织关系消费任务视图。
  *
  * @author 余炘洋
@@ -462,6 +488,19 @@ export const deleteOrgUnitType = async (id: number): Promise<string> => {
 export const fetchOrgUnits = async (tenantId?: string): Promise<OrgUnitView[]> => {
   const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
   return request<OrgUnitView[]>(`/api/v1/admin/org/units${query}`);
+};
+
+/**
+ * 查询租户组织治理字典。
+ *
+ * @param tenantId 租户ID
+ * @return 治理字典
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const fetchOrgGovernanceCatalog = async (tenantId?: string): Promise<OrgGovernanceCatalogView> => {
+  const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  return request<OrgGovernanceCatalogView>(`/api/v1/admin/org/catalog${query}`);
 };
 
 /**
