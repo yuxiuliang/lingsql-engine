@@ -577,6 +577,82 @@ CREATE TABLE `t_lingsql_engine_user_experience_policy`
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='体验账号策略表';
 
+-- 组织关系执行台账
+CREATE TABLE `t_lingsql_engine_org_relation_execution`
+(
+    `id`                   bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`            varchar(64)  NOT NULL COMMENT '租户ID',
+    `relation_id`          bigint       NOT NULL COMMENT '组织关系ID',
+    `relation_type`        varchar(64)  NOT NULL COMMENT '关系类型',
+    `relation_name`        varchar(128) DEFAULT NULL COMMENT '关系名称',
+    `scene_code`           varchar(64)  DEFAULT NULL COMMENT '场景编码',
+    `scene_name`           varchar(128) DEFAULT NULL COMMENT '场景名称',
+    `execution_title`      varchar(255) NOT NULL COMMENT '执行标题',
+    `execution_content`    text         DEFAULT NULL COMMENT '执行内容',
+    `priority`             varchar(16)  NOT NULL COMMENT '优先级',
+    `sla_hours`            int          DEFAULT NULL COMMENT 'SLA时长(小时)',
+    `due_time`             datetime     DEFAULT NULL COMMENT '截止时间',
+    `escalation_status`    varchar(32)  DEFAULT NULL COMMENT '升级状态',
+    `escalation_level`     int          DEFAULT NULL COMMENT '升级级别',
+    `last_escalated_time`  datetime     DEFAULT NULL COMMENT '最近升级时间',
+    `status`               varchar(32)  NOT NULL COMMENT '状态',
+    `source_org_unit_id`   bigint       NOT NULL COMMENT '源组织ID',
+    `source_org_unit_code` varchar(128) DEFAULT NULL COMMENT '源组织编码',
+    `source_org_unit_name` varchar(255) DEFAULT NULL COMMENT '源组织名称',
+    `target_org_unit_id`   bigint       NOT NULL COMMENT '目标组织ID',
+    `target_org_unit_code` varchar(128) DEFAULT NULL COMMENT '目标组织编码',
+    `target_org_unit_name` varchar(255) DEFAULT NULL COMMENT '目标组织名称',
+    `route_scope_summary`  varchar(512) DEFAULT NULL COMMENT '路由范围说明',
+    `scope_unit_count`     int          DEFAULT NULL COMMENT '路由范围节点数',
+    `scope_unit_codes_json` text        DEFAULT NULL COMMENT '路由范围编码快照',
+    `requested_by_user_id` bigint       NOT NULL COMMENT '创建人ID',
+    `requested_by_name`    varchar(128) DEFAULT NULL COMMENT '创建人名称',
+    `assignee_user_id`     bigint       DEFAULT NULL COMMENT '处理人ID',
+    `assignee_name`        varchar(128) DEFAULT NULL COMMENT '处理人名称',
+    `result_summary`       text         DEFAULT NULL COMMENT '处理结果',
+    `started_time`         datetime     DEFAULT NULL COMMENT '开始处理时间',
+    `completed_time`       datetime     DEFAULT NULL COMMENT '完成时间',
+    `create_time`          datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`          datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_org_relation_execution_tenant_create` (`tenant_id`, `create_time`, `id`),
+    KEY `idx_org_relation_execution_tenant_status` (`tenant_id`, `status`),
+    KEY `idx_org_relation_execution_tenant_relation_type` (`tenant_id`, `relation_type`),
+    KEY `idx_org_relation_execution_relation_id` (`relation_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='组织关系执行台账';
+
+-- 组织关系执行轨迹
+CREATE TABLE `t_lingsql_engine_org_relation_execution_timeline`
+(
+    `id`                    bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`             varchar(64)  NOT NULL COMMENT '租户ID',
+    `execution_id`          bigint       NOT NULL COMMENT '执行项ID',
+    `event_type`            varchar(32)  NOT NULL COMMENT '事件类型',
+    `event_summary`         varchar(255) NOT NULL COMMENT '事件摘要',
+    `event_detail`          text         DEFAULT NULL COMMENT '事件详情',
+    `actor_user_id`         bigint       DEFAULT NULL COMMENT '操作人ID',
+    `actor_name`            varchar(128) DEFAULT NULL COMMENT '操作人名称',
+    `before_status`         varchar(32)  DEFAULT NULL COMMENT '变更前状态',
+    `after_status`          varchar(32)  DEFAULT NULL COMMENT '变更后状态',
+    `before_assignee_name`  varchar(128) DEFAULT NULL COMMENT '变更前处理人',
+    `after_assignee_name`   varchar(128) DEFAULT NULL COMMENT '变更后处理人',
+    `before_priority`       varchar(16)  DEFAULT NULL COMMENT '变更前优先级',
+    `after_priority`        varchar(16)  DEFAULT NULL COMMENT '变更后优先级',
+    `before_sla_hours`      int          DEFAULT NULL COMMENT '变更前SLA时长',
+    `after_sla_hours`       int          DEFAULT NULL COMMENT '变更后SLA时长',
+    `before_due_time`       datetime     DEFAULT NULL COMMENT '变更前截止时间',
+    `after_due_time`        datetime     DEFAULT NULL COMMENT '变更后截止时间',
+    `before_result_summary` text         DEFAULT NULL COMMENT '变更前结果摘要',
+    `after_result_summary`  text         DEFAULT NULL COMMENT '变更后结果摘要',
+    `create_time`           datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_org_relation_execution_timeline_tenant_execution` (`tenant_id`, `execution_id`, `create_time`, `id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='组织关系执行轨迹';
+
 -- 管理操作审计日志
 CREATE TABLE `t_lingsql_engine_audit_log`
 (
