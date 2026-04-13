@@ -355,6 +355,65 @@ export interface MenuImpactPreviewView {
 }
 
 /**
+ * 菜单发布单视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuReleaseView {
+  id?: number;
+  tenantId?: string;
+  releaseType?: string;
+  releaseTitle?: string;
+  menuId?: number;
+  menuCode?: string;
+  menuName?: string;
+  baselineRuleSummary?: string;
+  targetRuleSummary?: string;
+  impactSummary?: string;
+  changedDimensions?: string[];
+  addedMenuCount?: number;
+  removedMenuCount?: number;
+  changeRemark?: string;
+  releaseStatus?: string;
+  requestedByUserId?: number;
+  requestedByName?: string;
+  reviewedByUserId?: number;
+  reviewedByName?: string;
+  reviewComment?: string;
+  reviewedTime?: string;
+  appliedByUserId?: number;
+  appliedByName?: string;
+  appliedTime?: string;
+  createTime?: string;
+  updateTime?: string;
+}
+
+/**
+ * 菜单发布单创建请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuReleaseCreateRequest {
+  tenantId?: string;
+  releaseTitle?: string;
+  changeRemark?: string;
+  impactRequest: MenuImpactPreviewRequest;
+}
+
+/**
+ * 菜单发布单审核请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuReleaseReviewRequest {
+  decision: string;
+  reviewComment?: string;
+}
+
+/**
  * 数据权限命中组织预览项。
  *
  * @author 余炘洋
@@ -767,5 +826,71 @@ export const previewMenuImpact = async (payload: MenuImpactPreviewRequest): Prom
   return request<MenuImpactPreviewView>('/api/v1/admin/menus/impact', {
     method: 'POST',
     body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 查询菜单发布单列表。
+ *
+ * @param tenantId 租户ID
+ * @param status 发布状态
+ * @return 发布单列表
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const fetchMenuReleaseRecords = async (tenantId?: string, status?: string): Promise<MenuReleaseView[]> => {
+  const query = new URLSearchParams();
+  if (tenantId) {
+    query.set('tenantId', tenantId);
+  }
+  if (status) {
+    query.set('status', status);
+  }
+  const queryString = query.toString();
+  return request<MenuReleaseView[]>(`/api/v1/admin/menus/releases${queryString ? `?${queryString}` : ''}`);
+};
+
+/**
+ * 创建菜单发布单。
+ *
+ * @param payload 请求体
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const createMenuReleaseRecord = async (payload: MenuReleaseCreateRequest): Promise<MenuReleaseView> => {
+  return request<MenuReleaseView>('/api/v1/admin/menus/releases', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 审核菜单发布单。
+ *
+ * @param id 发布单ID
+ * @param payload 请求体
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const reviewMenuReleaseRecord = async (id: number, payload: MenuReleaseReviewRequest): Promise<MenuReleaseView> => {
+  return request<MenuReleaseView>(`/api/v1/admin/menus/releases/${id}/review`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 应用菜单发布单。
+ *
+ * @param id 发布单ID
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const applyMenuReleaseRecord = async (id: number): Promise<MenuReleaseView> => {
+  return request<MenuReleaseView>(`/api/v1/admin/menus/releases/${id}/apply`, {
+    method: 'PUT'
   });
 };

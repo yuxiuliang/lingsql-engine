@@ -362,6 +362,7 @@ public class AuditLogService {
                 || "MODEL".equals(normalized)
                 || "MENU".equals(normalized)
                 || "TENANT_MENU".equals(normalized)
+                || "MENU_RELEASE".equals(normalized)
                 || "ORG_TYPE".equals(normalized)
                 || "ORG_UNIT".equals(normalized)
                 || "ORG_RELATION".equals(normalized);
@@ -406,6 +407,9 @@ public class AuditLogService {
             case "ORG_RELATION_DELETE" -> "删除组织关系";
             case "MENU_RULE_IMPACT_PREVIEW" -> "预览全局菜单规则影响";
             case "TENANT_MENU_RULE_IMPACT_PREVIEW" -> "预览租户菜单覆盖影响";
+            case "MENU_RELEASE_CREATE" -> "创建菜单发布单";
+            case "MENU_RELEASE_REVIEW" -> "审核菜单发布单";
+            case "MENU_RELEASE_APPLY" -> "应用菜单发布单";
             default -> "执行操作(" + normalized + ")";
         };
     }

@@ -6,18 +6,25 @@ import {fetchOrgGovernanceCatalog, type OrgGovernanceCatalogView, type OrgGovern
 import {useAuthStore} from '@/store/auth';
 import type {MenuView} from '@/api/auth';
 import {
+  applyMenuReleaseRecord,
   clearTenantMenuRule,
+  createMenuReleaseRecord,
   fetchMenuRules,
   fetchPermissions,
+  fetchMenuReleaseRecords,
   fetchTenantMenuRules,
   MenuAdminView,
   MenuImpactPreviewRequest,
   MenuImpactPreviewView,
   MenuPreviewRequest,
+  MenuReleaseCreateRequest,
+  MenuReleaseReviewRequest,
+  MenuReleaseView,
   MenuRuleUpdateRequest,
   PermissionView,
   previewMenuImpact,
   previewMenuTree,
+  reviewMenuReleaseRecord,
   TenantMenuAdminView,
   TenantMenuRuleUpdateRequest,
   updateMenuRule,
@@ -66,6 +73,8 @@ const tenantSaving = ref(false);
 const tenantClearing = ref(false);
 const previewLoading = ref(false);
 const impactLoading = ref(false);
+const releaseLoading = ref(false);
+const releaseSubmitting = ref(false);
 const governanceLoading = ref(false);
 const ruleFilterText = ref('');
 const tenantRuleFilterText = ref('');
@@ -74,11 +83,24 @@ const tenantMenuRules = ref<TenantMenuAdminView[]>([]);
 const previewMenus = ref<MenuView[]>([]);
 const permissions = ref<PermissionView[]>([]);
 const governanceCatalog = ref<OrgGovernanceCatalogView | null>(null);
+const releaseRecords = ref<MenuReleaseView[]>([]);
 const selectedMenuId = ref<number | null>(null);
 const selectedTenantMenuCode = ref('');
 const previewExecuted = ref(false);
 const globalImpactResult = ref<MenuImpactPreviewView | null>(null);
 const tenantImpactResult = ref<MenuImpactPreviewView | null>(null);
+
+const releaseStatusLabelMap: Record<string, string> = {
+  DRAFT: '待审核',
+  APPROVED: '已通过',
+  REJECTED: '已驳回',
+  APPLIED: '已应用'
+};
+
+const releaseTypeLabelMap: Record<string, string> = {
+  GLOBAL_RULE: '全局规则',
+  TENANT_RULE: '租户覆盖'
+};
 
 const defaultRelationTypeLabelMapping: Record<string, string> = {
   SUPERVISE: '主管',
@@ -330,6 +352,27 @@ const resolveStatusLabel = (value?: number | null) => {
   return value === 0 ? '停用' : '启用';
 };
 
+const resolveReleaseStatusLabel = (value?: string) => {
+  return releaseStatusLabelMap[value || 'DRAFT'] || value || '待审核';
+};
+
+const resolveReleaseStatusType = (value?: string) => {
+  if (value === 'APPROVED') {
+    return 'success';
+  }
+  if (value === 'REJECTED') {
+    return 'danger';
+  }
+  if (value === 'APPLIED') {
+    return 'primary';
+  }
+  return 'warning';
+};
+
+const resolveReleaseTypeLabel = (value?: string) => {
+  return releaseTypeLabelMap[value || 'GLOBAL_RULE'] || value || '全局规则';
+};
+
 const hasRuleConfigured = (menu?: MenuAdminView | null) => {
   if (!menu) {
     return false;
@@ -450,6 +493,21 @@ const loadGovernanceCatalog = async () => {
     ElMessage.error(message);
   } finally {
     governanceLoading.value = false;
+  }
+};
+
+const loadReleaseRecords = async () => {
+  if (!hasTenantWorkspace.value || !activeTenantId.value) {
+    releaseRecords.value = [];
+    return;
+  }
+  releaseLoading.value = true;
+  try {
+    releaseRecords.value = await fetchMenuReleaseRecords(activeTenantId.value || undefined);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载菜单发布单失败');
+  } finally {
+    releaseLoading.value = false;
   }
 };
 
@@ -676,6 +734,130 @@ const handlePreviewTenantImpact = async () => {
   }
 };
 
+const handleCreateGlobalRelease = async () => {
+  if (!selectedGlobalMenu.value?.id) {
+    ElMessage.warning('请先选择要生成发布单的全局菜单');
+    return;
+  }
+  if (!hasPreviewTenant.value) {
+    ElMessage.warning('生成发布单前请先选择租户');
+    return;
+  }
+  const changeRemark = window.prompt('可选：请输入本次全局菜单变更说明', '') || '';
+  const payload: MenuReleaseCreateRequest = {
+    tenantId: isSysAdmin.value ? activeTenantId.value || undefined : undefined,
+    changeRemark: changeRemark.trim() || undefined,
+    impactRequest: {
+      tenantId: isSysAdmin.value ? activeTenantId.value || undefined : undefined,
+      menuId: selectedGlobalMenu.value.id,
+      globalRule: {
+        orgTypeCodes: normalizeValues(globalRuleForm.orgTypeCodes),
+        orgUnitCodes: normalizeValues(globalRuleForm.orgUnitCodes),
+        orgTags: normalizeValues(globalRuleForm.orgTags),
+        requiredRelationTypes: normalizeValues(globalRuleForm.requiredRelationTypes)
+      },
+      previewContext: buildPreviewPayload()
+    }
+  };
+  releaseSubmitting.value = true;
+  try {
+    await createMenuReleaseRecord(payload);
+    ElMessage.success('全局菜单发布单已创建');
+    await loadReleaseRecords();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '创建全局菜单发布单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
+const handleCreateTenantRelease = async () => {
+  if (!selectedTenantMenu.value?.menuCode) {
+    ElMessage.warning('请先选择要生成发布单的租户菜单');
+    return;
+  }
+  if (!hasPreviewTenant.value) {
+    ElMessage.warning('生成发布单前请先选择租户');
+    return;
+  }
+  const changeRemark = window.prompt('可选：请输入本次租户菜单覆盖说明', '') || '';
+  const payload: MenuReleaseCreateRequest = {
+    tenantId: isSysAdmin.value ? activeTenantId.value || undefined : undefined,
+    changeRemark: changeRemark.trim() || undefined,
+    impactRequest: {
+      tenantId: isSysAdmin.value ? activeTenantId.value || undefined : undefined,
+      menuCode: selectedTenantMenu.value.menuCode,
+      tenantRule: {
+        tenantId: isSysAdmin.value ? activeTenantId.value || undefined : undefined,
+        visible: tenantRuleForm.visible,
+        status: tenantRuleForm.status,
+        orgTypeCodes: normalizeValues(tenantRuleForm.orgTypeCodes),
+        orgUnitCodes: normalizeValues(tenantRuleForm.orgUnitCodes),
+        orgTags: normalizeValues(tenantRuleForm.orgTags),
+        requiredRelationTypes: normalizeValues(tenantRuleForm.requiredRelationTypes)
+      },
+      previewContext: buildPreviewPayload()
+    }
+  };
+  releaseSubmitting.value = true;
+  try {
+    await createMenuReleaseRecord(payload);
+    ElMessage.success('租户菜单发布单已创建');
+    await loadReleaseRecords();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '创建租户菜单发布单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
+const handleReviewRelease = async (record: MenuReleaseView, decision: 'APPROVED' | 'REJECTED') => {
+  if (!record?.id) {
+    return;
+  }
+  const reviewComment = window.prompt(
+    decision === 'APPROVED' ? '可选：请输入审核通过说明' : '可选：请输入驳回原因',
+    ''
+  ) || '';
+  const payload: MenuReleaseReviewRequest = {
+    decision,
+    reviewComment: reviewComment.trim() || undefined
+  };
+  releaseSubmitting.value = true;
+  try {
+    await reviewMenuReleaseRecord(record.id, payload);
+    ElMessage.success(decision === 'APPROVED' ? '发布单已审核通过' : '发布单已驳回');
+    await loadReleaseRecords();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '审核菜单发布单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
+const handleApplyRelease = async (record: MenuReleaseView) => {
+  if (!record?.id) {
+    return;
+  }
+  if (!window.confirm(`确认应用发布单“${record.releaseTitle || record.menuName || record.menuCode}”吗？`)) {
+    return;
+  }
+  releaseSubmitting.value = true;
+  try {
+    await applyMenuReleaseRecord(record.id);
+    ElMessage.success('发布单已应用');
+    await Promise.all([
+      loadMenuRules(),
+      loadTenantMenuRuleTree(),
+      loadReleaseRecords()
+    ]);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '应用菜单发布单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
 const handleResetPreview = () => {
   fillPreviewFromSession();
   previewMenus.value = [];
@@ -696,6 +878,7 @@ watch(
     }
     if (!activeTenantId.value) {
       tenantMenuRules.value = [];
+      releaseRecords.value = [];
       selectedTenantMenuCode.value = '';
       previewMenus.value = [];
       previewExecuted.value = false;
@@ -706,7 +889,8 @@ watch(
     }
     await Promise.all([
       loadTenantMenuRuleTree(),
-      loadGovernanceCatalog()
+      loadGovernanceCatalog(),
+      loadReleaseRecords()
     ]);
   },
   {immediate: true}
@@ -922,6 +1106,7 @@ fillPreviewFromSession();
           <div class="editor-actions">
             <el-button @click="handleResetGlobalRule">重置</el-button>
             <el-button :loading="impactLoading" @click="handlePreviewGlobalImpact">分析影响</el-button>
+            <el-button :loading="releaseSubmitting" @click="handleCreateGlobalRelease">生成发布单</el-button>
             <el-button type="primary" :loading="globalSaving" @click="handleSaveGlobalRule">保存全局规则</el-button>
           </div>
 
@@ -1172,6 +1357,7 @@ fillPreviewFromSession();
               <el-button @click="handleResetTenantRule">重置</el-button>
               <el-button v-if="selectedTenantMenu.overrideActive" :loading="tenantClearing" @click="handleClearTenantRule">清除租户覆盖</el-button>
               <el-button :loading="impactLoading" @click="handlePreviewTenantImpact">分析影响</el-button>
+              <el-button :loading="releaseSubmitting" @click="handleCreateTenantRelease">生成发布单</el-button>
               <el-button type="primary" :loading="tenantSaving" @click="handleSaveTenantRule">保存租户覆盖</el-button>
             </div>
 
@@ -1412,6 +1598,69 @@ fillPreviewFromSession();
           </div>
         </div>
       </div>
+    </el-card>
+
+    <el-card v-if="hasTenantWorkspace" class="card" shadow="never">
+      <template #header>
+        <div class="card-header">
+          <span>菜单发布单</span>
+          <div class="tag-group">
+            <el-tag type="info" effect="plain">租户：{{ activeTenantName || activeTenantId }}</el-tag>
+            <el-button size="small" :loading="releaseLoading" @click="loadReleaseRecords">刷新</el-button>
+          </div>
+        </div>
+      </template>
+
+      <el-table :data="releaseRecords" border v-loading="releaseLoading">
+        <el-table-column prop="createTime" label="创建时间" min-width="160"/>
+        <el-table-column prop="releaseTitle" label="发布单标题" min-width="220" show-overflow-tooltip/>
+        <el-table-column label="类型" width="110">
+          <template #default="{row}">
+            <el-tag type="info" effect="plain">{{ resolveReleaseTypeLabel(row.releaseType) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="menuName" label="菜单" min-width="180" show-overflow-tooltip/>
+        <el-table-column label="状态" width="110">
+          <template #default="{row}">
+            <el-tag :type="resolveReleaseStatusType(row.releaseStatus)">{{ resolveReleaseStatusLabel(row.releaseStatus) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="impactSummary" label="影响摘要" min-width="280" show-overflow-tooltip/>
+        <el-table-column prop="requestedByName" label="创建人" min-width="140" show-overflow-tooltip/>
+        <el-table-column prop="reviewedByName" label="审核人" min-width="140" show-overflow-tooltip/>
+        <el-table-column prop="appliedByName" label="应用人" min-width="140" show-overflow-tooltip/>
+        <el-table-column label="操作" width="240" fixed="right">
+          <template #default="{row}">
+            <el-button
+              v-if="row.releaseStatus === 'DRAFT'"
+              link
+              type="success"
+              :disabled="releaseSubmitting"
+              @click="handleReviewRelease(row, 'APPROVED')"
+            >
+              审核通过
+            </el-button>
+            <el-button
+              v-if="row.releaseStatus === 'DRAFT'"
+              link
+              type="danger"
+              :disabled="releaseSubmitting"
+              @click="handleReviewRelease(row, 'REJECTED')"
+            >
+              驳回
+            </el-button>
+            <el-button
+              v-if="row.releaseStatus === 'APPROVED'"
+              link
+              type="primary"
+              :disabled="releaseSubmitting"
+              @click="handleApplyRelease(row)"
+            >
+              应用
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </el-card>
   </div>
 </template>

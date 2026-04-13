@@ -6,12 +6,16 @@ import com.lingsql.rbac.model.MenuAdminView;
 import com.lingsql.rbac.model.MenuImpactPreviewRequest;
 import com.lingsql.rbac.model.MenuImpactPreviewView;
 import com.lingsql.rbac.model.MenuPreviewRequest;
+import com.lingsql.rbac.model.MenuReleaseCreateRequest;
+import com.lingsql.rbac.model.MenuReleaseReviewRequest;
+import com.lingsql.rbac.model.MenuReleaseView;
 import com.lingsql.rbac.model.MenuRuleUpdateRequest;
 import com.lingsql.rbac.model.MenuView;
 import com.lingsql.rbac.model.TenantMenuAdminView;
 import com.lingsql.rbac.model.TenantMenuRuleUpdateRequest;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.rbac.service.MenuAdminService;
+import com.lingsql.rbac.service.MenuReleaseService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,14 +38,16 @@ import static org.mockito.Mockito.when;
 class MenuAdminControllerTest {
 
     private MenuAdminService menuAdminService;
+    private MenuReleaseService menuReleaseService;
     private AuditOperationExecutor auditOperationExecutor;
     private MenuAdminController controller;
 
     @BeforeEach
     void setUp() {
         menuAdminService = Mockito.mock(MenuAdminService.class);
+        menuReleaseService = Mockito.mock(MenuReleaseService.class);
         auditOperationExecutor = Mockito.mock(AuditOperationExecutor.class);
-        controller = new MenuAdminController(menuAdminService, auditOperationExecutor);
+        controller = new MenuAdminController(menuAdminService, menuReleaseService, auditOperationExecutor);
     }
 
     @AfterEach
@@ -180,6 +186,90 @@ class MenuAdminControllerTest {
                 any(),
                 any(),
                 eq("租户菜单覆盖已清除")
+        );
+    }
+
+    @Test
+    void listReleasesShouldUseSessionTenantForTenantAdmin() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        MenuReleaseView view = new MenuReleaseView();
+        view.setId(1L);
+        view.setMenuCode("MENU_CHAIN");
+        when(menuReleaseService.listRecords(null, null, "tenant-a", false)).thenReturn(List.of(view));
+
+        ApiResponse<List<MenuReleaseView>> response = controller.listReleases(null, null);
+
+        assertEquals(200, response.getCode());
+        assertEquals(1, response.getData().size());
+        verify(menuReleaseService).listRecords(null, null, "tenant-a", false);
+    }
+
+    @Test
+    void createReleaseShouldDelegateByAuditExecutor() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        MenuReleaseCreateRequest request = new MenuReleaseCreateRequest();
+        MenuReleaseView view = new MenuReleaseView();
+        view.setId(2L);
+        view.setMenuCode("MENU_CHAIN");
+        when(menuReleaseService.createRecord(eq(request), eq("tenant-a"), eq(false), any(RbacUserSession.class))).thenReturn(view);
+        mockAuditExecute();
+
+        ApiResponse<MenuReleaseView> response = controller.createRelease(request, new MockHttpServletRequest());
+
+        assertEquals(200, response.getCode());
+        assertEquals("MENU_CHAIN", response.getData().getMenuCode());
+        verify(auditOperationExecutor).execute(
+                eq("MENU_RELEASE_CREATE"),
+                eq("MENU_RELEASE"),
+                eq(request),
+                any(),
+                any()
+        );
+    }
+
+    @Test
+    void reviewReleaseShouldDelegateByAuditExecutor() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        MenuReleaseReviewRequest request = new MenuReleaseReviewRequest();
+        request.setDecision("APPROVED");
+        MenuReleaseView view = new MenuReleaseView();
+        view.setId(3L);
+        view.setReleaseStatus("APPROVED");
+        when(menuReleaseService.reviewRecord(eq(3L), eq(request), eq("tenant-a"), eq(false), any(RbacUserSession.class))).thenReturn(view);
+        mockAuditExecute();
+
+        ApiResponse<MenuReleaseView> response = controller.reviewRelease(3L, request, new MockHttpServletRequest());
+
+        assertEquals(200, response.getCode());
+        assertEquals("APPROVED", response.getData().getReleaseStatus());
+        verify(auditOperationExecutor).execute(
+                eq("MENU_RELEASE_REVIEW"),
+                eq("MENU_RELEASE"),
+                eq(request),
+                any(),
+                any()
+        );
+    }
+
+    @Test
+    void applyReleaseShouldDelegateByAuditExecutor() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        MenuReleaseView view = new MenuReleaseView();
+        view.setId(4L);
+        view.setReleaseStatus("APPLIED");
+        when(menuReleaseService.applyRecord(eq(4L), eq("tenant-a"), eq(false), any(RbacUserSession.class))).thenReturn(view);
+        mockAuditExecute();
+
+        ApiResponse<MenuReleaseView> response = controller.applyRelease(4L, new MockHttpServletRequest());
+
+        assertEquals(200, response.getCode());
+        assertEquals("APPLIED", response.getData().getReleaseStatus());
+        verify(auditOperationExecutor).execute(
+                eq("MENU_RELEASE_APPLY"),
+                eq("MENU_RELEASE"),
+                eq("id=4"),
+                any(),
+                any()
         );
     }
 
