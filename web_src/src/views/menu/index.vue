@@ -167,6 +167,30 @@ const activeTenantName = computed(() => {
 
 const currentUserId = computed(() => authStore.userId || 0);
 
+const canReadMenuRelease = computed(() => {
+  return isSysAdmin.value
+    || authStore.hasPermission('ADMIN:MENU:RELEASE:READ')
+    || authStore.hasPermission('ADMIN:MENU:READ');
+});
+
+const canCreateMenuRelease = computed(() => {
+  return isSysAdmin.value
+    || authStore.hasPermission('ADMIN:MENU:RELEASE:CREATE')
+    || authStore.hasPermission('ADMIN:MENU:WRITE');
+});
+
+const canReviewMenuRelease = computed(() => {
+  return isSysAdmin.value
+    || authStore.hasPermission('ADMIN:MENU:RELEASE:REVIEW')
+    || authStore.hasPermission('ADMIN:MENU:WRITE');
+});
+
+const canApplyMenuRelease = computed(() => {
+  return isSysAdmin.value
+    || authStore.hasPermission('ADMIN:MENU:RELEASE:APPLY')
+    || authStore.hasPermission('ADMIN:MENU:WRITE');
+});
+
 const hasPreviewTenant = computed(() => {
   return !isSysAdmin.value || !!activeTenantId.value;
 });
@@ -499,7 +523,7 @@ const loadGovernanceCatalog = async () => {
 };
 
 const loadReleaseRecords = async () => {
-  if (!hasTenantWorkspace.value || !activeTenantId.value) {
+  if (!canReadMenuRelease.value || !hasTenantWorkspace.value || !activeTenantId.value) {
     releaseRecords.value = [];
     return;
   }
@@ -1108,7 +1132,7 @@ fillPreviewFromSession();
           <div class="editor-actions">
             <el-button @click="handleResetGlobalRule">重置</el-button>
             <el-button :loading="impactLoading" @click="handlePreviewGlobalImpact">分析影响</el-button>
-            <el-button :loading="releaseSubmitting" @click="handleCreateGlobalRelease">生成发布单</el-button>
+            <el-button v-if="canCreateMenuRelease" :loading="releaseSubmitting" @click="handleCreateGlobalRelease">生成发布单</el-button>
             <el-button type="primary" :loading="globalSaving" @click="handleSaveGlobalRule">保存全局规则</el-button>
           </div>
 
@@ -1359,7 +1383,7 @@ fillPreviewFromSession();
               <el-button @click="handleResetTenantRule">重置</el-button>
               <el-button v-if="selectedTenantMenu.overrideActive" :loading="tenantClearing" @click="handleClearTenantRule">清除租户覆盖</el-button>
               <el-button :loading="impactLoading" @click="handlePreviewTenantImpact">分析影响</el-button>
-              <el-button :loading="releaseSubmitting" @click="handleCreateTenantRelease">生成发布单</el-button>
+              <el-button v-if="canCreateMenuRelease" :loading="releaseSubmitting" @click="handleCreateTenantRelease">生成发布单</el-button>
               <el-button type="primary" :loading="tenantSaving" @click="handleSaveTenantRule">保存租户覆盖</el-button>
             </div>
 
@@ -1602,7 +1626,7 @@ fillPreviewFromSession();
       </div>
     </el-card>
 
-    <el-card v-if="hasTenantWorkspace" class="card" shadow="never">
+    <el-card v-if="hasTenantWorkspace && canReadMenuRelease" class="card" shadow="never">
       <template #header>
         <div class="card-header">
           <span>菜单发布单</span>
@@ -1641,7 +1665,7 @@ fillPreviewFromSession();
               需他人审核
             </el-tag>
             <el-button
-              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId !== currentUserId"
+              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId !== currentUserId && canReviewMenuRelease"
               link
               type="success"
               :disabled="releaseSubmitting"
@@ -1650,7 +1674,7 @@ fillPreviewFromSession();
               审核通过
             </el-button>
             <el-button
-              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId !== currentUserId"
+              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId !== currentUserId && canReviewMenuRelease"
               link
               type="danger"
               :disabled="releaseSubmitting"
@@ -1666,7 +1690,7 @@ fillPreviewFromSession();
               需他人应用
             </el-tag>
             <el-button
-              v-if="row.releaseStatus === 'APPROVED' && row.requestedByUserId !== currentUserId"
+              v-if="row.releaseStatus === 'APPROVED' && row.requestedByUserId !== currentUserId && canApplyMenuRelease"
               link
               type="primary"
               :disabled="releaseSubmitting"

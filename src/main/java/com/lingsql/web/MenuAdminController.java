@@ -229,7 +229,7 @@ public class MenuAdminController {
      * @date 2026-04-13
      */
     @GetMapping("/releases")
-    @PreAuthorize("hasAuthority('ADMIN:MENU:READ')")
+    @PreAuthorize("hasAnyAuthority('ADMIN:MENU:RELEASE:READ','ADMIN:MENU:READ')")
     public ApiResponse<List<MenuReleaseView>> listReleases(@RequestParam(required = false) String tenantId,
                                                            @RequestParam(required = false) String status) {
         RbacUserSession session = requireSession();
@@ -247,7 +247,7 @@ public class MenuAdminController {
      * @date 2026-04-13
      */
     @PostMapping("/releases")
-    @PreAuthorize("hasAuthority('ADMIN:MENU:WRITE')")
+    @PreAuthorize("hasAnyAuthority('ADMIN:MENU:RELEASE:CREATE','ADMIN:MENU:WRITE')")
     public ApiResponse<MenuReleaseView> createRelease(@RequestBody MenuReleaseCreateRequest request,
                                                       HttpServletRequest http) {
         RbacUserSession session = requireSession();
@@ -272,7 +272,7 @@ public class MenuAdminController {
      * @date 2026-04-13
      */
     @PutMapping("/releases/{id}/review")
-    @PreAuthorize("hasAuthority('ADMIN:MENU:WRITE')")
+    @PreAuthorize("hasAnyAuthority('ADMIN:MENU:RELEASE:REVIEW','ADMIN:MENU:WRITE')")
     public ApiResponse<MenuReleaseView> reviewRelease(@PathVariable Long id,
                                                       @RequestBody MenuReleaseReviewRequest request,
                                                       HttpServletRequest http) {
@@ -297,7 +297,7 @@ public class MenuAdminController {
      * @date 2026-04-13
      */
     @PutMapping("/releases/{id}/apply")
-    @PreAuthorize("hasAuthority('ADMIN:MENU:WRITE')")
+    @PreAuthorize("hasAnyAuthority('ADMIN:MENU:RELEASE:APPLY','ADMIN:MENU:WRITE')")
     public ApiResponse<MenuReleaseView> applyRelease(@PathVariable Long id, HttpServletRequest http) {
         RbacUserSession session = requireSession();
         boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);

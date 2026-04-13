@@ -118,6 +118,20 @@ export const useAuthStore = defineStore('auth', {
      */
     isAuthenticated: (state): boolean => {
       return state.sessionReady && !!state.userId;
+    },
+    /**
+     * 判断是否具备指定权限。
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    hasPermission: (state) => {
+      return (permissionCode: string): boolean => {
+        if (!permissionCode) {
+          return false;
+        }
+        return (state.permissions || []).includes(permissionCode);
+      };
     }
   },
   actions: {
