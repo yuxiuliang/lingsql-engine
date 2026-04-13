@@ -27,6 +27,7 @@ export interface AuditLogView {
   action?: string;
   resource?: string;
   detail?: string;
+  summary?: string;
   success?: number;
   errorMessage?: string;
   requestIp?: string;

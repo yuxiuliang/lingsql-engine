@@ -106,12 +106,25 @@ class MenuAdminControllerTest {
         view.setMenuCode("MENU_CHAIN");
         view.setTargetMatched(true);
         when(menuAdminService.previewMenuImpact(request, "tenant-a", false)).thenReturn(view);
+        when(auditOperationExecutor.execute(anyString(), anyString(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    Supplier<?> supplier = invocation.getArgument(4);
+                    return ApiResponse.success(supplier.get());
+                });
 
-        ApiResponse<MenuImpactPreviewView> response = controller.previewMenuImpact(request);
+        ApiResponse<MenuImpactPreviewView> response = controller.previewMenuImpact(request, new MockHttpServletRequest());
 
         assertEquals(200, response.getCode());
         assertEquals("MENU_CHAIN", response.getData().getMenuCode());
         verify(menuAdminService).previewMenuImpact(request, "tenant-a", false);
+        verify(auditOperationExecutor).execute(
+                eq("TENANT_MENU_RULE_IMPACT_PREVIEW"),
+                eq("TENANT_MENU"),
+                eq(request),
+                any(),
+                any(),
+                any()
+        );
     }
 
     @Test

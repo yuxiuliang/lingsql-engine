@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -36,6 +37,26 @@ public class AuditOperationExecutor {
         try {
             T result = supplier.get();
             recordAudit(action, resource, request, true, null, http);
+            return ApiResponse.success(result);
+        } catch (BizException ex) {
+            recordAudit(action, resource, request, false, ex.getMessage(), http);
+            throw ex;
+        } catch (Exception ex) {
+            recordAudit(action, resource, request, false, ex.getMessage(), http);
+            throw new BizException(ErrorCode.SYSTEM_ERROR, "系统异常，请稍后再试", ex);
+        }
+    }
+
+    public <T> ApiResponse<T> execute(String action,
+                                      String resource,
+                                      Object request,
+                                      HttpServletRequest http,
+                                      Supplier<T> supplier,
+                                      Function<T, Object> successAuditDetailMapper) {
+        try {
+            T result = supplier.get();
+            Object auditDetail = successAuditDetailMapper == null ? request : successAuditDetailMapper.apply(result);
+            recordAudit(action, resource, auditDetail, true, null, http);
             return ApiResponse.success(result);
         } catch (BizException ex) {
             recordAudit(action, resource, request, false, ex.getMessage(), http);

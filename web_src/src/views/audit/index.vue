@@ -194,6 +194,7 @@ loadLogs();
         <el-table-column prop="username" label="账号" min-width="120"/>
         <el-table-column prop="action" label="动作" min-width="140"/>
         <el-table-column prop="resource" label="资源" min-width="120"/>
+        <el-table-column prop="summary" label="摘要" min-width="260" show-overflow-tooltip/>
         <el-table-column prop="success" label="结果" width="90">
           <template #default="scope">
             <el-tag :type="scope.row.success === 1 ? 'success' : 'danger'">
@@ -202,6 +203,7 @@ loadLogs();
           </template>
         </el-table-column>
         <el-table-column prop="errorMessage" label="错误信息" min-width="200"/>
+        <el-table-column prop="detail" label="详情" min-width="320" show-overflow-tooltip/>
       </el-table>
 
       <div class="pagination">

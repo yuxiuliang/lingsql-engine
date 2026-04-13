@@ -18,6 +18,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,6 +30,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 菜单治理接口。
@@ -193,10 +196,45 @@ public class MenuAdminController {
      */
     @PostMapping("/impact")
     @PreAuthorize("hasAuthority('ADMIN:MENU:READ')")
-    public ApiResponse<MenuImpactPreviewView> previewMenuImpact(@RequestBody MenuImpactPreviewRequest request) {
+    public ApiResponse<MenuImpactPreviewView> previewMenuImpact(@RequestBody MenuImpactPreviewRequest request,
+                                                               HttpServletRequest http) {
         RbacUserSession session = requireSession();
         boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
-        return ApiResponse.success(menuAdminService.previewMenuImpact(request, session.getTenantId(), sysAdmin));
+        String action = StringUtils.hasText(request == null ? null : request.getMenuCode())
+                ? "TENANT_MENU_RULE_IMPACT_PREVIEW"
+                : "MENU_RULE_IMPACT_PREVIEW";
+        String resource = StringUtils.hasText(request == null ? null : request.getMenuCode()) ? "TENANT_MENU" : "MENU";
+        return auditOperationExecutor.execute(
+                action,
+                resource,
+                request,
+                http,
+                () -> menuAdminService.previewMenuImpact(request, session.getTenantId(), sysAdmin),
+                result -> buildImpactAuditDetail(request, result)
+        );
+    }
+
+    private Map<String, Object> buildImpactAuditDetail(MenuImpactPreviewRequest request, MenuImpactPreviewView result) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("request", request);
+        if (result == null) {
+            return detail;
+        }
+        Map<String, Object> outcome = new LinkedHashMap<>();
+        outcome.put("tenantId", result.getTenantId());
+        outcome.put("menuCode", result.getMenuCode());
+        outcome.put("menuName", result.getMenuName());
+        outcome.put("tenantOverrideMode", result.isTenantOverrideMode());
+        outcome.put("baselineMenuCount", result.getBaselineMenuCount());
+        outcome.put("targetMenuCount", result.getTargetMenuCount());
+        outcome.put("addedMenuCount", result.getAddedMenuCount());
+        outcome.put("removedMenuCount", result.getRemovedMenuCount());
+        outcome.put("baselineMatched", result.isBaselineMatched());
+        outcome.put("targetMatched", result.isTargetMatched());
+        outcome.put("changedDimensions", result.getChangedDimensions());
+        outcome.put("impactSummary", result.getImpactSummary());
+        detail.put("result", outcome);
+        return detail;
     }
 
     /**
