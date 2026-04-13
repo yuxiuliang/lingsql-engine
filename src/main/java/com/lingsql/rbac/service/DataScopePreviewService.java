@@ -11,6 +11,9 @@ import com.lingsql.organization.repository.OrgUnitRepository;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
 import com.lingsql.rbac.model.DataScopePreviewDiffView;
+import com.lingsql.rbac.model.DataScopeBatchPreviewView;
+import com.lingsql.rbac.model.DataScopeBatchScenarioRequest;
+import com.lingsql.rbac.model.DataScopeBatchScenarioResultView;
 import com.lingsql.rbac.model.DataScopePreviewOrgView;
 import com.lingsql.rbac.model.DataScopePreviewRoleCandidateView;
 import com.lingsql.rbac.model.DataScopePreviewView;
@@ -131,6 +134,57 @@ public class DataScopePreviewService {
         return view;
     }
 
+    /**
+     * 批量预览角色数据权限。
+     *
+     * @param request 预览请求
+     * @param sessionTenant 会话租户
+     * @param sysAdmin 是否系统管理员
+     * @return 批量结果
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    public DataScopeBatchPreviewView previewRoleScopeBatch(RoleDataScopePreviewRequest request, String sessionTenant, boolean sysAdmin) {
+        RoleDataScopePreviewRequest safeRequest = request == null ? new RoleDataScopePreviewRequest() : request;
+        return buildBatchPreview(safeRequest.getScenarios(), scenario -> {
+            RoleDataScopePreviewRequest scenarioRequest = new RoleDataScopePreviewRequest();
+            scenarioRequest.setTenantId(safeRequest.getTenantId());
+            scenarioRequest.setRoleId(safeRequest.getRoleId());
+            scenarioRequest.setDataScope(safeRequest.getDataScope());
+            scenarioRequest.setBaselineDataScope(safeRequest.getBaselineDataScope());
+            scenarioRequest.setOrgUnitIds(copyScenarioOrgUnitIds(scenario, safeRequest.getOrgUnitIds(), false));
+            scenarioRequest.setSampleSql(resolveScenarioSampleSql(scenario, safeRequest.getSampleSql()));
+            return previewRoleScope(scenarioRequest, sessionTenant, sysAdmin);
+        });
+    }
+
+    /**
+     * 批量预览用户数据权限。
+     *
+     * @param request 预览请求
+     * @param sessionTenant 会话租户
+     * @param sysAdmin 是否系统管理员
+     * @return 批量结果
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    public DataScopeBatchPreviewView previewUserScopeBatch(UserDataScopePreviewRequest request, String sessionTenant, boolean sysAdmin) {
+        UserDataScopePreviewRequest safeRequest = request == null ? new UserDataScopePreviewRequest() : request;
+        return buildBatchPreview(safeRequest.getScenarios(), scenario -> {
+            UserDataScopePreviewRequest scenarioRequest = new UserDataScopePreviewRequest();
+            scenarioRequest.setTenantId(safeRequest.getTenantId());
+            scenarioRequest.setUserId(safeRequest.getUserId());
+            scenarioRequest.setDataScope(safeRequest.getDataScope());
+            scenarioRequest.setBaselineDataScope(safeRequest.getBaselineDataScope());
+            scenarioRequest.setRoleIds(safeRequest.getRoleIds());
+            scenarioRequest.setBaselineRoleIds(safeRequest.getBaselineRoleIds());
+            scenarioRequest.setOrgUnitIds(copyScenarioOrgUnitIds(scenario, safeRequest.getOrgUnitIds(), false));
+            scenarioRequest.setBaselineOrgUnitIds(copyScenarioOrgUnitIds(scenario, safeRequest.getBaselineOrgUnitIds(), true));
+            scenarioRequest.setSampleSql(resolveScenarioSampleSql(scenario, safeRequest.getSampleSql()));
+            return previewUserScope(scenarioRequest, sessionTenant, sysAdmin);
+        });
+    }
+
     private DataScopePreviewView buildPreview(DataScopeRule rule, String source, ScopeContext context) {
         DataScopePreviewView view = new DataScopePreviewView();
         view.setEffectiveDataScope(rule);
@@ -206,6 +260,64 @@ public class DataScopePreviewService {
             return new MatchedOrgResult(items, total, false);
         }
         return new MatchedOrgResult(new ArrayList<>(items.subList(0, MATCHED_ORG_PREVIEW_LIMIT)), total, true);
+    }
+
+    private DataScopeBatchPreviewView buildBatchPreview(List<DataScopeBatchScenarioRequest> scenarios,
+                                                        java.util.function.Function<DataScopeBatchScenarioRequest, DataScopePreviewView> previewSupplier) {
+        if (CollectionUtils.isEmpty(scenarios)) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "批量校验至少需要一个样本场景");
+        }
+        DataScopeBatchPreviewView view = new DataScopeBatchPreviewView();
+        int sqlSuccessCount = 0;
+        int warningCount = 0;
+        int index = 1;
+        for (DataScopeBatchScenarioRequest scenario : scenarios) {
+            DataScopePreviewView preview = previewSupplier.apply(scenario);
+            DataScopeBatchScenarioResultView item = new DataScopeBatchScenarioResultView();
+            item.setScenarioCode(resolveScenarioCode(scenario, index));
+            item.setScenarioName(resolveScenarioName(scenario, index));
+            item.setPreview(preview);
+            view.getScenarios().add(item);
+            if (preview != null && Boolean.TRUE.equals(preview.getSampleSqlValid())) {
+                sqlSuccessCount++;
+            }
+            if (preview != null && !CollectionUtils.isEmpty(preview.getWarnings())) {
+                warningCount++;
+            }
+            index++;
+        }
+        view.setTotalScenarios(view.getScenarios().size());
+        view.setSampleSqlSuccessCount(sqlSuccessCount);
+        view.setWarningScenarioCount(warningCount);
+        return view;
+    }
+
+    private List<Long> copyScenarioOrgUnitIds(DataScopeBatchScenarioRequest scenario, List<Long> fallback, boolean baseline) {
+        List<Long> values = baseline
+                ? (scenario == null || CollectionUtils.isEmpty(scenario.getBaselineOrgUnitIds()) ? fallback : scenario.getBaselineOrgUnitIds())
+                : (scenario == null || CollectionUtils.isEmpty(scenario.getOrgUnitIds()) ? fallback : scenario.getOrgUnitIds());
+        return values == null ? List.of() : new ArrayList<>(values);
+    }
+
+    private String resolveScenarioSampleSql(DataScopeBatchScenarioRequest scenario, String fallback) {
+        if (scenario != null && StringUtils.hasText(scenario.getSampleSql())) {
+            return scenario.getSampleSql().trim();
+        }
+        return fallback;
+    }
+
+    private String resolveScenarioCode(DataScopeBatchScenarioRequest scenario, int index) {
+        if (scenario != null && StringUtils.hasText(scenario.getScenarioCode())) {
+            return scenario.getScenarioCode().trim();
+        }
+        return "SCENARIO_" + index;
+    }
+
+    private String resolveScenarioName(DataScopeBatchScenarioRequest scenario, int index) {
+        if (scenario != null && StringUtils.hasText(scenario.getScenarioName())) {
+            return scenario.getScenarioName().trim();
+        }
+        return "样本场景 " + index;
     }
 
     private DataScopePreviewDiffView buildDiff(

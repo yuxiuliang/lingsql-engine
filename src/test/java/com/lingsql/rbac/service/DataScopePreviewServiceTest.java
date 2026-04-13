@@ -8,6 +8,8 @@ import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
+import com.lingsql.rbac.model.DataScopeBatchPreviewView;
+import com.lingsql.rbac.model.DataScopeBatchScenarioRequest;
 import com.lingsql.rbac.model.DataScopePreviewView;
 import com.lingsql.rbac.model.DataScopeRule;
 import com.lingsql.rbac.model.RbacDataScopeType;
@@ -112,6 +114,64 @@ class DataScopePreviewServiceTest {
 
         assertEquals(Boolean.TRUE, view.getSampleSqlValid());
         assertEquals("SELECT order_id FROM orders WHERE org_code IN ('SRV') LIMIT 10", view.getSampleRewrittenSql());
+    }
+
+    @Test
+    void previewRoleScopeBatchShouldReturnMultipleScenarioResults() {
+        TestContext ctx = new TestContext();
+        seedTenantOrgs(ctx);
+
+        RoleDataScopePreviewRequest request = new RoleDataScopePreviewRequest();
+        request.setTenantId("TENANT_A");
+        DataScopeRule rule = new DataScopeRule();
+        rule.setScopeType(RbacDataScopeType.RELATION_SUBTREE);
+        rule.setRelationTypes(List.of("service"));
+        request.setDataScope(rule);
+
+        DataScopeBatchScenarioRequest scenarioA = new DataScopeBatchScenarioRequest();
+        scenarioA.setScenarioName("服务归口");
+        scenarioA.setOrgUnitIds(List.of(1L));
+        DataScopeBatchScenarioRequest scenarioB = new DataScopeBatchScenarioRequest();
+        scenarioB.setScenarioName("无组织样本");
+
+        request.setScenarios(List.of(scenarioA, scenarioB));
+
+        DataScopeBatchPreviewView view = ctx.service.previewRoleScopeBatch(request, "TENANT_A", false);
+
+        assertEquals(2, view.getTotalScenarios());
+        assertEquals(1, view.getWarningScenarioCount());
+        assertEquals("服务归口", view.getScenarios().getFirst().getScenarioName());
+    }
+
+    @Test
+    void previewUserScopeBatchShouldReturnMultipleScenarioResults() {
+        TestContext ctx = new TestContext();
+        seedTenantOrgs(ctx);
+
+        UserDataScopePreviewRequest request = new UserDataScopePreviewRequest();
+        request.setTenantId("TENANT_A");
+        request.setUserId(100L);
+        request.setRoleIds(List.of());
+        request.setBaselineRoleIds(List.of());
+        DataScopeRule rule = new DataScopeRule();
+        rule.setScopeType(RbacDataScopeType.ORG_SUBTREE);
+        request.setDataScope(rule);
+        request.setBaselineDataScope(rule);
+
+        DataScopeBatchScenarioRequest scenarioA = new DataScopeBatchScenarioRequest();
+        scenarioA.setScenarioName("直属组织");
+        scenarioA.setOrgUnitIds(List.of(1L));
+        scenarioA.setBaselineOrgUnitIds(List.of(1L));
+        DataScopeBatchScenarioRequest scenarioB = new DataScopeBatchScenarioRequest();
+        scenarioB.setScenarioName("空样本");
+
+        request.setScenarios(List.of(scenarioA, scenarioB));
+
+        DataScopeBatchPreviewView view = ctx.service.previewUserScopeBatch(request, "TENANT_A", false);
+
+        assertEquals(2, view.getTotalScenarios());
+        assertEquals("直属组织", view.getScenarios().getFirst().getScenarioName());
+        assertEquals(1, view.getWarningScenarioCount());
     }
 
     private void seedTenantOrgs(TestContext ctx) {

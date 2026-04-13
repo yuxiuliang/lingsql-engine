@@ -14,12 +14,15 @@ import {
   createUserScopeReleaseRecord,
   createRollbackUserScopeReleaseRecord,
   createUser,
+  DataScopeBatchPreviewView,
+  DataScopeBatchScenarioRequest,
   DataScopePreviewView,
   DataScopeRule,
   fetchRoles,
   fetchUserScopeReleaseRecords,
   fetchUsers,
   previewUserDataScope,
+  previewUserDataScopeBatch,
   resetUserPassword,
   RoleView,
   UserScopeReleaseCreateRequest,
@@ -41,6 +44,8 @@ const passwordVisible = ref(false);
 const editingId = ref<number | null>(null);
 const previewLoading = ref(false);
 const previewResult = ref<DataScopePreviewView | null>(null);
+const batchPreviewLoading = ref(false);
+const batchPreviewResult = ref<DataScopeBatchPreviewView | null>(null);
 const baselineDataScope = ref<DataScopeRule | null>(null);
 const baselineRoleIds = ref<number[]>([]);
 const baselineOrgUnitIds = ref<number[]>([]);
@@ -107,6 +112,10 @@ const form = reactive<UserCreateRequest & UserUpdateRequest>({
 const resetForm = reactive({
   newPassword: ''
 });
+
+const batchScenarios = ref<DataScopeBatchScenarioRequest[]>([
+  {scenarioName: '样本场景 1', orgUnitIds: [], baselineOrgUnitIds: [], sampleSql: ''}
+]);
 
 /**
  * 创建默认数据权限配置。
@@ -430,6 +439,8 @@ const handleCreate = async () => {
     dataScope: createDefaultDataScope()
   });
   previewResult.value = null;
+  batchScenarios.value = [{scenarioName: '样本场景 1', orgUnitIds: [], baselineOrgUnitIds: [], sampleSql: ''}];
+  batchPreviewResult.value = null;
   baselineDataScope.value = createDefaultDataScope();
   baselineRoleIds.value = [];
   baselineOrgUnitIds.value = [];
@@ -465,6 +476,8 @@ const handleEdit = async (row: UserView) => {
     }
   });
   previewResult.value = null;
+  batchScenarios.value = [{scenarioName: '样本场景 1', orgUnitIds: row.orgUnitIds || [], baselineOrgUnitIds: row.orgUnitIds || [], sampleSql: ''}];
+  batchPreviewResult.value = null;
   baselineDataScope.value = {
     scopeType: row.dataScope?.scopeType || 'INHERIT',
     scopeColumn: row.dataScope?.scopeColumn || '',
@@ -660,6 +673,52 @@ const handlePreviewDataScope = async () => {
     ElMessage.error(error instanceof Error ? error.message : '预览数据权限失败');
   } finally {
     previewLoading.value = false;
+  }
+};
+
+const handleAddBatchScenario = () => {
+  batchScenarios.value.push({
+    scenarioName: `样本场景 ${batchScenarios.value.length + 1}`,
+    orgUnitIds: [],
+    baselineOrgUnitIds: [],
+    sampleSql: sampleSql.value || ''
+  });
+};
+
+const handleRemoveBatchScenario = (index: number) => {
+  if (batchScenarios.value.length <= 1) {
+    ElMessage.warning('至少保留一个样本场景');
+    return;
+  }
+  batchScenarios.value.splice(index, 1);
+};
+
+const handlePreviewBatchDataScope = async () => {
+  const scenarios = batchScenarios.value.map((item, index) => ({
+    scenarioCode: item.scenarioCode || `SCENARIO_${index + 1}`,
+    scenarioName: item.scenarioName || `样本场景 ${index + 1}`,
+    orgUnitIds: item.orgUnitIds || [],
+    baselineOrgUnitIds: item.baselineOrgUnitIds || [],
+    sampleSql: item.sampleSql || undefined
+  }));
+  const payload: UserDataScopePreviewRequest = {
+    tenantId: activeTenantId.value || undefined,
+    dataScope: buildDataScopePayload(),
+    userId: editingId.value || undefined,
+    baselineDataScope: baselineDataScope.value || createDefaultDataScope(),
+    orgUnitIds: form.orgUnitIds || [],
+    baselineOrgUnitIds: baselineOrgUnitIds.value || [],
+    roleIds: form.roleIds || [],
+    baselineRoleIds: baselineRoleIds.value || [],
+    scenarios
+  };
+  batchPreviewLoading.value = true;
+  try {
+    batchPreviewResult.value = await previewUserDataScopeBatch(payload);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量预览数据权限失败');
+  } finally {
+    batchPreviewLoading.value = false;
   }
 };
 
@@ -1071,8 +1130,36 @@ watch(
         <el-form-item>
           <div class="preview-toolbar">
             <el-button type="primary" plain :loading="previewLoading" @click="handlePreviewDataScope">预览权限命中</el-button>
+            <el-button plain :loading="batchPreviewLoading" @click="handlePreviewBatchDataScope">批量校验</el-button>
             <el-button v-if="editingId && previewResult" plain :loading="releaseSubmitting" @click="handleCreateScopeRelease">生成发布单</el-button>
             <span class="preview-tip">预览会同时考虑用户覆盖、角色继承、直属组织和关系型数据权限。</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="批量样本">
+          <div class="batch-panel">
+            <div
+              v-for="(item, index) in batchScenarios"
+              :key="`user-batch-${index}`"
+              class="batch-item"
+            >
+              <div class="batch-item-head">
+                <el-input v-model="item.scenarioName" placeholder="场景名称，如 校区管理员 / 门店店长 / 共享服务岗"/>
+                <el-button link type="danger" @click="handleRemoveBatchScenario(index)">删除</el-button>
+              </div>
+              <el-select v-model="item.orgUnitIds" multiple filterable clearable style="width: 100%" placeholder="调整后样本组织">
+                <el-option v-for="org in orgOptions" :key="`user-org-${index}-${org.value}`" :value="org.value" :label="org.label"/>
+              </el-select>
+              <el-select v-model="item.baselineOrgUnitIds" multiple filterable clearable style="width: 100%" placeholder="基线样本组织，不填则沿用当前基线">
+                <el-option v-for="org in orgOptions" :key="`user-baseline-org-${index}-${org.value}`" :value="org.value" :label="org.label"/>
+              </el-select>
+              <el-input
+                v-model="item.sampleSql"
+                type="textarea"
+                :rows="2"
+                placeholder="可选：该场景单独样本 SQL，不填则使用上方统一样本 SQL"
+              />
+            </div>
+            <el-button plain @click="handleAddBatchScenario">新增样本场景</el-button>
           </div>
         </el-form-item>
         <el-form-item v-if="previewResult">
@@ -1178,6 +1265,39 @@ watch(
             </div>
           </div>
         </el-form-item>
+        <el-form-item v-if="batchPreviewResult">
+          <div class="preview-panel">
+            <div class="preview-summary">批量校验结果</div>
+            <div class="preview-description">
+              共 {{ batchPreviewResult.totalScenarios || 0 }} 个场景，样本 SQL 通过 {{ batchPreviewResult.sampleSqlSuccessCount || 0 }} 个，存在告警 {{ batchPreviewResult.warningScenarioCount || 0 }} 个。
+            </div>
+            <el-table :data="batchPreviewResult.scenarios || []" border>
+              <el-table-column prop="scenarioName" label="场景" min-width="180"/>
+              <el-table-column label="命中组织数" width="120">
+                <template #default="{row}">
+                  {{ row.preview?.matchedOrgCount || 0 }}
+                </template>
+              </el-table-column>
+              <el-table-column label="样本 SQL" width="120">
+                <template #default="{row}">
+                  <el-tag :type="row.preview?.sampleSqlValid ? 'success' : 'info'">
+                    {{ row.preview?.sampleSqlValid ? '通过' : '未验证/失败' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="影响摘要" min-width="260" show-overflow-tooltip>
+                <template #default="{row}">
+                  {{ row.preview?.impactSummary || row.preview?.summary || '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column label="告警" min-width="220" show-overflow-tooltip>
+                <template #default="{row}">
+                  {{ (row.preview?.warnings || []).join('；') || '-' }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -1262,6 +1382,29 @@ watch(
 .preview-tip {
   color: #94a3b8;
   font-size: 13px;
+}
+
+.batch-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.batch-item {
+  border: 1px solid #dbe4f0;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.batch-item-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 
 .preview-panel {

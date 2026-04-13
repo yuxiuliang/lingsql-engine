@@ -3,6 +3,7 @@ package com.lingsql.web;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.model.DataScopePreviewView;
+import com.lingsql.rbac.model.DataScopeBatchPreviewView;
 import com.lingsql.rbac.model.RoleCreateRequest;
 import com.lingsql.rbac.model.RoleDataScopePreviewRequest;
 import com.lingsql.rbac.model.RoleScopeReleaseCreateRequest;
@@ -104,6 +105,22 @@ public class RoleAdminController {
         RbacUserSession session = requireSession();
         boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
         return ApiResponse.success(dataScopePreviewService.previewRoleScope(request, session.getTenantId(), sysAdmin));
+    }
+
+    /**
+     * 批量预览角色数据权限。
+     *
+     * @param request 预览请求
+     * @return 批量结果
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    @PostMapping("/preview-data-scope/batch")
+    @PreAuthorize("hasAuthority('ADMIN:ROLE:READ')")
+    public ApiResponse<DataScopeBatchPreviewView> previewDataScopeBatch(@RequestBody RoleDataScopePreviewRequest request) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return ApiResponse.success(dataScopePreviewService.previewRoleScopeBatch(request, session.getTenantId(), sysAdmin));
     }
 
     /**

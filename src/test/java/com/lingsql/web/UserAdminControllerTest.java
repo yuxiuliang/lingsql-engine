@@ -3,6 +3,7 @@ package com.lingsql.web;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.common.result.PageResult;
+import com.lingsql.rbac.model.DataScopeBatchPreviewView;
 import com.lingsql.rbac.model.DataScopePreviewView;
 import com.lingsql.rbac.model.DataScopeRule;
 import com.lingsql.rbac.model.RbacDataScopeType;
@@ -129,6 +130,20 @@ class UserAdminControllerTest {
         assertEquals(200, response.getCode());
         assertEquals("用户权限命中 3 个组织", response.getData().getSummary());
         verify(dataScopePreviewService).previewUserScope(request, "tenant-a", false);
+    }
+
+    @Test
+    void previewDataScopeBatchShouldUseSessionTenantForTenantAdmin() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        UserDataScopePreviewRequest request = new UserDataScopePreviewRequest();
+        DataScopeBatchPreviewView view = new DataScopeBatchPreviewView();
+        view.setTotalScenarios(2);
+        when(dataScopePreviewService.previewUserScopeBatch(request, "tenant-a", false)).thenReturn(view);
+
+        ApiResponse<DataScopeBatchPreviewView> response = controller.previewDataScopeBatch(request);
+
+        assertEquals(200, response.getCode());
+        assertEquals(2, response.getData().getTotalScenarios());
     }
 
     @Test

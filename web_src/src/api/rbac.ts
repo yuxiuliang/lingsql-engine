@@ -455,6 +455,20 @@ export interface DataScopePreviewRoleCandidateView {
 }
 
 /**
+ * 数据权限批量校验样本。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface DataScopeBatchScenarioRequest {
+  scenarioCode?: string;
+  scenarioName?: string;
+  orgUnitIds?: number[];
+  baselineOrgUnitIds?: number[];
+  sampleSql?: string;
+}
+
+/**
  * 数据权限命中预览结果。
  *
  * @author 余炘洋
@@ -494,6 +508,31 @@ export interface DataScopePreviewView {
 }
 
 /**
+ * 数据权限批量校验结果项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface DataScopeBatchScenarioResultView {
+  scenarioCode?: string;
+  scenarioName?: string;
+  preview?: DataScopePreviewView;
+}
+
+/**
+ * 数据权限批量校验结果。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface DataScopeBatchPreviewView {
+  totalScenarios?: number;
+  sampleSqlSuccessCount?: number;
+  warningScenarioCount?: number;
+  scenarios?: DataScopeBatchScenarioResultView[];
+}
+
+/**
  * 角色数据权限预览请求。
  *
  * @author 余炘洋
@@ -506,6 +545,7 @@ export interface RoleDataScopePreviewRequest {
   baselineDataScope?: DataScopeRule;
   orgUnitIds?: number[];
   sampleSql?: string;
+  scenarios?: DataScopeBatchScenarioRequest[];
 }
 
 /**
@@ -594,6 +634,7 @@ export interface UserDataScopePreviewRequest {
   roleIds?: number[];
   baselineRoleIds?: number[];
   sampleSql?: string;
+  scenarios?: DataScopeBatchScenarioRequest[];
 }
 
 /**
@@ -730,6 +771,21 @@ export const updateUser = async (id: number, payload: UserUpdateRequest): Promis
  */
 export const previewUserDataScope = async (payload: UserDataScopePreviewRequest): Promise<DataScopePreviewView> => {
   return request<DataScopePreviewView>('/api/v1/admin/users/preview-data-scope', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 批量预览用户数据权限。
+ *
+ * @param payload 请求体
+ * @return 批量结果
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const previewUserDataScopeBatch = async (payload: UserDataScopePreviewRequest): Promise<DataScopeBatchPreviewView> => {
+  return request<DataScopeBatchPreviewView>('/api/v1/admin/users/preview-data-scope/batch', {
     method: 'POST',
     body: JSON.stringify(payload || {})
   });
@@ -890,6 +946,21 @@ export const updateRole = async (id: number, payload: RoleUpdateRequest): Promis
  */
 export const previewRoleDataScope = async (payload: RoleDataScopePreviewRequest): Promise<DataScopePreviewView> => {
   return request<DataScopePreviewView>('/api/v1/admin/roles/preview-data-scope', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 批量预览角色数据权限。
+ *
+ * @param payload 请求体
+ * @return 批量结果
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const previewRoleDataScopeBatch = async (payload: RoleDataScopePreviewRequest): Promise<DataScopeBatchPreviewView> => {
+  return request<DataScopeBatchPreviewView>('/api/v1/admin/roles/preview-data-scope/batch', {
     method: 'POST',
     body: JSON.stringify(payload || {})
   });

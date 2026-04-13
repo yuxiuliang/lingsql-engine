@@ -43,4 +43,9 @@ public class RoleDataScopePreviewRequest {
      * 样本 SQL。
      */
     private String sampleSql;
+
+    /**
+     * 批量校验样本。
+     */
+    private List<DataScopeBatchScenarioRequest> scenarios = new ArrayList<>();
 }
