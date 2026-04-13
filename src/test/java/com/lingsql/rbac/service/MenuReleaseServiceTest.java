@@ -6,10 +6,13 @@ import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.rbac.entity.MenuReleaseRecord;
 import com.lingsql.rbac.model.MenuImpactPreviewRequest;
 import com.lingsql.rbac.model.MenuImpactPreviewView;
+import com.lingsql.rbac.model.MenuPreviewRequest;
 import com.lingsql.rbac.model.MenuReleaseCreateRequest;
+import com.lingsql.rbac.model.MenuReleaseRollbackRequest;
 import com.lingsql.rbac.model.MenuReleaseReviewRequest;
 import com.lingsql.rbac.model.MenuReleaseView;
 import com.lingsql.rbac.model.MenuRuleSnapshotView;
+import com.lingsql.rbac.model.MenuTenantOverrideSnapshotView;
 import com.lingsql.rbac.model.MenuRuleUpdateRequest;
 import com.lingsql.rbac.model.TenantMenuRuleUpdateRequest;
 import com.lingsql.rbac.repository.MenuReleaseRecordRepository;
@@ -274,5 +277,93 @@ class MenuReleaseServiceTest {
                 () -> service.applyRecord(7L, "tenant-a", false, session));
 
         assertEquals(ErrorCode.CONFLICT, ex.getErrorCode());
+    }
+
+    @Test
+    void createRollbackRecordShouldCreateDraftReleaseFromAppliedSnapshot() throws Exception {
+        MenuReleaseRecordRepository repository = Mockito.mock(MenuReleaseRecordRepository.class);
+        MenuAdminService menuAdminService = Mockito.mock(MenuAdminService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        MenuReleaseService service = new MenuReleaseService(repository, menuAdminService, objectMapper);
+
+        MenuImpactPreviewRequest sourceImpactRequest = new MenuImpactPreviewRequest();
+        sourceImpactRequest.setTenantId("tenant-a");
+        sourceImpactRequest.setMenuCode("MENU_CHAIN");
+        MenuPreviewRequest previewContext = new MenuPreviewRequest();
+        previewContext.setPermissionCodes(List.of("MENU:CHAIN"));
+        sourceImpactRequest.setPreviewContext(previewContext);
+
+        MenuTenantOverrideSnapshotView targetOverrideSnapshot = new MenuTenantOverrideSnapshotView();
+        targetOverrideSnapshot.setOverrideActive(true);
+        targetOverrideSnapshot.setVisible(0);
+        MenuTenantOverrideSnapshotView baselineOverrideSnapshot = new MenuTenantOverrideSnapshotView();
+        baselineOverrideSnapshot.setOverrideActive(false);
+        MenuRuleSnapshotView targetRuleSnapshot = new MenuRuleSnapshotView();
+        targetRuleSnapshot.setVisible(0);
+        MenuRuleSnapshotView baselineRuleSnapshot = new MenuRuleSnapshotView();
+        baselineRuleSnapshot.setVisible(1);
+
+        MenuImpactPreviewView sourceImpactSnapshot = new MenuImpactPreviewView();
+        sourceImpactSnapshot.setTenantId("tenant-a");
+        sourceImpactSnapshot.setMenuCode("MENU_CHAIN");
+        sourceImpactSnapshot.setMenuName("连锁菜单");
+        sourceImpactSnapshot.setTenantOverrideMode(true);
+        sourceImpactSnapshot.setBaselineRuleSnapshot(baselineRuleSnapshot);
+        sourceImpactSnapshot.setTargetRuleSnapshot(targetRuleSnapshot);
+        sourceImpactSnapshot.setBaselineOverrideSnapshot(baselineOverrideSnapshot);
+        sourceImpactSnapshot.setTargetOverrideSnapshot(targetOverrideSnapshot);
+
+        MenuReleaseRecord source = new MenuReleaseRecord();
+        source.setId(8L);
+        source.setTenantId("tenant-a");
+        source.setReleaseType("TENANT_RULE");
+        source.setReleaseTitle("租户菜单发布单");
+        source.setReleaseStatus("APPLIED");
+        source.setImpactRequestJson(objectMapper.writeValueAsString(sourceImpactRequest));
+        source.setImpactSnapshotJson(objectMapper.writeValueAsString(sourceImpactSnapshot));
+        when(repository.findById(8L)).thenReturn(Optional.of(source));
+
+        when(menuAdminService.resolveCurrentRuleSnapshot("tenant-a", null, "MENU_CHAIN", true))
+                .thenReturn(targetRuleSnapshot);
+        when(menuAdminService.resolveCurrentOverrideSnapshot("tenant-a", "MENU_CHAIN"))
+                .thenReturn(targetOverrideSnapshot);
+
+        MenuImpactPreviewView rollbackPreview = new MenuImpactPreviewView();
+        rollbackPreview.setTenantId("tenant-a");
+        rollbackPreview.setMenuCode("MENU_CHAIN");
+        rollbackPreview.setMenuName("连锁菜单");
+        rollbackPreview.setTenantOverrideMode(true);
+        rollbackPreview.setBaselineRuleSummary("隐藏");
+        rollbackPreview.setTargetRuleSummary("显示");
+        rollbackPreview.setBaselineRuleSnapshot(targetRuleSnapshot);
+        rollbackPreview.setTargetRuleSnapshot(baselineRuleSnapshot);
+        rollbackPreview.setBaselineOverrideSnapshot(targetOverrideSnapshot);
+        rollbackPreview.setTargetOverrideSnapshot(baselineOverrideSnapshot);
+        when(menuAdminService.previewMenuImpact(any(MenuImpactPreviewRequest.class), eq("tenant-a"), eq(false)))
+                .thenReturn(rollbackPreview);
+
+        AtomicLong idGenerator = new AtomicLong(100L);
+        when(repository.save(any(MenuReleaseRecord.class))).thenAnswer(invocation -> {
+            MenuReleaseRecord record = invocation.getArgument(0);
+            if (record.getId() == null) {
+                record.setId(idGenerator.getAndIncrement());
+            }
+            return record;
+        });
+
+        MenuReleaseRollbackRequest rollbackRequest = new MenuReleaseRollbackRequest();
+        rollbackRequest.setChangeRemark("回滚到发布前");
+
+        RbacUserSession session = new RbacUserSession();
+        session.setUserId(801L);
+        session.setTenantId("tenant-a");
+        session.setUsername("rollback.user");
+
+        MenuReleaseView view = service.createRollbackRecord(8L, rollbackRequest, "tenant-a", false, session);
+
+        assertEquals("DRAFT", view.getReleaseStatus());
+        assertEquals("MENU_CHAIN", view.getMenuCode());
+        verify(menuAdminService).resolveCurrentRuleSnapshot("tenant-a", null, "MENU_CHAIN", true);
+        verify(menuAdminService).resolveCurrentOverrideSnapshot("tenant-a", "MENU_CHAIN");
     }
 }

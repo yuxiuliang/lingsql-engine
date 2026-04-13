@@ -410,6 +410,7 @@ public class AuditLogService {
             case "MENU_RELEASE_CREATE" -> "创建菜单发布单";
             case "MENU_RELEASE_REVIEW" -> "审核菜单发布单";
             case "MENU_RELEASE_APPLY" -> "应用菜单发布单";
+            case "MENU_RELEASE_ROLLBACK_CREATE" -> "生成菜单回滚发布单";
             default -> "执行操作(" + normalized + ")";
         };
     }

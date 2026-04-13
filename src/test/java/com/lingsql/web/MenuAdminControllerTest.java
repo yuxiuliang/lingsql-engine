@@ -7,6 +7,7 @@ import com.lingsql.rbac.model.MenuImpactPreviewRequest;
 import com.lingsql.rbac.model.MenuImpactPreviewView;
 import com.lingsql.rbac.model.MenuPreviewRequest;
 import com.lingsql.rbac.model.MenuReleaseCreateRequest;
+import com.lingsql.rbac.model.MenuReleaseRollbackRequest;
 import com.lingsql.rbac.model.MenuReleaseReviewRequest;
 import com.lingsql.rbac.model.MenuReleaseView;
 import com.lingsql.rbac.model.MenuRuleUpdateRequest;
@@ -268,6 +269,31 @@ class MenuAdminControllerTest {
                 eq("MENU_RELEASE_APPLY"),
                 eq("MENU_RELEASE"),
                 eq("id=4"),
+                any(),
+                any()
+        );
+    }
+
+    @Test
+    void createRollbackReleaseShouldDelegateByAuditExecutor() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        MenuReleaseRollbackRequest request = new MenuReleaseRollbackRequest();
+        request.setChangeRemark("回滚验证");
+        MenuReleaseView view = new MenuReleaseView();
+        view.setId(5L);
+        view.setReleaseTitle("回滚-菜单发布单");
+        when(menuReleaseService.createRollbackRecord(eq(9L), eq(request), eq("tenant-a"), eq(false), any(RbacUserSession.class)))
+                .thenReturn(view);
+        mockAuditExecute();
+
+        ApiResponse<MenuReleaseView> response = controller.createRollbackRelease(9L, request, new MockHttpServletRequest());
+
+        assertEquals(200, response.getCode());
+        assertEquals(5L, response.getData().getId());
+        verify(auditOperationExecutor).execute(
+                eq("MENU_RELEASE_ROLLBACK_CREATE"),
+                eq("MENU_RELEASE"),
+                eq(request),
                 any(),
                 any()
         );

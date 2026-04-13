@@ -10,6 +10,7 @@ import com.lingsql.rbac.model.MenuImpactPreviewRequest;
 import com.lingsql.rbac.model.MenuImpactPreviewView;
 import com.lingsql.rbac.model.MenuPreviewRequest;
 import com.lingsql.rbac.model.MenuRuleSnapshotView;
+import com.lingsql.rbac.model.MenuTenantOverrideSnapshotView;
 import com.lingsql.rbac.model.MenuRuleUpdateRequest;
 import com.lingsql.rbac.model.MenuView;
 import com.lingsql.rbac.model.TenantMenuAdminView;
@@ -298,7 +299,8 @@ public class MenuAdminService {
         List<RbacMenu> targetEffectiveMenus = resolveEffectiveMenusForPreview(
                 tenantId,
                 Map.of(normalizeValue(previewGlobalMenu.getMenuCode()), previewGlobalMenu),
-                Map.of()
+                Map.of(),
+                Set.of()
         );
         return buildImpactPreviewView(
                 tenantId,
@@ -307,8 +309,10 @@ public class MenuAdminService {
                 globalMenu.getMenuName(),
                 buildRuleSummary(globalMenu),
                 createRuleSnapshot(globalMenu),
+                null,
                 buildRuleSummary(previewGlobalMenu),
                 createRuleSnapshot(previewGlobalMenu),
+                null,
                 determineChangedDimensions(globalMenu, previewGlobalMenu),
                 baselineMenus,
                 menuService.listMenus(previewSession, targetEffectiveMenus)
@@ -324,27 +328,33 @@ public class MenuAdminService {
             throw new BizException(ErrorCode.INVALID_PARAM, "菜单编码不能为空");
         }
         TenantMenuRuleUpdateRequest tenantRule = request.getTenantRule() == null ? new TenantMenuRuleUpdateRequest() : request.getTenantRule();
-        orgGovernanceCatalogService.validateTenantSelections(
-                tenantId,
-                tenantRule.getOrgTypeCodes(),
-                tenantRule.getOrgUnitCodes(),
-                tenantRule.getOrgTags(),
-                tenantRule.getRequiredRelationTypes()
-        );
+        boolean clearTenantOverride = request.getClearTenantOverride() != null && request.getClearTenantOverride();
+        if (!clearTenantOverride) {
+            orgGovernanceCatalogService.validateTenantSelections(
+                    tenantId,
+                    tenantRule.getOrgTypeCodes(),
+                    tenantRule.getOrgUnitCodes(),
+                    tenantRule.getOrgTags(),
+                    tenantRule.getRequiredRelationTypes()
+            );
+        }
         RbacMenu globalMenu = menuRepository.findByTenantIdIsNullAndMenuCode(normalizedMenuCode)
                 .orElseThrow(() -> new BizException(ErrorCode.MENU_NOT_FOUND, "菜单不存在"));
-        RbacMenu baselineEffectiveMenu = menuService.mergeMenu(
-                globalMenu,
-                menuRepository.findByTenantIdAndMenuCode(tenantId, normalizedMenuCode).orElse(null)
-        );
-        RbacMenu previewOverride = menuRepository.findByTenantIdAndMenuCode(tenantId, normalizedMenuCode)
+        RbacMenu baselineOverride = menuRepository.findByTenantIdAndMenuCode(tenantId, normalizedMenuCode).orElse(null);
+        RbacMenu baselineEffectiveMenu = menuService.mergeMenu(globalMenu, baselineOverride);
+        RbacMenu previewOverride = clearTenantOverride
+                ? null
+                : java.util.Optional.ofNullable(baselineOverride)
                 .map(this::copyMenuEntity)
                 .orElseGet(() -> createTenantOverrideSkeleton(globalMenu, tenantId));
-        applyTenantOverrideFields(previewOverride, tenantRule);
+        if (!clearTenantOverride) {
+            applyTenantOverrideFields(previewOverride, tenantRule);
+        }
         List<RbacMenu> targetEffectiveMenus = resolveEffectiveMenusForPreview(
                 tenantId,
                 Map.of(),
-                Map.of(normalizedMenuCode, previewOverride)
+                previewOverride == null ? Map.of() : Map.of(normalizedMenuCode, previewOverride),
+                clearTenantOverride ? Set.of(normalizedMenuCode) : Set.of()
         );
         RbacMenu targetEffectiveMenu = menuService.mergeMenu(globalMenu, previewOverride);
         return buildImpactPreviewView(
@@ -354,8 +364,10 @@ public class MenuAdminService {
                 globalMenu.getMenuName(),
                 buildRuleSummary(baselineEffectiveMenu),
                 createRuleSnapshot(baselineEffectiveMenu),
+                createTenantOverrideSnapshot(baselineOverride),
                 buildRuleSummary(targetEffectiveMenu),
                 createRuleSnapshot(targetEffectiveMenu),
+                createTenantOverrideSnapshot(previewOverride),
                 determineChangedDimensions(baselineEffectiveMenu, targetEffectiveMenu),
                 baselineMenus,
                 menuService.listMenus(previewSession, targetEffectiveMenus)
@@ -368,8 +380,10 @@ public class MenuAdminService {
                                                          String menuName,
                                                          String baselineRuleSummary,
                                                          MenuRuleSnapshotView baselineRuleSnapshot,
+                                                         MenuTenantOverrideSnapshotView baselineOverrideSnapshot,
                                                          String targetRuleSummary,
                                                          MenuRuleSnapshotView targetRuleSnapshot,
+                                                         MenuTenantOverrideSnapshotView targetOverrideSnapshot,
                                                          List<String> changedDimensions,
                                                          List<MenuView> baselineMenus,
                                                          List<MenuView> targetMenus) {
@@ -397,8 +411,10 @@ public class MenuAdminService {
         view.setTargetMatched(targetMapping.containsKey(normalizeValue(menuCode)));
         view.setBaselineRuleSummary(baselineRuleSummary);
         view.setBaselineRuleSnapshot(baselineRuleSnapshot);
+        view.setBaselineOverrideSnapshot(baselineOverrideSnapshot);
         view.setTargetRuleSummary(targetRuleSummary);
         view.setTargetRuleSnapshot(targetRuleSnapshot);
+        view.setTargetOverrideSnapshot(targetOverrideSnapshot);
         view.setChangedDimensions(changedDimensions);
         view.setAddedMenus(addedMenus);
         view.setRemovedMenus(removedMenus);
@@ -454,7 +470,8 @@ public class MenuAdminService {
 
     private List<RbacMenu> resolveEffectiveMenusForPreview(String tenantId,
                                                            Map<String, RbacMenu> previewGlobalMenus,
-                                                           Map<String, RbacMenu> previewTenantOverrides) {
+                                                           Map<String, RbacMenu> previewTenantOverrides,
+                                                           Set<String> clearedTenantOverrideCodes) {
         if (!StringUtils.hasText(tenantId)) {
             return List.of();
         }
@@ -464,7 +481,11 @@ public class MenuAdminService {
             if (menu == null || !StringUtils.hasText(menu.getMenuCode())) {
                 continue;
             }
-            tenantOverrideMapping.put(normalizeValue(menu.getMenuCode()), menu);
+            String normalizedMenuCode = normalizeValue(menu.getMenuCode());
+            if (clearedTenantOverrideCodes != null && clearedTenantOverrideCodes.contains(normalizedMenuCode)) {
+                continue;
+            }
+            tenantOverrideMapping.put(normalizedMenuCode, menu);
         }
         if (previewTenantOverrides != null && !previewTenantOverrides.isEmpty()) {
             tenantOverrideMapping.putAll(previewTenantOverrides);
@@ -568,6 +589,16 @@ public class MenuAdminService {
         return createRuleSnapshot(globalMenu);
     }
 
+    MenuTenantOverrideSnapshotView resolveCurrentOverrideSnapshot(String tenantId, String menuCode) {
+        String normalizedMenuCode = normalizeValue(menuCode);
+        if (!StringUtils.hasText(tenantId) || !StringUtils.hasText(normalizedMenuCode)) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户菜单覆盖快照参数不完整");
+        }
+        return createTenantOverrideSnapshot(
+                menuRepository.findByTenantIdAndMenuCode(tenantId, normalizedMenuCode).orElse(null)
+        );
+    }
+
     private RbacUserSession buildPreviewSession(MenuPreviewRequest request, String tenantId) {
         RbacUserSession session = new RbacUserSession();
         session.setTenantId(tenantId);
@@ -618,6 +649,26 @@ public class MenuAdminService {
         snapshot.setOrgUnitCodes(parseConfiguredValues(menu.getOrgUnitCodes()));
         snapshot.setOrgTags(parseConfiguredValues(menu.getOrgTags()));
         snapshot.setRequiredRelationTypes(parseConfiguredValues(menu.getRequiredRelationTypes()));
+        return snapshot;
+    }
+
+    private MenuTenantOverrideSnapshotView createTenantOverrideSnapshot(RbacMenu tenantOverride) {
+        MenuTenantOverrideSnapshotView snapshot = new MenuTenantOverrideSnapshotView();
+        if (tenantOverride == null) {
+            snapshot.setOverrideActive(false);
+            return snapshot;
+        }
+        snapshot.setOverrideActive(true);
+        snapshot.setVisible(tenantOverride.getVisible());
+        snapshot.setStatus(tenantOverride.getStatus());
+        snapshot.setOrgTypeCodesSpecified(tenantOverride.getOrgTypeCodes() != null);
+        snapshot.setOrgTypeCodes(parseConfiguredValues(tenantOverride.getOrgTypeCodes()));
+        snapshot.setOrgUnitCodesSpecified(tenantOverride.getOrgUnitCodes() != null);
+        snapshot.setOrgUnitCodes(parseConfiguredValues(tenantOverride.getOrgUnitCodes()));
+        snapshot.setOrgTagsSpecified(tenantOverride.getOrgTags() != null);
+        snapshot.setOrgTags(parseConfiguredValues(tenantOverride.getOrgTags()));
+        snapshot.setRequiredRelationTypesSpecified(tenantOverride.getRequiredRelationTypes() != null);
+        snapshot.setRequiredRelationTypes(parseConfiguredValues(tenantOverride.getRequiredRelationTypes()));
         return snapshot;
     }
 

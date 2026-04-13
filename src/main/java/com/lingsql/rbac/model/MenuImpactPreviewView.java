@@ -111,6 +111,14 @@ public class MenuImpactPreviewView {
     private MenuRuleSnapshotView baselineRuleSnapshot;
 
     /**
+     * 基线租户覆盖快照。
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private MenuTenantOverrideSnapshotView baselineOverrideSnapshot;
+
+    /**
      * 目标规则摘要。
      *
      * @author 余炘洋
@@ -125,6 +133,14 @@ public class MenuImpactPreviewView {
      * @date 2026-04-13
      */
     private MenuRuleSnapshotView targetRuleSnapshot;
+
+    /**
+     * 目标租户覆盖快照。
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private MenuTenantOverrideSnapshotView targetOverrideSnapshot;
 
     /**
      * 变更维度列表。

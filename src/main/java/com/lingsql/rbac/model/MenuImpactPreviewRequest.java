@@ -56,6 +56,16 @@ public class MenuImpactPreviewRequest {
     private TenantMenuRuleUpdateRequest tenantRule;
 
     /**
+     * 是否清除租户覆盖。
+     *
+     * <p>仅租户覆盖模式使用。</p>
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private Boolean clearTenantOverride;
+
+    /**
      * 样本上下文。
      *
      * @author 余炘洋

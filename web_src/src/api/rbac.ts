@@ -414,6 +414,17 @@ export interface MenuReleaseReviewRequest {
 }
 
 /**
+ * 菜单发布单回滚请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuReleaseRollbackRequest {
+  releaseTitle?: string;
+  changeRemark?: string;
+}
+
+/**
  * 数据权限命中组织预览项。
  *
  * @author 余炘洋
@@ -892,5 +903,24 @@ export const reviewMenuReleaseRecord = async (id: number, payload: MenuReleaseRe
 export const applyMenuReleaseRecord = async (id: number): Promise<MenuReleaseView> => {
   return request<MenuReleaseView>(`/api/v1/admin/menus/releases/${id}/apply`, {
     method: 'PUT'
+  });
+};
+
+/**
+ * 基于已应用发布单生成回滚单。
+ *
+ * @param id 发布单ID
+ * @param payload 请求体
+ * @return 新生成的回滚发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const createRollbackMenuReleaseRecord = async (
+  id: number,
+  payload: MenuReleaseRollbackRequest
+): Promise<MenuReleaseView> => {
+  return request<MenuReleaseView>(`/api/v1/admin/menus/releases/${id}/rollback`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
   });
 };

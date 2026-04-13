@@ -7,6 +7,7 @@ import com.lingsql.rbac.model.MenuImpactPreviewRequest;
 import com.lingsql.rbac.model.MenuImpactPreviewView;
 import com.lingsql.rbac.model.MenuPreviewRequest;
 import com.lingsql.rbac.model.MenuReleaseCreateRequest;
+import com.lingsql.rbac.model.MenuReleaseRollbackRequest;
 import com.lingsql.rbac.model.MenuReleaseReviewRequest;
 import com.lingsql.rbac.model.MenuReleaseView;
 import com.lingsql.rbac.model.MenuRuleUpdateRequest;
@@ -307,6 +308,32 @@ public class MenuAdminController {
                 "id=" + id,
                 http,
                 () -> menuReleaseService.applyRecord(id, session.getTenantId(), sysAdmin, session)
+        );
+    }
+
+    /**
+     * 基于已应用发布单生成回滚单。
+     *
+     * @param id      源发布单ID
+     * @param request 回滚请求
+     * @param http    请求
+     * @return 新生成的回滚发布单
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    @PostMapping("/releases/{id}/rollback")
+    @PreAuthorize("hasAnyAuthority('ADMIN:MENU:RELEASE:CREATE','ADMIN:MENU:WRITE')")
+    public ApiResponse<MenuReleaseView> createRollbackRelease(@PathVariable Long id,
+                                                              @RequestBody(required = false) MenuReleaseRollbackRequest request,
+                                                              HttpServletRequest http) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return auditOperationExecutor.execute(
+                "MENU_RELEASE_ROLLBACK_CREATE",
+                "MENU_RELEASE",
+                request,
+                http,
+                () -> menuReleaseService.createRollbackRecord(id, request, session.getTenantId(), sysAdmin, session)
         );
     }
 

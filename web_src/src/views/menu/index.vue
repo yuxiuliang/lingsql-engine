@@ -9,6 +9,7 @@ import {
   applyMenuReleaseRecord,
   clearTenantMenuRule,
   createMenuReleaseRecord,
+  createRollbackMenuReleaseRecord,
   fetchMenuRules,
   fetchPermissions,
   fetchMenuReleaseRecords,
@@ -18,6 +19,7 @@ import {
   MenuImpactPreviewView,
   MenuPreviewRequest,
   MenuReleaseCreateRequest,
+  MenuReleaseRollbackRequest,
   MenuReleaseReviewRequest,
   MenuReleaseView,
   MenuRuleUpdateRequest,
@@ -884,6 +886,26 @@ const handleApplyRelease = async (record: MenuReleaseView) => {
   }
 };
 
+const handleCreateRollbackRelease = async (record: MenuReleaseView) => {
+  if (!record?.id) {
+    return;
+  }
+  const changeRemark = window.prompt('可选：请输入本次回滚说明', '') || '';
+  const payload: MenuReleaseRollbackRequest = {
+    changeRemark: changeRemark.trim() || undefined
+  };
+  releaseSubmitting.value = true;
+  try {
+    await createRollbackMenuReleaseRecord(record.id, payload);
+    ElMessage.success('回滚发布单已生成');
+    await loadReleaseRecords();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '生成回滚发布单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
 const handleResetPreview = () => {
   fillPreviewFromSession();
   previewMenus.value = [];
@@ -1697,6 +1719,15 @@ fillPreviewFromSession();
               @click="handleApplyRelease(row)"
             >
               应用
+            </el-button>
+            <el-button
+              v-if="row.releaseStatus === 'APPLIED' && canCreateMenuRelease"
+              link
+              type="warning"
+              :disabled="releaseSubmitting"
+              @click="handleCreateRollbackRelease(row)"
+            >
+              生成回滚单
             </el-button>
           </template>
         </el-table-column>

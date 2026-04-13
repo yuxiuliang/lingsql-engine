@@ -7,9 +7,12 @@ import com.lingsql.rbac.entity.MenuReleaseRecord;
 import com.lingsql.rbac.model.MenuImpactPreviewRequest;
 import com.lingsql.rbac.model.MenuImpactPreviewView;
 import com.lingsql.rbac.model.MenuReleaseCreateRequest;
+import com.lingsql.rbac.model.MenuReleaseRollbackRequest;
 import com.lingsql.rbac.model.MenuReleaseReviewRequest;
 import com.lingsql.rbac.model.MenuReleaseView;
 import com.lingsql.rbac.model.MenuRuleSnapshotView;
+import com.lingsql.rbac.model.MenuRuleUpdateRequest;
+import com.lingsql.rbac.model.MenuTenantOverrideSnapshotView;
 import com.lingsql.rbac.model.TenantMenuRuleUpdateRequest;
 import com.lingsql.rbac.repository.MenuReleaseRecordRepository;
 import com.lingsql.rbac.security.RbacUserSession;
@@ -218,6 +221,45 @@ public class MenuReleaseService {
         return toView(menuReleaseRecordRepository.save(entity));
     }
 
+    /**
+     * 基于已应用发布单生成回滚发布单。
+     *
+     * @param id            已应用发布单ID
+     * @param request       回滚请求
+     * @param sessionTenant 会话租户
+     * @param sysAdmin      是否系统管理员
+     * @param session       当前会话
+     * @return 新生成的回滚发布单
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    @Transactional
+    public MenuReleaseView createRollbackRecord(Long id,
+                                                MenuReleaseRollbackRequest request,
+                                                String sessionTenant,
+                                                boolean sysAdmin,
+                                                RbacUserSession session) {
+        if (id == null) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "源发布单ID不能为空");
+        }
+        MenuReleaseRecord source = menuReleaseRecordRepository.findById(id)
+                .orElseThrow(() -> new BizException(ErrorCode.INVALID_PARAM, "菜单发布单不存在"));
+        validateTenantAccess(source.getTenantId(), sessionTenant, sysAdmin);
+        if (!STATUS_APPLIED.equals(source.getReleaseStatus())) {
+            throw new BizException(ErrorCode.CONFLICT, "仅已应用的发布单允许生成回滚单");
+        }
+        MenuImpactPreviewRequest sourceImpactRequest = readImpactRequest(source.getImpactRequestJson());
+        MenuImpactPreviewView sourceImpactSnapshot = readImpactSnapshot(source.getImpactSnapshotJson());
+        validateTargetDrift(source, sourceImpactRequest, sourceImpactSnapshot);
+
+        MenuReleaseCreateRequest rollbackRequest = new MenuReleaseCreateRequest();
+        rollbackRequest.setTenantId(source.getTenantId());
+        rollbackRequest.setReleaseTitle(resolveRollbackTitle(request == null ? null : request.getReleaseTitle(), source));
+        rollbackRequest.setChangeRemark(resolveRollbackRemark(request == null ? null : request.getChangeRemark(), source));
+        rollbackRequest.setImpactRequest(buildRollbackImpactRequest(source, sourceImpactRequest, sourceImpactSnapshot));
+        return createRecord(rollbackRequest, sessionTenant, sysAdmin, session);
+    }
+
     private void validateBaselineDrift(MenuReleaseRecord entity,
                                        MenuImpactPreviewRequest impactRequest,
                                        MenuImpactPreviewView impactSnapshot) {
@@ -234,6 +276,106 @@ public class MenuReleaseService {
         if (!impactSnapshot.getBaselineRuleSnapshot().equals(currentSnapshot)) {
             throw new BizException(ErrorCode.CONFLICT, "当前菜单基线已变化，请重新生成发布单并重新审核");
         }
+    }
+
+    private void validateTargetDrift(MenuReleaseRecord entity,
+                                     MenuImpactPreviewRequest impactRequest,
+                                     MenuImpactPreviewView impactSnapshot) {
+        if (entity == null || impactRequest == null || impactSnapshot == null || impactSnapshot.getTargetRuleSnapshot() == null) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "源发布单缺少目标快照，无法生成回滚单");
+        }
+        boolean tenantOverrideMode = RELEASE_TYPE_TENANT.equals(entity.getReleaseType());
+        MenuRuleSnapshotView currentSnapshot = menuAdminService.resolveCurrentRuleSnapshot(
+                entity.getTenantId(),
+                impactRequest.getMenuId(),
+                impactRequest.getMenuCode(),
+                tenantOverrideMode
+        );
+        if (!impactSnapshot.getTargetRuleSnapshot().equals(currentSnapshot)) {
+            throw new BizException(ErrorCode.CONFLICT, "当前菜单已偏离已应用发布单状态，请先确认最新状态后再生成回滚单");
+        }
+        if (tenantOverrideMode) {
+            if (impactSnapshot.getTargetOverrideSnapshot() == null) {
+                throw new BizException(ErrorCode.CONFIG_INVALID, "源发布单缺少租户覆盖快照，无法生成精确回滚单");
+            }
+            MenuTenantOverrideSnapshotView currentOverrideSnapshot = menuAdminService.resolveCurrentOverrideSnapshot(
+                    entity.getTenantId(),
+                    impactRequest.getMenuCode()
+            );
+            if (!impactSnapshot.getTargetOverrideSnapshot().equals(currentOverrideSnapshot)) {
+                throw new BizException(ErrorCode.CONFLICT, "当前租户覆盖已变化，请先确认最新状态后再生成回滚单");
+            }
+        }
+    }
+
+    private MenuImpactPreviewRequest buildRollbackImpactRequest(MenuReleaseRecord source,
+                                                                MenuImpactPreviewRequest sourceImpactRequest,
+                                                                MenuImpactPreviewView sourceImpactSnapshot) {
+        MenuImpactPreviewRequest rollbackImpactRequest = new MenuImpactPreviewRequest();
+        rollbackImpactRequest.setTenantId(source.getTenantId());
+        rollbackImpactRequest.setPreviewContext(sourceImpactRequest.getPreviewContext());
+        if (RELEASE_TYPE_GLOBAL.equals(source.getReleaseType())) {
+            rollbackImpactRequest.setMenuId(sourceImpactRequest.getMenuId());
+            rollbackImpactRequest.setGlobalRule(toGlobalRuleRequest(sourceImpactSnapshot.getBaselineRuleSnapshot()));
+            return rollbackImpactRequest;
+        }
+        rollbackImpactRequest.setMenuCode(sourceImpactRequest.getMenuCode());
+        MenuTenantOverrideSnapshotView baselineOverrideSnapshot = sourceImpactSnapshot.getBaselineOverrideSnapshot();
+        if (baselineOverrideSnapshot == null) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "源发布单缺少租户覆盖基线快照，无法生成回滚单");
+        }
+        if (!baselineOverrideSnapshot.isOverrideActive()) {
+            rollbackImpactRequest.setClearTenantOverride(true);
+            return rollbackImpactRequest;
+        }
+        rollbackImpactRequest.setTenantRule(toTenantRuleRequest(source.getTenantId(), baselineOverrideSnapshot));
+        return rollbackImpactRequest;
+    }
+
+    private MenuRuleUpdateRequest toGlobalRuleRequest(MenuRuleSnapshotView snapshot) {
+        if (snapshot == null) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "源发布单缺少全局规则基线快照");
+        }
+        MenuRuleUpdateRequest request = new MenuRuleUpdateRequest();
+        request.setOrgTypeCodes(copyList(snapshot.getOrgTypeCodes()));
+        request.setOrgUnitCodes(copyList(snapshot.getOrgUnitCodes()));
+        request.setOrgTags(copyList(snapshot.getOrgTags()));
+        request.setRequiredRelationTypes(copyList(snapshot.getRequiredRelationTypes()));
+        return request;
+    }
+
+    private TenantMenuRuleUpdateRequest toTenantRuleRequest(String tenantId, MenuTenantOverrideSnapshotView snapshot) {
+        TenantMenuRuleUpdateRequest request = new TenantMenuRuleUpdateRequest();
+        request.setTenantId(tenantId);
+        request.setVisible(snapshot.getVisible());
+        request.setStatus(snapshot.getStatus());
+        request.setOrgTypeCodes(snapshot.isOrgTypeCodesSpecified() ? copyList(snapshot.getOrgTypeCodes()) : null);
+        request.setOrgUnitCodes(snapshot.isOrgUnitCodesSpecified() ? copyList(snapshot.getOrgUnitCodes()) : null);
+        request.setOrgTags(snapshot.isOrgTagsSpecified() ? copyList(snapshot.getOrgTags()) : null);
+        request.setRequiredRelationTypes(snapshot.isRequiredRelationTypesSpecified()
+                ? copyList(snapshot.getRequiredRelationTypes())
+                : null);
+        return request;
+    }
+
+    private List<String> copyList(List<String> values) {
+        return values == null ? new ArrayList<>() : new ArrayList<>(values);
+    }
+
+    private String resolveRollbackTitle(String releaseTitle, MenuReleaseRecord source) {
+        if (StringUtils.hasText(releaseTitle)) {
+            return releaseTitle.trim();
+        }
+        String baseTitle = source == null || !StringUtils.hasText(source.getReleaseTitle()) ? "菜单发布单" : source.getReleaseTitle().trim();
+        return "回滚-" + baseTitle + "-" + TITLE_TIME_FORMATTER.format(LocalDateTime.now());
+    }
+
+    private String resolveRollbackRemark(String changeRemark, MenuReleaseRecord source) {
+        String prefix = "回滚来源发布单#" + (source == null ? "-" : source.getId());
+        if (!StringUtils.hasText(changeRemark)) {
+            return prefix;
+        }
+        return prefix + "；" + changeRemark.trim();
     }
 
     private MenuImpactPreviewRequest readImpactRequest(String json) {
