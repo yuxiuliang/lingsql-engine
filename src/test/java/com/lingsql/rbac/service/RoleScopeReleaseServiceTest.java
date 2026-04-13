@@ -10,6 +10,7 @@ import com.lingsql.rbac.model.DataScopePreviewView;
 import com.lingsql.rbac.model.DataScopeRule;
 import com.lingsql.rbac.model.RoleDataScopePreviewRequest;
 import com.lingsql.rbac.model.RoleScopeReleaseCreateRequest;
+import com.lingsql.rbac.model.RoleScopeReleaseRollbackRequest;
 import com.lingsql.rbac.model.RoleScopeReleaseReviewRequest;
 import com.lingsql.rbac.model.RoleScopeReleaseView;
 import com.lingsql.rbac.model.RoleUpdateRequest;
@@ -228,5 +229,78 @@ class RoleScopeReleaseServiceTest {
                 () -> service.applyRecord(4L, "tenant-a", false, session));
 
         assertEquals(ErrorCode.CONFLICT, ex.getErrorCode());
+    }
+
+    @Test
+    void createRollbackRecordShouldCreateDraftRelease() throws Exception {
+        RoleScopeReleaseRecordRepository repository = Mockito.mock(RoleScopeReleaseRecordRepository.class);
+        RbacRoleRepository roleRepository = Mockito.mock(RbacRoleRepository.class);
+        RoleAdminService roleAdminService = Mockito.mock(RoleAdminService.class);
+        DataScopePreviewService previewService = Mockito.mock(DataScopePreviewService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        RoleScopeReleaseService service = new RoleScopeReleaseService(
+                repository,
+                roleRepository,
+                roleAdminService,
+                previewService,
+                objectMapper
+        );
+
+        RoleDataScopePreviewRequest sourcePreviewRequest = new RoleDataScopePreviewRequest();
+        sourcePreviewRequest.setTenantId("tenant-a");
+        sourcePreviewRequest.setRoleId(9L);
+        DataScopeRule targetRule = new DataScopeRule();
+        targetRule.setScopeType("ORG_SUBTREE");
+        sourcePreviewRequest.setDataScope(targetRule);
+        DataScopeRule baselineRule = new DataScopeRule();
+        baselineRule.setScopeType("TENANT");
+        sourcePreviewRequest.setBaselineDataScope(baselineRule);
+
+        RoleScopeReleaseRecord source = new RoleScopeReleaseRecord();
+        source.setId(5L);
+        source.setTenantId("tenant-a");
+        source.setReleaseStatus("APPLIED");
+        source.setRequestedByUserId(500L);
+        source.setReleaseTitle("角色数据权限发布单");
+        source.setPreviewRequestJson(objectMapper.writeValueAsString(sourcePreviewRequest));
+        when(repository.findById(5L)).thenReturn(Optional.of(source));
+        when(roleAdminService.resolveCurrentRoleDataScope(9L)).thenReturn(targetRule);
+
+        DataScopePreviewDiffView diff = new DataScopePreviewDiffView();
+        diff.setBaselineSummary("当前配置：直属组织及下级范围，命中 3 个组织");
+        diff.setTargetSummary("当前配置：本租户数据，不额外限制组织范围");
+        DataScopePreviewView preview = new DataScopePreviewView();
+        preview.setImpactSummary("当前角色变更会直接影响 12 个已绑定用户的数据可见范围。");
+        preview.setMatchedOrgCount(1);
+        preview.setAffectedUserCount(12);
+        preview.setDiff(diff);
+        when(previewService.previewRoleScope(any(RoleDataScopePreviewRequest.class), eq("tenant-a"), eq(false))).thenReturn(preview);
+
+        RbacRole role = new RbacRole();
+        role.setId(9L);
+        role.setTenantId("tenant-a");
+        role.setRoleCode("ROLE_GOV");
+        role.setRoleName("政府角色");
+        when(roleRepository.findById(9L)).thenReturn(Optional.of(role));
+        AtomicLong idGenerator = new AtomicLong(10L);
+        when(repository.save(any(RoleScopeReleaseRecord.class))).thenAnswer(invocation -> {
+            RoleScopeReleaseRecord entity = invocation.getArgument(0);
+            if (entity.getId() == null) {
+                entity.setId(idGenerator.getAndIncrement());
+            }
+            return entity;
+        });
+
+        RoleScopeReleaseRollbackRequest request = new RoleScopeReleaseRollbackRequest();
+        request.setChangeRemark("回滚到本租户");
+        RbacUserSession session = new RbacUserSession();
+        session.setUserId(501L);
+        session.setTenantId("tenant-a");
+        session.setUsername("reviewer");
+
+        RoleScopeReleaseView view = service.createRollbackRecord(5L, request, "tenant-a", false, session);
+
+        assertEquals("DRAFT", view.getReleaseStatus());
+        assertEquals("ROLE_GOV", view.getRoleCode());
     }
 }

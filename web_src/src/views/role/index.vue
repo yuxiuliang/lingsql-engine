@@ -12,6 +12,7 @@ import {
 import {
   applyRoleScopeReleaseRecord,
   createRoleScopeReleaseRecord,
+  createRollbackRoleScopeReleaseRecord,
   createRole,
   DataScopePreviewView,
   DataScopeRule,
@@ -23,6 +24,7 @@ import {
   RoleCreateRequest,
   RoleDataScopePreviewRequest,
   RoleScopeReleaseCreateRequest,
+  RoleScopeReleaseRollbackRequest,
   RoleScopeReleaseReviewRequest,
   RoleScopeReleaseView,
   RoleUpdateRequest,
@@ -581,6 +583,26 @@ const handleApplyScopeRelease = async (record: RoleScopeReleaseView) => {
   }
 };
 
+const handleCreateRollbackScopeRelease = async (record: RoleScopeReleaseView) => {
+  if (!record?.id) {
+    return;
+  }
+  const changeRemark = window.prompt('可选：请输入本次角色数据权限回滚说明', '') || '';
+  const payload: RoleScopeReleaseRollbackRequest = {
+    changeRemark: changeRemark.trim() || undefined
+  };
+  releaseSubmitting.value = true;
+  try {
+    await createRollbackRoleScopeReleaseRecord(record.id, payload);
+    ElMessage.success('角色数据权限回滚单已生成');
+    await loadReleaseRecords();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '生成角色数据权限回滚单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
 const resolveReleaseStatusLabel = (status?: string) => {
   return releaseStatusLabelMap[status || 'DRAFT'] || status || '待审核';
 };
@@ -721,6 +743,15 @@ loadPermissions();
               @click="handleApplyScopeRelease(row)"
             >
               应用
+            </el-button>
+            <el-button
+              v-if="row.releaseStatus === 'APPLIED'"
+              link
+              type="warning"
+              :disabled="releaseSubmitting"
+              @click="handleCreateRollbackScopeRelease(row)"
+            >
+              生成回滚单
             </el-button>
           </template>
         </el-table-column>

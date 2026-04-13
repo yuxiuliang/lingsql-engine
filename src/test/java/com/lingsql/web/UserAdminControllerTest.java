@@ -9,6 +9,7 @@ import com.lingsql.rbac.model.RbacDataScopeType;
 import com.lingsql.rbac.model.UserCreateRequest;
 import com.lingsql.rbac.model.UserDataScopePreviewRequest;
 import com.lingsql.rbac.model.UserScopeReleaseCreateRequest;
+import com.lingsql.rbac.model.UserScopeReleaseRollbackRequest;
 import com.lingsql.rbac.model.UserScopeReleaseReviewRequest;
 import com.lingsql.rbac.model.UserScopeReleaseView;
 import com.lingsql.rbac.model.UserView;
@@ -191,6 +192,24 @@ class UserAdminControllerTest {
 
         assertEquals(200, response.getCode());
         assertEquals("APPLIED", response.getData().getReleaseStatus());
+    }
+
+    @Test
+    void createRollbackScopeReleaseShouldDelegateByAuditExecutor() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        UserScopeReleaseRollbackRequest request = new UserScopeReleaseRollbackRequest();
+        request.setChangeRemark("回滚用户权限");
+        UserScopeReleaseView view = new UserScopeReleaseView();
+        view.setId(5L);
+        view.setReleaseTitle("回滚-用户数据权限发布单");
+        when(userScopeReleaseService.createRollbackRecord(eq(5L), eq(request), eq("tenant-a"), eq(false), any(RbacUserSession.class)))
+                .thenReturn(view);
+        mockAuditExecute();
+
+        ApiResponse<UserScopeReleaseView> response = controller.createRollbackScopeRelease(5L, request, new MockHttpServletRequest());
+
+        assertEquals(200, response.getCode());
+        assertEquals("回滚-用户数据权限发布单", response.getData().getReleaseTitle());
     }
 
     private void mockAuditExecute() {

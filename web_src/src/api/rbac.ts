@@ -568,6 +568,17 @@ export interface RoleScopeReleaseReviewRequest {
 }
 
 /**
+ * 角色数据权限发布单回滚请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface RoleScopeReleaseRollbackRequest {
+  releaseTitle?: string;
+  changeRemark?: string;
+}
+
+/**
  * 用户数据权限预览请求。
  *
  * @author 余炘洋
@@ -643,6 +654,17 @@ export interface UserScopeReleaseCreateRequest {
 export interface UserScopeReleaseReviewRequest {
   decision: string;
   reviewComment?: string;
+}
+
+/**
+ * 用户数据权限发布单回滚请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface UserScopeReleaseRollbackRequest {
+  releaseTitle?: string;
+  changeRemark?: string;
 }
 
 /**
@@ -776,6 +798,25 @@ export const reviewUserScopeReleaseRecord = async (id: number, payload: UserScop
 export const applyUserScopeReleaseRecord = async (id: number): Promise<UserScopeReleaseView> => {
   return request<UserScopeReleaseView>(`/api/v1/admin/users/scope-releases/${id}/apply`, {
     method: 'PUT'
+  });
+};
+
+/**
+ * 基于已应用发布单生成用户数据权限回滚单。
+ *
+ * @param id 发布单ID
+ * @param payload 请求体
+ * @return 新发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const createRollbackUserScopeReleaseRecord = async (
+  id: number,
+  payload: UserScopeReleaseRollbackRequest
+): Promise<UserScopeReleaseView> => {
+  return request<UserScopeReleaseView>(`/api/v1/admin/users/scope-releases/${id}/rollback`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
   });
 };
 
@@ -917,6 +958,25 @@ export const reviewRoleScopeReleaseRecord = async (id: number, payload: RoleScop
 export const applyRoleScopeReleaseRecord = async (id: number): Promise<RoleScopeReleaseView> => {
   return request<RoleScopeReleaseView>(`/api/v1/admin/roles/scope-releases/${id}/apply`, {
     method: 'PUT'
+  });
+};
+
+/**
+ * 基于已应用发布单生成角色数据权限回滚单。
+ *
+ * @param id 发布单ID
+ * @param payload 请求体
+ * @return 新发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const createRollbackRoleScopeReleaseRecord = async (
+  id: number,
+  payload: RoleScopeReleaseRollbackRequest
+): Promise<RoleScopeReleaseView> => {
+  return request<RoleScopeReleaseView>(`/api/v1/admin/roles/scope-releases/${id}/rollback`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
   });
 };
 

@@ -10,6 +10,7 @@ import com.lingsql.rbac.model.DataScopePreviewView;
 import com.lingsql.rbac.model.DataScopeRule;
 import com.lingsql.rbac.model.UserDataScopePreviewRequest;
 import com.lingsql.rbac.model.UserScopeReleaseCreateRequest;
+import com.lingsql.rbac.model.UserScopeReleaseRollbackRequest;
 import com.lingsql.rbac.model.UserScopeReleaseReviewRequest;
 import com.lingsql.rbac.model.UserScopeReleaseView;
 import com.lingsql.rbac.model.UserUpdateRequest;
@@ -211,6 +212,49 @@ public class UserScopeReleaseService {
         return toView(userScopeReleaseRecordRepository.save(entity));
     }
 
+    /**
+     * 基于已应用发布单生成回滚单。
+     *
+     * @param id            源发布单ID
+     * @param request       回滚请求
+     * @param sessionTenant 会话租户
+     * @param sysAdmin      是否系统管理员
+     * @param session       当前会话
+     * @return 新发布单
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    @Transactional
+    public UserScopeReleaseView createRollbackRecord(Long id,
+                                                     UserScopeReleaseRollbackRequest request,
+                                                     String sessionTenant,
+                                                     boolean sysAdmin,
+                                                     RbacUserSession session) {
+        if (id == null) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "源发布单ID不能为空");
+        }
+        UserScopeReleaseRecord source = userScopeReleaseRecordRepository.findById(id)
+                .orElseThrow(() -> new BizException(ErrorCode.INVALID_PARAM, "用户数据权限发布单不存在"));
+        validateTenantAccess(source.getTenantId(), sessionTenant, sysAdmin);
+        if (!STATUS_APPLIED.equals(source.getReleaseStatus())) {
+            throw new BizException(ErrorCode.CONFLICT, "仅已应用的发布单允许生成回滚单");
+        }
+        UserDataScopePreviewRequest sourcePreviewRequest = readPreviewRequest(source.getPreviewRequestJson());
+        validateTargetDrift(
+                sourcePreviewRequest.getUserId(),
+                sourcePreviewRequest.getDataScope(),
+                sourcePreviewRequest.getRoleIds(),
+                sourcePreviewRequest.getOrgUnitIds()
+        );
+
+        UserScopeReleaseCreateRequest rollbackRequest = new UserScopeReleaseCreateRequest();
+        rollbackRequest.setTenantId(source.getTenantId());
+        rollbackRequest.setReleaseTitle(resolveRollbackTitle(request == null ? null : request.getReleaseTitle(), source));
+        rollbackRequest.setChangeRemark(resolveRollbackRemark(request == null ? null : request.getChangeRemark(), source));
+        rollbackRequest.setPreviewRequest(buildRollbackPreviewRequest(source.getTenantId(), sourcePreviewRequest));
+        return createRecord(rollbackRequest, sessionTenant, sysAdmin, session);
+    }
+
     private void validateBaselineDrift(Long userId,
                                        DataScopeRule baselineRule,
                                        List<Long> baselineRoleIds,
@@ -230,6 +274,41 @@ public class UserScopeReleaseService {
         if (!normalizeIds(userAdminService.resolveCurrentUserOrgUnitIds(userId)).equals(normalizeIds(baselineOrgUnitIds))) {
             throw new BizException(ErrorCode.CONFLICT, "当前用户组织归属已变化，请重新生成发布单并重新审核");
         }
+    }
+
+    private void validateTargetDrift(Long userId,
+                                     DataScopeRule targetRule,
+                                     List<Long> targetRoleIds,
+                                     List<Long> targetOrgUnitIds) {
+        if (userId == null) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "发布单缺少用户信息");
+        }
+        if (!java.util.Objects.equals(
+                normalizeRule(userAdminService.resolveCurrentUserDataScope(userId)),
+                normalizeRule(targetRule)
+        )) {
+            throw new BizException(ErrorCode.CONFLICT, "当前用户数据权限已偏离已应用发布单状态，请先确认最新状态后再生成回滚单");
+        }
+        if (!normalizeIds(userAdminService.resolveCurrentUserRoleIds(userId)).equals(normalizeIds(targetRoleIds))) {
+            throw new BizException(ErrorCode.CONFLICT, "当前用户角色绑定已变化，请先确认最新状态后再生成回滚单");
+        }
+        if (!normalizeIds(userAdminService.resolveCurrentUserOrgUnitIds(userId)).equals(normalizeIds(targetOrgUnitIds))) {
+            throw new BizException(ErrorCode.CONFLICT, "当前用户组织归属已变化，请先确认最新状态后再生成回滚单");
+        }
+    }
+
+    private UserDataScopePreviewRequest buildRollbackPreviewRequest(String tenantId, UserDataScopePreviewRequest source) {
+        UserDataScopePreviewRequest request = new UserDataScopePreviewRequest();
+        request.setTenantId(tenantId);
+        request.setUserId(source.getUserId());
+        request.setDataScope(source.getBaselineDataScope());
+        request.setBaselineDataScope(source.getDataScope());
+        request.setOrgUnitIds(source.getBaselineOrgUnitIds() == null ? List.of() : new java.util.ArrayList<>(source.getBaselineOrgUnitIds()));
+        request.setBaselineOrgUnitIds(source.getOrgUnitIds() == null ? List.of() : new java.util.ArrayList<>(source.getOrgUnitIds()));
+        request.setRoleIds(source.getBaselineRoleIds() == null ? List.of() : new java.util.ArrayList<>(source.getBaselineRoleIds()));
+        request.setBaselineRoleIds(source.getRoleIds() == null ? List.of() : new java.util.ArrayList<>(source.getRoleIds()));
+        request.setSampleSql(source.getSampleSql());
+        return request;
     }
 
     private DataScopeRule normalizeRule(DataScopeRule rule) {
@@ -321,6 +400,22 @@ public class UserScopeReleaseService {
         }
         String displayName = StringUtils.hasText(nickname) ? nickname + " (" + username + ")" : username;
         return "用户数据权限发布单 - " + displayName + " - " + TITLE_TIME_FORMATTER.format(LocalDateTime.now());
+    }
+
+    private String resolveRollbackTitle(String releaseTitle, UserScopeReleaseRecord source) {
+        if (StringUtils.hasText(releaseTitle)) {
+            return releaseTitle.trim();
+        }
+        String baseTitle = source == null || !StringUtils.hasText(source.getReleaseTitle()) ? "用户数据权限发布单" : source.getReleaseTitle().trim();
+        return "回滚-" + baseTitle + "-" + TITLE_TIME_FORMATTER.format(LocalDateTime.now());
+    }
+
+    private String resolveRollbackRemark(String changeRemark, UserScopeReleaseRecord source) {
+        String prefix = "回滚来源发布单#" + (source == null ? "-" : source.getId());
+        if (!StringUtils.hasText(changeRemark)) {
+            return prefix;
+        }
+        return prefix + "；" + changeRemark.trim();
     }
 
     private String normalizeStatus(String status, boolean required) {

@@ -10,6 +10,7 @@ import com.lingsql.rbac.model.DataScopePreviewView;
 import com.lingsql.rbac.model.DataScopeRule;
 import com.lingsql.rbac.model.UserDataScopePreviewRequest;
 import com.lingsql.rbac.model.UserScopeReleaseCreateRequest;
+import com.lingsql.rbac.model.UserScopeReleaseRollbackRequest;
 import com.lingsql.rbac.model.UserScopeReleaseReviewRequest;
 import com.lingsql.rbac.model.UserScopeReleaseView;
 import com.lingsql.rbac.model.UserUpdateRequest;
@@ -237,5 +238,87 @@ class UserScopeReleaseServiceTest {
                 () -> service.applyRecord(4L, "tenant-a", false, session));
 
         assertEquals(ErrorCode.CONFLICT, ex.getErrorCode());
+    }
+
+    @Test
+    void createRollbackRecordShouldCreateDraftRelease() throws Exception {
+        UserScopeReleaseRecordRepository repository = Mockito.mock(UserScopeReleaseRecordRepository.class);
+        RbacUserRepository userRepository = Mockito.mock(RbacUserRepository.class);
+        UserAdminService userAdminService = Mockito.mock(UserAdminService.class);
+        DataScopePreviewService previewService = Mockito.mock(DataScopePreviewService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        UserScopeReleaseService service = new UserScopeReleaseService(
+                repository,
+                userRepository,
+                userAdminService,
+                previewService,
+                objectMapper
+        );
+
+        UserDataScopePreviewRequest sourcePreviewRequest = new UserDataScopePreviewRequest();
+        sourcePreviewRequest.setTenantId("tenant-a");
+        sourcePreviewRequest.setUserId(8L);
+        DataScopeRule targetRule = new DataScopeRule();
+        targetRule.setScopeType("RELATION");
+        sourcePreviewRequest.setDataScope(targetRule);
+        DataScopeRule baselineRule = new DataScopeRule();
+        baselineRule.setScopeType("INHERIT");
+        sourcePreviewRequest.setBaselineDataScope(baselineRule);
+        sourcePreviewRequest.setRoleIds(List.of(11L, 12L));
+        sourcePreviewRequest.setBaselineRoleIds(List.of(11L));
+        sourcePreviewRequest.setOrgUnitIds(List.of(21L, 22L));
+        sourcePreviewRequest.setBaselineOrgUnitIds(List.of(21L));
+
+        UserScopeReleaseRecord source = new UserScopeReleaseRecord();
+        source.setId(5L);
+        source.setTenantId("tenant-a");
+        source.setReleaseStatus("APPLIED");
+        source.setRequestedByUserId(500L);
+        source.setReleaseTitle("用户数据权限发布单");
+        source.setPreviewRequestJson(objectMapper.writeValueAsString(sourcePreviewRequest));
+        when(repository.findById(5L)).thenReturn(Optional.of(source));
+        when(userAdminService.resolveCurrentUserDataScope(8L)).thenReturn(targetRule);
+        when(userAdminService.resolveCurrentUserRoleIds(8L)).thenReturn(List.of(11L, 12L));
+        when(userAdminService.resolveCurrentUserOrgUnitIds(8L)).thenReturn(List.of(21L, 22L));
+
+        DataScopePreviewDiffView diff = new DataScopePreviewDiffView();
+        diff.setBaselineSummary("当前配置：关系目标组织范围，命中 2 个组织");
+        diff.setTargetSummary("继承角色：本租户数据");
+        diff.setAddedOrgCount(0);
+        diff.setRemovedOrgCount(2);
+        DataScopePreviewView preview = new DataScopePreviewView();
+        preview.setDiff(diff);
+        preview.setImpactSummary("当前用户变更会影响 1 个用户自身的数据可见范围，并涉及 1 个绑定角色的继承关系。");
+        preview.setAffectedRoleCount(1);
+        preview.setAffectedUserCount(1);
+        when(previewService.previewUserScope(any(UserDataScopePreviewRequest.class), eq("tenant-a"), eq(false))).thenReturn(preview);
+
+        RbacUser user = new RbacUser();
+        user.setId(8L);
+        user.setTenantId("tenant-a");
+        user.setUsername("alice");
+        user.setNickname("爱丽丝");
+        when(userRepository.findById(8L)).thenReturn(Optional.of(user));
+
+        AtomicLong idGenerator = new AtomicLong(10L);
+        when(repository.save(any(UserScopeReleaseRecord.class))).thenAnswer(invocation -> {
+            UserScopeReleaseRecord entity = invocation.getArgument(0);
+            if (entity.getId() == null) {
+                entity.setId(idGenerator.getAndIncrement());
+            }
+            return entity;
+        });
+
+        UserScopeReleaseRollbackRequest request = new UserScopeReleaseRollbackRequest();
+        request.setChangeRemark("回滚到继承角色");
+        RbacUserSession session = new RbacUserSession();
+        session.setUserId(501L);
+        session.setTenantId("tenant-a");
+        session.setUsername("reviewer");
+
+        UserScopeReleaseView view = service.createRollbackRecord(5L, request, "tenant-a", false, session);
+
+        assertEquals("DRAFT", view.getReleaseStatus());
+        assertEquals("alice", view.getUsername());
     }
 }

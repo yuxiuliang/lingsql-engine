@@ -6,6 +6,7 @@ import com.lingsql.rbac.model.DataScopePreviewView;
 import com.lingsql.rbac.model.RoleCreateRequest;
 import com.lingsql.rbac.model.RoleDataScopePreviewRequest;
 import com.lingsql.rbac.model.RoleScopeReleaseCreateRequest;
+import com.lingsql.rbac.model.RoleScopeReleaseRollbackRequest;
 import com.lingsql.rbac.model.RoleScopeReleaseReviewRequest;
 import com.lingsql.rbac.model.RoleScopeReleaseView;
 import com.lingsql.rbac.model.RoleUpdateRequest;
@@ -218,6 +219,32 @@ public class RoleAdminController {
                 "id=" + id,
                 http,
                 () -> roleScopeReleaseService.applyRecord(id, session.getTenantId(), sysAdmin, session)
+        );
+    }
+
+    /**
+     * 基于已应用发布单生成回滚单。
+     *
+     * @param id      源发布单ID
+     * @param request 回滚请求
+     * @param http    请求
+     * @return 新发布单
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    @PostMapping("/scope-releases/{id}/rollback")
+    @PreAuthorize("hasAuthority('ADMIN:ROLE:WRITE')")
+    public ApiResponse<RoleScopeReleaseView> createRollbackScopeRelease(@PathVariable Long id,
+                                                                        @RequestBody(required = false) RoleScopeReleaseRollbackRequest request,
+                                                                        HttpServletRequest http) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return auditOperationExecutor.execute(
+                "ROLE_SCOPE_RELEASE_ROLLBACK_CREATE",
+                "ROLE_SCOPE_RELEASE",
+                request,
+                http,
+                () -> roleScopeReleaseService.createRollbackRecord(id, request, session.getTenantId(), sysAdmin, session)
         );
     }
 

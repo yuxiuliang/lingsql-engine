@@ -9,6 +9,7 @@ import com.lingsql.rbac.model.DataScopePreviewView;
 import com.lingsql.rbac.model.DataScopeRule;
 import com.lingsql.rbac.model.RoleDataScopePreviewRequest;
 import com.lingsql.rbac.model.RoleScopeReleaseCreateRequest;
+import com.lingsql.rbac.model.RoleScopeReleaseRollbackRequest;
 import com.lingsql.rbac.model.RoleScopeReleaseReviewRequest;
 import com.lingsql.rbac.model.RoleScopeReleaseView;
 import com.lingsql.rbac.model.RoleUpdateRequest;
@@ -206,6 +207,44 @@ public class RoleScopeReleaseService {
         return toView(roleScopeReleaseRecordRepository.save(entity));
     }
 
+    /**
+     * 基于已应用发布单生成回滚单。
+     *
+     * @param id            源发布单ID
+     * @param request       回滚请求
+     * @param sessionTenant 会话租户
+     * @param sysAdmin      是否系统管理员
+     * @param session       当前会话
+     * @return 新发布单
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    @Transactional
+    public RoleScopeReleaseView createRollbackRecord(Long id,
+                                                     RoleScopeReleaseRollbackRequest request,
+                                                     String sessionTenant,
+                                                     boolean sysAdmin,
+                                                     RbacUserSession session) {
+        if (id == null) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "源发布单ID不能为空");
+        }
+        RoleScopeReleaseRecord source = roleScopeReleaseRecordRepository.findById(id)
+                .orElseThrow(() -> new BizException(ErrorCode.INVALID_PARAM, "角色数据权限发布单不存在"));
+        validateTenantAccess(source.getTenantId(), sessionTenant, sysAdmin);
+        if (!STATUS_APPLIED.equals(source.getReleaseStatus())) {
+            throw new BizException(ErrorCode.CONFLICT, "仅已应用的发布单允许生成回滚单");
+        }
+        RoleDataScopePreviewRequest sourcePreviewRequest = readPreviewRequest(source.getPreviewRequestJson());
+        validateTargetDrift(sourcePreviewRequest.getRoleId(), sourcePreviewRequest.getDataScope());
+
+        RoleScopeReleaseCreateRequest rollbackRequest = new RoleScopeReleaseCreateRequest();
+        rollbackRequest.setTenantId(source.getTenantId());
+        rollbackRequest.setReleaseTitle(resolveRollbackTitle(request == null ? null : request.getReleaseTitle(), source));
+        rollbackRequest.setChangeRemark(resolveRollbackRemark(request == null ? null : request.getChangeRemark(), source));
+        rollbackRequest.setPreviewRequest(buildRollbackPreviewRequest(source.getTenantId(), sourcePreviewRequest));
+        return createRecord(rollbackRequest, sessionTenant, sysAdmin, session);
+    }
+
     private void validateBaselineDrift(Long roleId, DataScopeRule baselineRule) {
         if (roleId == null) {
             throw new BizException(ErrorCode.CONFIG_INVALID, "发布单缺少角色信息");
@@ -214,6 +253,27 @@ public class RoleScopeReleaseService {
         if (!java.util.Objects.equals(normalizeRule(currentRule), normalizeRule(baselineRule))) {
             throw new BizException(ErrorCode.CONFLICT, "当前角色数据权限基线已变化，请重新生成发布单并重新审核");
         }
+    }
+
+    private void validateTargetDrift(Long roleId, DataScopeRule targetRule) {
+        if (roleId == null) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "发布单缺少角色信息");
+        }
+        DataScopeRule currentRule = roleAdminService.resolveCurrentRoleDataScope(roleId);
+        if (!java.util.Objects.equals(normalizeRule(currentRule), normalizeRule(targetRule))) {
+            throw new BizException(ErrorCode.CONFLICT, "当前角色数据权限已偏离已应用发布单状态，请先确认最新状态后再生成回滚单");
+        }
+    }
+
+    private RoleDataScopePreviewRequest buildRollbackPreviewRequest(String tenantId, RoleDataScopePreviewRequest source) {
+        RoleDataScopePreviewRequest request = new RoleDataScopePreviewRequest();
+        request.setTenantId(tenantId);
+        request.setRoleId(source.getRoleId());
+        request.setDataScope(source.getBaselineDataScope());
+        request.setBaselineDataScope(source.getDataScope());
+        request.setOrgUnitIds(source.getOrgUnitIds() == null ? List.of() : new java.util.ArrayList<>(source.getOrgUnitIds()));
+        request.setSampleSql(source.getSampleSql());
+        return request;
     }
 
     private DataScopeRule normalizeRule(DataScopeRule rule) {
@@ -296,6 +356,22 @@ public class RoleScopeReleaseService {
             return releaseTitle.trim();
         }
         return "角色数据权限发布单 - " + roleName + " - " + TITLE_TIME_FORMATTER.format(LocalDateTime.now());
+    }
+
+    private String resolveRollbackTitle(String releaseTitle, RoleScopeReleaseRecord source) {
+        if (StringUtils.hasText(releaseTitle)) {
+            return releaseTitle.trim();
+        }
+        String baseTitle = source == null || !StringUtils.hasText(source.getReleaseTitle()) ? "角色数据权限发布单" : source.getReleaseTitle().trim();
+        return "回滚-" + baseTitle + "-" + TITLE_TIME_FORMATTER.format(LocalDateTime.now());
+    }
+
+    private String resolveRollbackRemark(String changeRemark, RoleScopeReleaseRecord source) {
+        String prefix = "回滚来源发布单#" + (source == null ? "-" : source.getId());
+        if (!StringUtils.hasText(changeRemark)) {
+            return prefix;
+        }
+        return prefix + "；" + changeRemark.trim();
     }
 
     private String normalizeStatus(String status, boolean required) {

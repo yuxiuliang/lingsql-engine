@@ -12,6 +12,7 @@ import {
 import {
   applyUserScopeReleaseRecord,
   createUserScopeReleaseRecord,
+  createRollbackUserScopeReleaseRecord,
   createUser,
   DataScopePreviewView,
   DataScopeRule,
@@ -22,6 +23,7 @@ import {
   resetUserPassword,
   RoleView,
   UserScopeReleaseCreateRequest,
+  UserScopeReleaseRollbackRequest,
   UserScopeReleaseReviewRequest,
   UserScopeReleaseView,
   reviewUserScopeReleaseRecord,
@@ -737,6 +739,26 @@ const handleApplyScopeRelease = async (record: UserScopeReleaseView) => {
   }
 };
 
+const handleCreateRollbackScopeRelease = async (record: UserScopeReleaseView) => {
+  if (!record?.id) {
+    return;
+  }
+  const changeRemark = window.prompt('可选：请输入本次用户数据权限回滚说明', '') || '';
+  const payload: UserScopeReleaseRollbackRequest = {
+    changeRemark: changeRemark.trim() || undefined
+  };
+  releaseSubmitting.value = true;
+  try {
+    await createRollbackUserScopeReleaseRecord(record.id, payload);
+    ElMessage.success('用户数据权限回滚单已生成');
+    await loadReleaseRecords();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '生成用户数据权限回滚单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
 const resolveReleaseStatusLabel = (status?: string) => {
   return releaseStatusLabelMap[status || 'DRAFT'] || status || '待审核';
 };
@@ -924,6 +946,15 @@ watch(
               @click="handleApplyScopeRelease(row)"
             >
               应用
+            </el-button>
+            <el-button
+              v-if="row.releaseStatus === 'APPLIED'"
+              link
+              type="warning"
+              :disabled="releaseSubmitting"
+              @click="handleCreateRollbackScopeRelease(row)"
+            >
+              生成回滚单
             </el-button>
           </template>
         </el-table-column>
