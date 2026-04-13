@@ -155,4 +155,14 @@ public class TenantCreateRequest {
      */
     private String logicColumn;
 
+    /**
+     * 组织模板编码。
+     *
+     * <p>用于在创建租户后自动初始化一套组织类型、节点树和关系语义。</p>
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private String orgTemplateCode;
+
 }

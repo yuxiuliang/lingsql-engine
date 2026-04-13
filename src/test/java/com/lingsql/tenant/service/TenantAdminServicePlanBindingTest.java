@@ -5,6 +5,7 @@ import com.lingsql.billing.entity.BillingPlan;
 import com.lingsql.billing.repository.BillingPlanRepository;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.executor.SqlTaskTracker;
+import com.lingsql.organization.service.OrganizationAdminService;
 import com.lingsql.rbac.repository.RbacPermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleDataScopeRepository;
 import com.lingsql.rbac.repository.RbacRolePermissionRepository;
@@ -90,7 +91,8 @@ class TenantAdminServicePlanBindingTest {
                 Mockito.mock(SqlTaskTracker.class),
                 billingBalanceService,
                 billingPlanRepository,
-                lifecycleService
+                lifecycleService,
+                Mockito.mock(OrganizationAdminService.class)
         );
     }
 }

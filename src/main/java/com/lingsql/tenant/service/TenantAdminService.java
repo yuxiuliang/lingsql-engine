@@ -8,6 +8,8 @@ import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.executor.SqlTaskTracker;
 import com.lingsql.billing.BillingBalanceService;
+import com.lingsql.organization.model.OrgTemplateApplyRequest;
+import com.lingsql.organization.service.OrganizationAdminService;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
@@ -96,6 +98,7 @@ public class TenantAdminService {
     private final BillingBalanceService billingBalanceService;
     private final BillingPlanRepository billingPlanRepository;
     private final TenantLifecycleService tenantLifecycleService;
+    private final OrganizationAdminService organizationAdminService;
 
     /**
      * 查询租户列表。
@@ -428,6 +431,7 @@ public class TenantAdminService {
         initTenantPermissionPool(tenant.getTenantId(), basePermissions);
         initRolePermissions(role.getId(), basePermissions);
         initTenantDbConfig(tenant.getTenantId(), request);
+        initTenantOrganizationTemplate(tenant.getTenantId(), request);
     }
 
     /**
@@ -563,6 +567,27 @@ public class TenantAdminService {
         config.setLogicColumn(StringUtils.hasText(request.getLogicColumn()) ? request.getLogicColumn() : "tenant_id");
         config.setStatus(ACTIVE_STATUS);
         tenantDbConfigRepository.save(config);
+    }
+
+    /**
+     * 初始化租户组织模板。
+     *
+     * <p>将“创建租户”和“初始化组织树”合并到同一条开户链路里，避免管理员
+     * 先建租户、再切换到组织页做第二次初始化。</p>
+     *
+     * @param tenantId 租户ID
+     * @param request  创建请求
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private void initTenantOrganizationTemplate(String tenantId, TenantCreateRequest request) {
+        if (request == null || !StringUtils.hasText(request.getOrgTemplateCode())) {
+            return;
+        }
+        OrgTemplateApplyRequest templateRequest = new OrgTemplateApplyRequest();
+        templateRequest.setTenantId(tenantId);
+        templateRequest.setTemplateCode(request.getOrgTemplateCode().trim());
+        organizationAdminService.applyTemplate(templateRequest, tenantId, false);
     }
 
     /**

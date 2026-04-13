@@ -19,6 +19,7 @@ import {
   updateTenant
 } from '@/api/tenant';
 import {BillingPlanView, fetchPlans} from '@/api/plan';
+import {fetchOrgTemplates, OrgTemplateView} from '@/api/organization';
 import {useAuthStore} from '@/store/auth';
 import {
   buildMysqlJdbcUrl,
@@ -35,6 +36,7 @@ const lifecycleWorkbench = ref<TenantLifecycleWorkbenchView | null>(null);
 const loading = ref(false);
 const workbenchLoading = ref(false);
 const planList = ref<BillingPlanView[]>([]);
+const orgTemplateList = ref<OrgTemplateView[]>([]);
 const dialogVisible = ref(false);
 const lifecycleDialogVisible = ref(false);
 const lifecycleTargetTenant = ref<TenantView | null>(null);
@@ -77,6 +79,7 @@ interface TenantForm {
   password: string;
   driverClass: string;
   logicColumn: string;
+  orgTemplateCode: string;
 }
 
 const form = reactive<TenantForm>({
@@ -94,11 +97,15 @@ const form = reactive<TenantForm>({
   username: '',
   password: '',
   driverClass: DEFAULT_MYSQL_DRIVER_CLASS,
-  logicColumn: 'tenant_id'
+  logicColumn: 'tenant_id',
+  orgTemplateCode: ''
 });
 const jdbcForm = reactive(createEmptyMysqlConnectionForm());
 const jdbcManualMode = ref(false);
 const jdbcPreview = computed(() => buildMysqlJdbcUrl(jdbcForm));
+const selectedOrgTemplate = computed(() => {
+  return orgTemplateList.value.find((item) => item.templateCode === form.orgTemplateCode) || null;
+});
 
 /**
  * 生命周期续期表单定义。
@@ -152,6 +159,7 @@ const resetForm = () => {
   form.password = '';
   form.driverClass = DEFAULT_MYSQL_DRIVER_CLASS;
   form.logicColumn = 'tenant_id';
+  form.orgTemplateCode = '';
   syncJdbcForm(form.jdbcUrl);
 };
 
@@ -295,6 +303,23 @@ const loadPlans = async () => {
 };
 
 /**
+ * 加载组织模板列表。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+const loadOrgTemplates = async () => {
+  try {
+    orgTemplateList.value = await fetchOrgTemplates();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '加载组织模板失败';
+    if (!message.includes('无权限')) {
+      ElMessage.error(message);
+    }
+  }
+};
+
+/**
  * 刷新租户数据与生命周期看板。
  *
  * @author 余炘洋
@@ -369,6 +394,7 @@ const buildCreatePayload = (jdbcUrl?: string): TenantCreateRequest => {
     payload.driverClass = form.driverClass.trim() || DEFAULT_MYSQL_DRIVER_CLASS;
     payload.logicColumn = form.logicColumn.trim() || undefined;
   }
+  payload.orgTemplateCode = form.orgTemplateCode || undefined;
   return payload;
 };
 
@@ -787,6 +813,7 @@ const isMessageBoxCancel = (error: unknown) => {
 };
 
 loadPlans();
+loadOrgTemplates();
 refreshTenantData();
 </script>
 
@@ -1000,6 +1027,30 @@ refreshTenantData();
         </el-form-item>
         <template v-if="!editingId">
           <el-divider content-position="left">初始化配置</el-divider>
+          <el-form-item label="组织模板">
+            <el-select v-model="form.orgTemplateCode" clearable filterable style="width: 100%" placeholder="可选，创建租户后自动初始化组织树">
+              <el-option
+                v-for="template in orgTemplateList"
+                :key="template.templateCode"
+                :label="`${template.templateName}（${template.industry || '通用'}）`"
+                :value="template.templateCode"
+              />
+            </el-select>
+            <div class="form-tip">建议在开户时直接选择模板，减少后续再进入“组织架构”页二次初始化。</div>
+          </el-form-item>
+          <el-alert
+            v-if="selectedOrgTemplate"
+            type="info"
+            :closable="false"
+            class="template-alert"
+          >
+            <template #title>
+              {{ selectedOrgTemplate.templateName }}：{{ selectedOrgTemplate.description || '用于初始化组织类型、节点树和关系语义。' }}
+            </template>
+            <div class="template-alert-meta">
+              组织类型 {{ selectedOrgTemplate.typeCount || 0 }} 个，组织节点 {{ selectedOrgTemplate.unitCount || 0 }} 个，组织关系 {{ selectedOrgTemplate.relationCount || 0 }} 条
+            </div>
+          </el-alert>
           <el-form-item label="初始化数据源">
             <el-switch v-model="initConfig"/>
           </el-form-item>
@@ -1200,6 +1251,16 @@ refreshTenantData();
   font-size: 12px;
   color: #64748b;
   margin-top: 6px;
+}
+
+.template-alert {
+  margin-bottom: 16px;
+}
+
+.template-alert-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #475569;
 }
 
 .risk-score {

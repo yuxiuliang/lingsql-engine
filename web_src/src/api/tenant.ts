@@ -113,6 +113,7 @@ export interface TenantCreateRequest {
   driverClass?: string;
   isolationMode?: string;
   logicColumn?: string;
+  orgTemplateCode?: string;
 }
 
 /**
