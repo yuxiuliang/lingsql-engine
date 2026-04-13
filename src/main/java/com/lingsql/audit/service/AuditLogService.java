@@ -364,6 +364,7 @@ public class AuditLogService {
                 || "TENANT_MENU".equals(normalized)
                 || "MENU_RELEASE".equals(normalized)
                 || "ROLE_SCOPE_RELEASE".equals(normalized)
+                || "USER_SCOPE_RELEASE".equals(normalized)
                 || "ORG_TYPE".equals(normalized)
                 || "ORG_UNIT".equals(normalized)
                 || "ORG_RELATION".equals(normalized);
@@ -415,6 +416,9 @@ public class AuditLogService {
             case "ROLE_SCOPE_RELEASE_CREATE" -> "创建角色数据权限发布单";
             case "ROLE_SCOPE_RELEASE_REVIEW" -> "审核角色数据权限发布单";
             case "ROLE_SCOPE_RELEASE_APPLY" -> "应用角色数据权限发布单";
+            case "USER_SCOPE_RELEASE_CREATE" -> "创建用户数据权限发布单";
+            case "USER_SCOPE_RELEASE_REVIEW" -> "审核用户数据权限发布单";
+            case "USER_SCOPE_RELEASE_APPLY" -> "应用用户数据权限发布单";
             default -> "执行操作(" + normalized + ")";
         };
     }

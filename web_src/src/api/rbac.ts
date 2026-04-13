@@ -586,6 +586,66 @@ export interface UserDataScopePreviewRequest {
 }
 
 /**
+ * 用户数据权限发布单视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface UserScopeReleaseView {
+  id?: number;
+  tenantId?: string;
+  userId?: number;
+  username?: string;
+  nickname?: string;
+  releaseTitle?: string;
+  baselineSummary?: string;
+  targetSummary?: string;
+  impactSummary?: string;
+  matchedOrgCount?: number;
+  affectedRoleCount?: number;
+  affectedUserCount?: number;
+  addedOrgCount?: number;
+  removedOrgCount?: number;
+  changeRemark?: string;
+  releaseStatus?: string;
+  requestedByUserId?: number;
+  requestedByName?: string;
+  reviewedByUserId?: number;
+  reviewedByName?: string;
+  reviewComment?: string;
+  reviewedTime?: string;
+  appliedByUserId?: number;
+  appliedByName?: string;
+  appliedTime?: string;
+  createTime?: string;
+  updateTime?: string;
+}
+
+/**
+ * 用户数据权限发布单创建请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface UserScopeReleaseCreateRequest {
+  tenantId?: string;
+  releaseTitle?: string;
+  changeRemark?: string;
+  previewRequest: UserDataScopePreviewRequest;
+}
+
+/**
+ * 用户数据权限发布单审核请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface UserScopeReleaseReviewRequest {
+  decision: string;
+  reviewComment?: string;
+}
+
+/**
  * 查询用户列表。
  *
  * @param params 查询参数
@@ -650,6 +710,72 @@ export const previewUserDataScope = async (payload: UserDataScopePreviewRequest)
   return request<DataScopePreviewView>('/api/v1/admin/users/preview-data-scope', {
     method: 'POST',
     body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 查询用户数据权限发布单列表。
+ *
+ * @param tenantId 租户ID
+ * @param status 状态
+ * @return 发布单列表
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const fetchUserScopeReleaseRecords = async (tenantId?: string, status?: string): Promise<UserScopeReleaseView[]> => {
+  const query = new URLSearchParams();
+  if (tenantId) {
+    query.set('tenantId', tenantId);
+  }
+  if (status) {
+    query.set('status', status);
+  }
+  const queryString = query.toString();
+  return request<UserScopeReleaseView[]>(`/api/v1/admin/users/scope-releases${queryString ? `?${queryString}` : ''}`);
+};
+
+/**
+ * 创建用户数据权限发布单。
+ *
+ * @param payload 请求体
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const createUserScopeReleaseRecord = async (payload: UserScopeReleaseCreateRequest): Promise<UserScopeReleaseView> => {
+  return request<UserScopeReleaseView>('/api/v1/admin/users/scope-releases', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 审核用户数据权限发布单。
+ *
+ * @param id 发布单ID
+ * @param payload 请求体
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const reviewUserScopeReleaseRecord = async (id: number, payload: UserScopeReleaseReviewRequest): Promise<UserScopeReleaseView> => {
+  return request<UserScopeReleaseView>(`/api/v1/admin/users/scope-releases/${id}/review`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 应用用户数据权限发布单。
+ *
+ * @param id 发布单ID
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const applyUserScopeReleaseRecord = async (id: number): Promise<UserScopeReleaseView> => {
+  return request<UserScopeReleaseView>(`/api/v1/admin/users/scope-releases/${id}/apply`, {
+    method: 'PUT'
   });
 };
 

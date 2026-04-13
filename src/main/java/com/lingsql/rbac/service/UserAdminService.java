@@ -560,6 +560,47 @@ public class UserAdminService {
     }
 
     /**
+     * 查询当前用户数据权限覆盖。
+     *
+     * @param userId 用户ID
+     * @return 数据权限规则
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    DataScopeRule resolveCurrentUserDataScope(Long userId) {
+        return resolveUserDataScope(userId);
+    }
+
+    /**
+     * 查询当前用户角色ID列表。
+     *
+     * @param userId 用户ID
+     * @return 角色ID列表
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    List<Long> resolveCurrentUserRoleIds(Long userId) {
+        return userId == null ? List.of() : userRoleRepository.findRoleIdsByUserId(userId);
+    }
+
+    /**
+     * 查询当前用户组织归属ID列表。
+     *
+     * @param userId 用户ID
+     * @return 组织归属ID列表
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    List<Long> resolveCurrentUserOrgUnitIds(Long userId) {
+        if (userId == null) {
+            return List.of();
+        }
+        return userOrgMembershipRepository.findByUserIdOrderByIsPrimaryDescIdAsc(userId).stream()
+                .map(UserOrgMembership::getOrgUnitId)
+                .toList();
+    }
+
+    /**
      * 解析当前真正生效的数据权限。
      *
      * @param userScope 用户覆盖规则
