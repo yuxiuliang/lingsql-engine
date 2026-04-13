@@ -165,4 +165,14 @@ public class TenantCreateRequest {
      */
     private String orgTemplateCode;
 
+    /**
+     * 组织模板根节点名称。
+     *
+     * <p>用于开户时把模板默认根节点名称替换成客户自己的组织主体名称。</p>
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private String orgRootUnitName;
+
 }

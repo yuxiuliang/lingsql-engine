@@ -92,6 +92,7 @@ class TenantAdminServiceOrgBootstrapTest {
         request.setTenantId("AUTO001");
         request.setTenantName("演示租户");
         request.setOrgTemplateCode("CHAIN_STORE_STANDARD");
+        request.setOrgRootUnitName("华东品牌总部");
 
         TenantView view = service.createTenant(request);
 
@@ -101,6 +102,7 @@ class TenantAdminServiceOrgBootstrapTest {
         verify(organizationAdminService).applyTemplate(templateCaptor.capture(), Mockito.eq("AUTO001"), Mockito.eq(false));
         assertEquals("AUTO001", templateCaptor.getValue().getTenantId());
         assertEquals("CHAIN_STORE_STANDARD", templateCaptor.getValue().getTemplateCode());
+        assertEquals("华东品牌总部", templateCaptor.getValue().getRootUnitName());
     }
 
     private RbacPermission buildPermission(Long id, String permCode) {

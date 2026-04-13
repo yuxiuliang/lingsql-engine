@@ -80,6 +80,7 @@ interface TenantForm {
   driverClass: string;
   logicColumn: string;
   orgTemplateCode: string;
+  orgRootUnitName: string;
 }
 
 const form = reactive<TenantForm>({
@@ -98,7 +99,8 @@ const form = reactive<TenantForm>({
   password: '',
   driverClass: DEFAULT_MYSQL_DRIVER_CLASS,
   logicColumn: 'tenant_id',
-  orgTemplateCode: ''
+  orgTemplateCode: '',
+  orgRootUnitName: ''
 });
 const jdbcForm = reactive(createEmptyMysqlConnectionForm());
 const jdbcManualMode = ref(false);
@@ -160,6 +162,7 @@ const resetForm = () => {
   form.driverClass = DEFAULT_MYSQL_DRIVER_CLASS;
   form.logicColumn = 'tenant_id';
   form.orgTemplateCode = '';
+  form.orgRootUnitName = '';
   syncJdbcForm(form.jdbcUrl);
 };
 
@@ -395,6 +398,9 @@ const buildCreatePayload = (jdbcUrl?: string): TenantCreateRequest => {
     payload.logicColumn = form.logicColumn.trim() || undefined;
   }
   payload.orgTemplateCode = form.orgTemplateCode || undefined;
+  payload.orgRootUnitName = form.orgTemplateCode
+    ? (form.orgRootUnitName.trim() || form.tenantName.trim() || undefined)
+    : undefined;
   return payload;
 };
 
@@ -1051,6 +1057,13 @@ refreshTenantData();
               组织类型 {{ selectedOrgTemplate.typeCount || 0 }} 个，组织节点 {{ selectedOrgTemplate.unitCount || 0 }} 个，组织关系 {{ selectedOrgTemplate.relationCount || 0 }} 条
             </div>
           </el-alert>
+          <el-form-item v-if="selectedOrgTemplate" label="根组织名称">
+            <el-input
+              v-model="form.orgRootUnitName"
+              :placeholder="`留空则默认使用租户名称；模板默认值为 ${selectedOrgTemplate.defaultRootUnitName || '根组织'}`"
+            />
+            <div class="form-tip">用于覆盖模板中的默认主体名称，避免直接落出“集团总部 / 第一学校 / 政务中心”等固定名称。</div>
+          </el-form-item>
           <el-form-item label="初始化数据源">
             <el-switch v-model="initConfig"/>
           </el-form-item>

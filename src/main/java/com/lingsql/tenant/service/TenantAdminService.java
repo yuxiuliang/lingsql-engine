@@ -587,6 +587,7 @@ public class TenantAdminService {
         OrgTemplateApplyRequest templateRequest = new OrgTemplateApplyRequest();
         templateRequest.setTenantId(tenantId);
         templateRequest.setTemplateCode(request.getOrgTemplateCode().trim());
+        templateRequest.setRootUnitName(StringUtils.hasText(request.getOrgRootUnitName()) ? request.getOrgRootUnitName().trim() : null);
         organizationAdminService.applyTemplate(templateRequest, tenantId, false);
     }
 

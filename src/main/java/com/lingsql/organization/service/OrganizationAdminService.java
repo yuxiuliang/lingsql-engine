@@ -551,6 +551,7 @@ public class OrganizationAdminService {
         }
 
         LocalDateTime now = LocalDateTime.now();
+        String rootUnitNameOverride = normalizeOptionalName(request.getRootUnitName());
         Map<String, OrgUnitType> typeMapping = new LinkedHashMap<>();
         for (TemplateType templateType : template.types()) {
             OrgUnitType entity = new OrgUnitType();
@@ -573,7 +574,7 @@ public class OrganizationAdminService {
             OrgUnit entity = new OrgUnit();
             entity.setTenantId(tenantId);
             entity.setUnitCode(templateUnit.unitCode());
-            entity.setUnitName(templateUnit.unitName());
+            entity.setUnitName(resolveTemplateUnitName(templateUnit, rootUnitNameOverride));
             entity.setTypeCode(templateUnit.typeCode());
             entity.setLeaderUserId(null);
             entity.setParentId(resolveTemplateParentId(templateUnit.parentCode(), unitMapping));
@@ -1134,6 +1135,7 @@ public class OrganizationAdminService {
         view.setTypeCount(template.types().size());
         view.setUnitCount(template.units().size());
         view.setRelationCount(template.relations().size());
+        view.setDefaultRootUnitName(resolveDefaultRootUnitName(template));
         return view;
     }
 
@@ -1725,6 +1727,18 @@ public class OrganizationAdminService {
     }
 
     /**
+     * 规范化可选名称。
+     *
+     * @param value 原始值
+     * @return 规范结果
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private String normalizeOptionalName(String value) {
+        return StringUtils.hasText(value) ? normalizeName(value, "根组织名称不能为空") : null;
+    }
+
+    /**
      * 解析模板父节点ID。
      *
      * @param parentCode 父节点编码
@@ -1742,6 +1756,57 @@ public class OrganizationAdminService {
             throw new BizException(ErrorCode.CONFIG_INVALID, "组织模板父节点不存在: " + parentCode);
         }
         return parent.getId();
+    }
+
+    /**
+     * 解析模板根节点默认名称。
+     *
+     * @param template 模板定义
+     * @return 默认根节点名称
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private String resolveDefaultRootUnitName(OrgTemplate template) {
+        if (template == null || template.units() == null) {
+            return null;
+        }
+        return template.units().stream()
+                .filter(this::isRootTemplateUnit)
+                .map(TemplateUnit::unitName)
+                .filter(StringUtils::hasText)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * 解析模板节点名称。
+     *
+     * @param templateUnit         模板节点
+     * @param rootUnitNameOverride 根节点名称覆盖
+     * @return 生效节点名称
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private String resolveTemplateUnitName(TemplateUnit templateUnit, String rootUnitNameOverride) {
+        if (templateUnit == null) {
+            return null;
+        }
+        if (StringUtils.hasText(rootUnitNameOverride) && isRootTemplateUnit(templateUnit)) {
+            return rootUnitNameOverride;
+        }
+        return templateUnit.unitName();
+    }
+
+    /**
+     * 判断是否模板根节点。
+     *
+     * @param templateUnit 模板节点
+     * @return 是否根节点
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private boolean isRootTemplateUnit(TemplateUnit templateUnit) {
+        return templateUnit != null && !StringUtils.hasText(templateUnit.parentCode());
     }
 
     /**

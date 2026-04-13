@@ -454,10 +454,12 @@ class OrganizationAdminServiceTest {
 
         OrgTemplateApplyRequest request = new OrgTemplateApplyRequest();
         request.setTemplateCode("GOVERNMENT_STANDARD");
+        request.setRootUnitName("湖南省政务服务和大数据局");
 
         String message = service.applyTemplate(request, "tenant-a", false);
 
         assertEquals(true, message.contains("政府标准模板"));
+        assertEquals("湖南省政务服务和大数据局", savedUnits.getFirst().getUnitName());
         Mockito.verify(typeRepository, Mockito.times(3)).save(Mockito.any(OrgUnitType.class));
         Mockito.verify(unitRepository, Mockito.times(4)).save(Mockito.any(OrgUnit.class));
         Mockito.verify(relationRepository, Mockito.times(2)).save(Mockito.any(OrgUnitRelation.class));

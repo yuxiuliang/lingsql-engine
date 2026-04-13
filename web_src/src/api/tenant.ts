@@ -114,6 +114,7 @@ export interface TenantCreateRequest {
   isolationMode?: string;
   logicColumn?: string;
   orgTemplateCode?: string;
+  orgRootUnitName?: string;
 }
 
 /**

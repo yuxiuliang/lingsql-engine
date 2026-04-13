@@ -178,6 +178,7 @@ export interface OrgTemplateView {
   typeCount?: number;
   unitCount?: number;
   relationCount?: number;
+  defaultRootUnitName?: string;
 }
 
 /**
@@ -189,6 +190,7 @@ export interface OrgTemplateView {
 export interface OrgTemplateApplyRequest {
   tenantId?: string;
   templateCode: string;
+  rootUnitName?: string;
 }
 
 /**

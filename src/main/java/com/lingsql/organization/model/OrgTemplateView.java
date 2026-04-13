@@ -66,4 +66,12 @@ public class OrgTemplateView {
      * @date 2026-04-11
      */
     private Integer relationCount;
+
+    /**
+     * 默认根组织名称。
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private String defaultRootUnitName;
 }

@@ -28,4 +28,14 @@ public class OrgTemplateApplyRequest {
      */
     @NotBlank(message = "模板编码不能为空")
     private String templateCode;
+
+    /**
+     * 根组织名称。
+     *
+     * <p>用于覆盖模板内默认的根节点名称，例如将“集团总部”替换为客户自己的主体名称。</p>
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private String rootUnitName;
 }

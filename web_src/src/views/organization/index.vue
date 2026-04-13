@@ -123,6 +123,7 @@ const executionTimelineList = ref<OrgRelationExecutionTimelineView[]>([]);
 const userOptions = ref<UserView[]>([]);
 const templateList = ref<OrgTemplateView[]>([]);
 const selectedTemplateCode = ref('');
+const templateRootUnitName = ref('');
 const routePreviewForm = reactive({
   sourceOrgUnitId: undefined as number | undefined,
   relationType: ''
@@ -1012,6 +1013,7 @@ const handleOpenTemplateDialog = async () => {
     return;
   }
   await loadTemplates();
+  templateRootUnitName.value = authStore.activeTenantName || authStore.tenantName || '';
   templateDialogVisible.value = true;
 };
 
@@ -1030,7 +1032,8 @@ const handleApplyTemplate = async () => {
   try {
     const message = await applyOrgTemplate({
       tenantId: activeTenantId.value || undefined,
-      templateCode: selectedTemplateCode.value
+      templateCode: selectedTemplateCode.value,
+      rootUnitName: templateRootUnitName.value.trim() || undefined
     });
     ElMessage.success(message || '组织模板初始化成功');
     templateDialogVisible.value = false;
@@ -1607,6 +1610,7 @@ watch(
     editingExecutionId.value = null;
     templateList.value = [];
     selectedTemplateCode.value = '';
+    templateRootUnitName.value = '';
     relationWorkbench.value = null;
     executionList.value = [];
     executionTimelineList.value = [];
@@ -2127,6 +2131,15 @@ watch(
         <div class="template-detail" v-if="selectedTemplate">
           <div class="template-detail-title">{{ selectedTemplate.templateName }}</div>
           <div class="template-detail-desc">{{ selectedTemplate.description || '暂无模板说明' }}</div>
+          <el-form label-width="110px" class="template-form">
+            <el-form-item label="根组织名称">
+              <el-input
+                v-model="templateRootUnitName"
+                :placeholder="`留空则使用模板默认值 ${selectedTemplate.defaultRootUnitName || '根组织'}`"
+              />
+              <div class="muted">用于覆盖模板中的默认主体名称，适合将“政务中心 / 第一学校 / 集团总部”替换成客户自己的根组织名称。</div>
+            </el-form-item>
+          </el-form>
           <div class="template-stat-grid">
             <div class="template-stat-item">
               <div class="template-stat-label">适用行业</div>
@@ -2891,6 +2904,10 @@ watch(
   margin-top: 10px;
   color: #475569;
   line-height: 1.7;
+}
+
+.template-form {
+  margin-top: 16px;
 }
 
 .template-stat-grid {
