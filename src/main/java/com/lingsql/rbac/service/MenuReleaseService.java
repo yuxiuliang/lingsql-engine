@@ -9,6 +9,7 @@ import com.lingsql.rbac.model.MenuImpactPreviewView;
 import com.lingsql.rbac.model.MenuReleaseCreateRequest;
 import com.lingsql.rbac.model.MenuReleaseReviewRequest;
 import com.lingsql.rbac.model.MenuReleaseView;
+import com.lingsql.rbac.model.MenuRuleSnapshotView;
 import com.lingsql.rbac.model.TenantMenuRuleUpdateRequest;
 import com.lingsql.rbac.repository.MenuReleaseRecordRepository;
 import com.lingsql.rbac.security.RbacUserSession;
@@ -189,6 +190,8 @@ public class MenuReleaseService {
         }
         validateSegregation(entity, session, "应用");
         MenuImpactPreviewRequest impactRequest = readImpactRequest(entity.getImpactRequestJson());
+        MenuImpactPreviewView impactSnapshot = readImpactSnapshot(entity.getImpactSnapshotJson());
+        validateBaselineDrift(entity, impactRequest, impactSnapshot);
         if (RELEASE_TYPE_GLOBAL.equals(entity.getReleaseType())) {
             menuAdminService.updateGlobalMenuRule(impactRequest.getMenuId(), impactRequest.getGlobalRule());
         } else if (RELEASE_TYPE_TENANT.equals(entity.getReleaseType())) {
@@ -215,6 +218,24 @@ public class MenuReleaseService {
         return toView(menuReleaseRecordRepository.save(entity));
     }
 
+    private void validateBaselineDrift(MenuReleaseRecord entity,
+                                       MenuImpactPreviewRequest impactRequest,
+                                       MenuImpactPreviewView impactSnapshot) {
+        if (entity == null || impactRequest == null || impactSnapshot == null || impactSnapshot.getBaselineRuleSnapshot() == null) {
+            return;
+        }
+        boolean tenantOverrideMode = RELEASE_TYPE_TENANT.equals(entity.getReleaseType());
+        MenuRuleSnapshotView currentSnapshot = menuAdminService.resolveCurrentRuleSnapshot(
+                entity.getTenantId(),
+                impactRequest.getMenuId(),
+                impactRequest.getMenuCode(),
+                tenantOverrideMode
+        );
+        if (!impactSnapshot.getBaselineRuleSnapshot().equals(currentSnapshot)) {
+            throw new BizException(ErrorCode.CONFLICT, "当前菜单基线已变化，请重新生成发布单并重新审核");
+        }
+    }
+
     private MenuImpactPreviewRequest readImpactRequest(String json) {
         if (!StringUtils.hasText(json)) {
             throw new BizException(ErrorCode.CONFIG_INVALID, "发布单缺少影响分析请求快照");
@@ -223,6 +244,17 @@ public class MenuReleaseService {
             return objectMapper.readValue(json, MenuImpactPreviewRequest.class);
         } catch (Exception ex) {
             throw new BizException(ErrorCode.CONFIG_INVALID, "发布单影响分析请求解析失败", ex);
+        }
+    }
+
+    private MenuImpactPreviewView readImpactSnapshot(String json) {
+        if (!StringUtils.hasText(json)) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "发布单缺少影响分析结果快照");
+        }
+        try {
+            return objectMapper.readValue(json, MenuImpactPreviewView.class);
+        } catch (Exception ex) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "发布单影响分析结果解析失败", ex);
         }
     }
 

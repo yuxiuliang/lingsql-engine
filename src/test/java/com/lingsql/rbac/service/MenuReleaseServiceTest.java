@@ -9,6 +9,7 @@ import com.lingsql.rbac.model.MenuImpactPreviewView;
 import com.lingsql.rbac.model.MenuReleaseCreateRequest;
 import com.lingsql.rbac.model.MenuReleaseReviewRequest;
 import com.lingsql.rbac.model.MenuReleaseView;
+import com.lingsql.rbac.model.MenuRuleSnapshotView;
 import com.lingsql.rbac.model.MenuRuleUpdateRequest;
 import com.lingsql.rbac.model.TenantMenuRuleUpdateRequest;
 import com.lingsql.rbac.repository.MenuReleaseRecordRepository;
@@ -49,7 +50,11 @@ class MenuReleaseServiceTest {
         preview.setMenuName("连锁菜单");
         preview.setTenantOverrideMode(false);
         preview.setBaselineRuleSummary("未配置额外规则");
+        preview.setBaselineRuleSnapshot(new MenuRuleSnapshotView());
         preview.setTargetRuleSummary("组织类型 CHAIN_STORE");
+        MenuRuleSnapshotView targetSnapshot = new MenuRuleSnapshotView();
+        targetSnapshot.setOrgTypeCodes(List.of("CHAIN_STORE"));
+        preview.setTargetRuleSnapshot(targetSnapshot);
         preview.setImpactSummary("基线菜单 10 项，目标菜单 11 项，新增 1 项，移除 0 项，当前样本上下文下目标菜单可见。");
         preview.setChangedDimensions(List.of("组织类型"));
         preview.setAddedMenuCount(1);
@@ -129,6 +134,8 @@ class MenuReleaseServiceTest {
         tenantRule.setTenantId("tenant-a");
         tenantRule.setVisible(0);
         impactRequest.setTenantRule(tenantRule);
+        MenuImpactPreviewView impactSnapshot = new MenuImpactPreviewView();
+        impactSnapshot.setBaselineRuleSnapshot(new MenuRuleSnapshotView());
 
         MenuReleaseRecord entity = new MenuReleaseRecord();
         entity.setId(3L);
@@ -136,8 +143,11 @@ class MenuReleaseServiceTest {
         entity.setReleaseType("TENANT_RULE");
         entity.setReleaseStatus("APPROVED");
         entity.setImpactRequestJson(objectMapper.writeValueAsString(impactRequest));
+        entity.setImpactSnapshotJson(objectMapper.writeValueAsString(impactSnapshot));
         when(repository.findById(3L)).thenReturn(Optional.of(entity));
         when(repository.save(any(MenuReleaseRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(menuAdminService.resolveCurrentRuleSnapshot("tenant-a", null, "MENU_CHAIN", true))
+                .thenReturn(new MenuRuleSnapshotView());
 
         RbacUserSession session = new RbacUserSession();
         session.setUserId(300L);
@@ -204,6 +214,8 @@ class MenuReleaseServiceTest {
         MenuImpactPreviewRequest impactRequest = new MenuImpactPreviewRequest();
         impactRequest.setTenantId("tenant-a");
         impactRequest.setMenuCode("MENU_CHAIN");
+        MenuImpactPreviewView impactSnapshot = new MenuImpactPreviewView();
+        impactSnapshot.setBaselineRuleSnapshot(new MenuRuleSnapshotView());
 
         MenuReleaseRecord entity = new MenuReleaseRecord();
         entity.setId(6L);
@@ -212,6 +224,7 @@ class MenuReleaseServiceTest {
         entity.setReleaseStatus("APPROVED");
         entity.setRequestedByUserId(600L);
         entity.setImpactRequestJson(objectMapper.writeValueAsString(impactRequest));
+        entity.setImpactSnapshotJson(objectMapper.writeValueAsString(impactSnapshot));
         when(repository.findById(6L)).thenReturn(Optional.of(entity));
 
         RbacUserSession session = new RbacUserSession();
@@ -222,5 +235,44 @@ class MenuReleaseServiceTest {
                 () -> service.applyRecord(6L, "tenant-a", false, session));
 
         assertEquals(ErrorCode.FORBIDDEN, ex.getErrorCode());
+    }
+
+    @Test
+    void applyRecordShouldRejectWhenBaselineSnapshotDrifts() throws Exception {
+        MenuReleaseRecordRepository repository = Mockito.mock(MenuReleaseRecordRepository.class);
+        MenuAdminService menuAdminService = Mockito.mock(MenuAdminService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        MenuReleaseService service = new MenuReleaseService(repository, menuAdminService, objectMapper);
+
+        MenuImpactPreviewRequest impactRequest = new MenuImpactPreviewRequest();
+        impactRequest.setTenantId("tenant-a");
+        impactRequest.setMenuCode("MENU_CHAIN");
+        MenuRuleSnapshotView baselineSnapshot = new MenuRuleSnapshotView();
+        baselineSnapshot.setVisible(1);
+        MenuImpactPreviewView impactSnapshot = new MenuImpactPreviewView();
+        impactSnapshot.setBaselineRuleSnapshot(baselineSnapshot);
+
+        MenuReleaseRecord entity = new MenuReleaseRecord();
+        entity.setId(7L);
+        entity.setTenantId("tenant-a");
+        entity.setReleaseType("TENANT_RULE");
+        entity.setReleaseStatus("APPROVED");
+        entity.setImpactRequestJson(objectMapper.writeValueAsString(impactRequest));
+        entity.setImpactSnapshotJson(objectMapper.writeValueAsString(impactSnapshot));
+        when(repository.findById(7L)).thenReturn(Optional.of(entity));
+
+        MenuRuleSnapshotView currentSnapshot = new MenuRuleSnapshotView();
+        currentSnapshot.setVisible(0);
+        when(menuAdminService.resolveCurrentRuleSnapshot("tenant-a", null, "MENU_CHAIN", true))
+                .thenReturn(currentSnapshot);
+
+        RbacUserSession session = new RbacUserSession();
+        session.setUserId(701L);
+        session.setTenantId("tenant-a");
+
+        BizException ex = assertThrows(BizException.class,
+                () -> service.applyRecord(7L, "tenant-a", false, session));
+
+        assertEquals(ErrorCode.CONFLICT, ex.getErrorCode());
     }
 }

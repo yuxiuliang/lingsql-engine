@@ -9,6 +9,7 @@ import com.lingsql.rbac.model.MenuImpactDiffItemView;
 import com.lingsql.rbac.model.MenuImpactPreviewRequest;
 import com.lingsql.rbac.model.MenuImpactPreviewView;
 import com.lingsql.rbac.model.MenuPreviewRequest;
+import com.lingsql.rbac.model.MenuRuleSnapshotView;
 import com.lingsql.rbac.model.MenuRuleUpdateRequest;
 import com.lingsql.rbac.model.MenuView;
 import com.lingsql.rbac.model.TenantMenuAdminView;
@@ -305,7 +306,9 @@ public class MenuAdminService {
                 globalMenu.getMenuCode(),
                 globalMenu.getMenuName(),
                 buildRuleSummary(globalMenu),
+                createRuleSnapshot(globalMenu),
                 buildRuleSummary(previewGlobalMenu),
+                createRuleSnapshot(previewGlobalMenu),
                 determineChangedDimensions(globalMenu, previewGlobalMenu),
                 baselineMenus,
                 menuService.listMenus(previewSession, targetEffectiveMenus)
@@ -350,7 +353,9 @@ public class MenuAdminService {
                 globalMenu.getMenuCode(),
                 globalMenu.getMenuName(),
                 buildRuleSummary(baselineEffectiveMenu),
+                createRuleSnapshot(baselineEffectiveMenu),
                 buildRuleSummary(targetEffectiveMenu),
+                createRuleSnapshot(targetEffectiveMenu),
                 determineChangedDimensions(baselineEffectiveMenu, targetEffectiveMenu),
                 baselineMenus,
                 menuService.listMenus(previewSession, targetEffectiveMenus)
@@ -362,7 +367,9 @@ public class MenuAdminService {
                                                          String menuCode,
                                                          String menuName,
                                                          String baselineRuleSummary,
+                                                         MenuRuleSnapshotView baselineRuleSnapshot,
                                                          String targetRuleSummary,
+                                                         MenuRuleSnapshotView targetRuleSnapshot,
                                                          List<String> changedDimensions,
                                                          List<MenuView> baselineMenus,
                                                          List<MenuView> targetMenus) {
@@ -389,7 +396,9 @@ public class MenuAdminService {
         view.setBaselineMatched(baselineMapping.containsKey(normalizeValue(menuCode)));
         view.setTargetMatched(targetMapping.containsKey(normalizeValue(menuCode)));
         view.setBaselineRuleSummary(baselineRuleSummary);
+        view.setBaselineRuleSnapshot(baselineRuleSnapshot);
         view.setTargetRuleSummary(targetRuleSummary);
+        view.setTargetRuleSnapshot(targetRuleSnapshot);
         view.setChangedDimensions(changedDimensions);
         view.setAddedMenus(addedMenus);
         view.setRemovedMenus(removedMenus);
@@ -534,6 +543,31 @@ public class MenuAdminService {
         return dimensions;
     }
 
+    MenuRuleSnapshotView resolveCurrentRuleSnapshot(String tenantId, Long menuId, String menuCode, boolean tenantOverrideMode) {
+        if (tenantOverrideMode) {
+            String normalizedMenuCode = normalizeValue(menuCode);
+            if (!StringUtils.hasText(tenantId) || !StringUtils.hasText(normalizedMenuCode)) {
+                throw new BizException(ErrorCode.INVALID_PARAM, "租户菜单规则快照参数不完整");
+            }
+            RbacMenu globalMenu = menuRepository.findByTenantIdIsNullAndMenuCode(normalizedMenuCode)
+                    .orElseThrow(() -> new BizException(ErrorCode.MENU_NOT_FOUND, "菜单不存在"));
+            RbacMenu effectiveMenu = menuService.mergeMenu(
+                    globalMenu,
+                    menuRepository.findByTenantIdAndMenuCode(tenantId, normalizedMenuCode).orElse(null)
+            );
+            return createRuleSnapshot(effectiveMenu);
+        }
+        if (menuId == null) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "全局菜单规则快照参数不完整");
+        }
+        RbacMenu globalMenu = menuRepository.findById(menuId)
+                .orElseThrow(() -> new BizException(ErrorCode.MENU_NOT_FOUND, "菜单不存在"));
+        if (StringUtils.hasText(globalMenu.getTenantId())) {
+            throw new BizException(ErrorCode.FORBIDDEN, "当前仅支持查询全局菜单规则快照");
+        }
+        return createRuleSnapshot(globalMenu);
+    }
+
     private RbacUserSession buildPreviewSession(MenuPreviewRequest request, String tenantId) {
         RbacUserSession session = new RbacUserSession();
         session.setTenantId(tenantId);
@@ -571,6 +605,20 @@ public class MenuAdminService {
         copied.setCreateTime(source.getCreateTime());
         copied.setUpdateTime(source.getUpdateTime());
         return copied;
+    }
+
+    private MenuRuleSnapshotView createRuleSnapshot(RbacMenu menu) {
+        MenuRuleSnapshotView snapshot = new MenuRuleSnapshotView();
+        if (menu == null) {
+            return snapshot;
+        }
+        snapshot.setVisible(menu.getVisible());
+        snapshot.setStatus(menu.getStatus());
+        snapshot.setOrgTypeCodes(parseConfiguredValues(menu.getOrgTypeCodes()));
+        snapshot.setOrgUnitCodes(parseConfiguredValues(menu.getOrgUnitCodes()));
+        snapshot.setOrgTags(parseConfiguredValues(menu.getOrgTags()));
+        snapshot.setRequiredRelationTypes(parseConfiguredValues(menu.getRequiredRelationTypes()));
+        return snapshot;
     }
 
     /**

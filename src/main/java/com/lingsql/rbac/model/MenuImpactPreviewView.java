@@ -103,12 +103,28 @@ public class MenuImpactPreviewView {
     private String baselineRuleSummary;
 
     /**
+     * 基线规则快照。
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private MenuRuleSnapshotView baselineRuleSnapshot;
+
+    /**
      * 目标规则摘要。
      *
      * @author 余炘洋
      * @date 2026-04-13
      */
     private String targetRuleSummary;
+
+    /**
+     * 目标规则快照。
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private MenuRuleSnapshotView targetRuleSnapshot;
 
     /**
      * 变更维度列表。
