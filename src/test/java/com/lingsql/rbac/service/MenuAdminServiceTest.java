@@ -5,6 +5,8 @@ import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.organization.service.OrgGovernanceCatalogService;
 import com.lingsql.rbac.entity.RbacMenu;
 import com.lingsql.rbac.model.MenuAdminView;
+import com.lingsql.rbac.model.MenuImpactPreviewRequest;
+import com.lingsql.rbac.model.MenuImpactPreviewView;
 import com.lingsql.rbac.model.MenuPreviewRequest;
 import com.lingsql.rbac.model.MenuRuleUpdateRequest;
 import com.lingsql.rbac.model.MenuView;
@@ -235,6 +237,80 @@ class MenuAdminServiceTest {
                 () -> service.upsertTenantMenuRule("MENU_CHAIN", request, "tenant-a", false));
 
         assertEquals(ErrorCode.INVALID_PARAM, ex.getErrorCode());
+    }
+
+    @Test
+    void previewGlobalRuleImpactShouldReportMatchedMenuDiff() {
+        RbacMenuRepository repository = Mockito.mock(RbacMenuRepository.class);
+        MenuService menuService = new MenuService(repository);
+        OrgGovernanceCatalogService orgGovernanceCatalogService = Mockito.mock(OrgGovernanceCatalogService.class);
+        MenuAdminService service = new MenuAdminService(repository, menuService, orgGovernanceCatalogService);
+
+        RbacMenu parent = buildMenu(1L, "MENU_ADMIN", null);
+        parent.setPermCode(null);
+        RbacMenu child = buildMenu(2L, "MENU_CHAIN", 1L);
+        child.setOrgTypeCodes("CHAIN_STORE");
+
+        when(repository.findByTenantIdIsNull()).thenReturn(List.of(parent, child));
+        when(repository.findByTenantId("tenant-a")).thenReturn(List.of());
+        when(repository.findById(2L)).thenReturn(Optional.of(child));
+
+        MenuImpactPreviewRequest request = new MenuImpactPreviewRequest();
+        request.setTenantId("tenant-a");
+        request.setMenuId(2L);
+        MenuRuleUpdateRequest globalRule = new MenuRuleUpdateRequest();
+        globalRule.setOrgTypeCodes(List.of("GOV_ORG"));
+        request.setGlobalRule(globalRule);
+        MenuPreviewRequest previewContext = new MenuPreviewRequest();
+        previewContext.setPermissionCodes(List.of("MENU:CHAIN"));
+        previewContext.setOrgTypeCodes(List.of("GOV_ORG"));
+        request.setPreviewContext(previewContext);
+
+        MenuImpactPreviewView view = service.previewMenuImpact(request, "system", true);
+
+        assertEquals("MENU_CHAIN", view.getMenuCode());
+        assertEquals(false, view.isBaselineMatched());
+        assertEquals(true, view.isTargetMatched());
+        assertEquals(1, view.getBaselineMenuCount());
+        assertEquals(2, view.getTargetMenuCount());
+        assertEquals(1, view.getAddedMenuCount());
+        assertEquals("MENU_CHAIN", view.getAddedMenus().getFirst().getMenuCode());
+    }
+
+    @Test
+    void previewTenantRuleImpactShouldReportRemovedMenuDiff() {
+        RbacMenuRepository repository = Mockito.mock(RbacMenuRepository.class);
+        MenuService menuService = new MenuService(repository);
+        OrgGovernanceCatalogService orgGovernanceCatalogService = Mockito.mock(OrgGovernanceCatalogService.class);
+        MenuAdminService service = new MenuAdminService(repository, menuService, orgGovernanceCatalogService);
+
+        RbacMenu parent = buildMenu(1L, "MENU_ADMIN", null);
+        parent.setPermCode(null);
+        RbacMenu child = buildMenu(2L, "MENU_CHAIN", 1L);
+
+        when(repository.findByTenantIdIsNull()).thenReturn(List.of(parent, child));
+        when(repository.findByTenantId("tenant-a")).thenReturn(List.of());
+        when(repository.findByTenantIdIsNullAndMenuCode("MENU_CHAIN")).thenReturn(Optional.of(child));
+        when(repository.findByTenantIdAndMenuCode("tenant-a", "MENU_CHAIN")).thenReturn(Optional.empty());
+
+        MenuImpactPreviewRequest request = new MenuImpactPreviewRequest();
+        request.setTenantId("tenant-a");
+        request.setMenuCode("MENU_CHAIN");
+        TenantMenuRuleUpdateRequest tenantRule = new TenantMenuRuleUpdateRequest();
+        tenantRule.setVisible(0);
+        request.setTenantRule(tenantRule);
+        MenuPreviewRequest previewContext = new MenuPreviewRequest();
+        previewContext.setPermissionCodes(List.of("MENU:CHAIN"));
+        request.setPreviewContext(previewContext);
+
+        MenuImpactPreviewView view = service.previewMenuImpact(request, "system", true);
+
+        assertEquals(true, view.isBaselineMatched());
+        assertEquals(false, view.isTargetMatched());
+        assertEquals(2, view.getBaselineMenuCount());
+        assertEquals(1, view.getTargetMenuCount());
+        assertEquals(1, view.getRemovedMenuCount());
+        assertEquals("MENU_CHAIN", view.getRemovedMenus().getFirst().getMenuCode());
     }
 
     private RbacMenu buildMenu(Long id, String menuCode, Long parentId) {

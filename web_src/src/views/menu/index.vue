@@ -11,14 +11,16 @@ import {
   fetchPermissions,
   fetchTenantMenuRules,
   MenuAdminView,
+  MenuImpactPreviewRequest,
+  MenuImpactPreviewView,
   MenuPreviewRequest,
   MenuRuleUpdateRequest,
   PermissionView,
+  previewMenuImpact,
   previewMenuTree,
   TenantMenuAdminView,
   TenantMenuRuleUpdateRequest,
-  updateMenuRule
-  ,
+  updateMenuRule,
   updateTenantMenuRule
 } from '@/api/rbac';
 
@@ -63,6 +65,7 @@ const saving = ref(false);
 const tenantSaving = ref(false);
 const tenantClearing = ref(false);
 const previewLoading = ref(false);
+const impactLoading = ref(false);
 const governanceLoading = ref(false);
 const ruleFilterText = ref('');
 const tenantRuleFilterText = ref('');
@@ -74,6 +77,8 @@ const governanceCatalog = ref<OrgGovernanceCatalogView | null>(null);
 const selectedMenuId = ref<number | null>(null);
 const selectedTenantMenuCode = ref('');
 const previewExecuted = ref(false);
+const globalImpactResult = ref<MenuImpactPreviewView | null>(null);
+const tenantImpactResult = ref<MenuImpactPreviewView | null>(null);
 
 const defaultRelationTypeLabelMapping: Record<string, string> = {
   SUPERVISE: '主管',
@@ -500,6 +505,7 @@ const handleSaveRule = async () => {
     const updated = await updateMenuRule(selectedMenu.value.id, payload);
     ElMessage.success(`菜单规则已更新：${updated.menuName || updated.menuCode || selectedMenu.value.menuCode}`);
     const keepMenuId = selectedMenu.value.id;
+    globalImpactResult.value = null;
     await loadMenuRules();
     selectedMenuId.value = keepMenuId;
     syncRuleForm(allMenuNodes.value.find((item) => item.id === keepMenuId) || null);
@@ -538,6 +544,7 @@ const handleSaveTenantRule = async () => {
     const updated = await updateTenantMenuRule(selectedTenantMenu.value.menuCode, payload);
     ElMessage.success(`租户菜单覆盖已更新：${updated.menuName || updated.menuCode || selectedTenantMenu.value.menuCode}`);
     const keepMenuCode = selectedTenantMenu.value.menuCode;
+    tenantImpactResult.value = null;
     await loadTenantMenuRuleTree();
     selectedTenantMenuCode.value = keepMenuCode;
     syncTenantRuleForm(tenantMenuNodes.value.find((item) => item.menuCode === keepMenuCode) || null);
@@ -565,6 +572,7 @@ const handleClearTenantRule = async () => {
     await clearTenantMenuRule(selectedTenantMenu.value.menuCode, isSysAdmin.value ? activeTenantId.value : undefined);
     ElMessage.success('租户菜单覆盖已清除');
     const keepMenuCode = selectedTenantMenu.value.menuCode;
+    tenantImpactResult.value = null;
     await loadTenantMenuRuleTree();
     selectedTenantMenuCode.value = keepMenuCode;
     syncTenantRuleForm(tenantMenuNodes.value.find((item) => item.menuCode === keepMenuCode) || null);
@@ -575,12 +583,8 @@ const handleClearTenantRule = async () => {
   }
 };
 
-const handlePreview = async () => {
-  if (!hasPreviewTenant.value) {
-    ElMessage.warning('请先选择要预览的租户');
-    return;
-  }
-  const payload: MenuPreviewRequest = {
+const buildPreviewPayload = (): MenuPreviewRequest => {
+  return {
     tenantId: isSysAdmin.value ? activeTenantId.value || undefined : undefined,
     permissionCodes: normalizeValues(previewForm.permissionCodes),
     orgTypeCodes: normalizeValues(previewForm.orgTypeCodes),
@@ -590,6 +594,14 @@ const handlePreview = async () => {
     experience: previewForm.experience,
     menuWhitelist: normalizeValues(previewForm.menuWhitelist)
   };
+};
+
+const handlePreview = async () => {
+  if (!hasPreviewTenant.value) {
+    ElMessage.warning('请先选择要预览的租户');
+    return;
+  }
+  const payload = buildPreviewPayload();
   previewLoading.value = true;
   try {
     previewMenus.value = await previewMenuTree(payload);
@@ -601,10 +613,75 @@ const handlePreview = async () => {
   }
 };
 
+const handlePreviewGlobalImpact = async () => {
+  if (!selectedGlobalMenu?.value?.id) {
+    ElMessage.warning('请先选择要分析的全局菜单节点');
+    return;
+  }
+  if (!hasPreviewTenant.value) {
+    ElMessage.warning('影响分析需要先选择租户');
+    return;
+  }
+  const payload: MenuImpactPreviewRequest = {
+    tenantId: isSysAdmin.value ? activeTenantId.value || undefined : undefined,
+    menuId: selectedGlobalMenu.value.id,
+    globalRule: {
+      orgTypeCodes: normalizeValues(globalRuleForm.orgTypeCodes),
+      orgUnitCodes: normalizeValues(globalRuleForm.orgUnitCodes),
+      orgTags: normalizeValues(globalRuleForm.orgTags),
+      requiredRelationTypes: normalizeValues(globalRuleForm.requiredRelationTypes)
+    },
+    previewContext: buildPreviewPayload()
+  };
+  impactLoading.value = true;
+  try {
+    globalImpactResult.value = await previewMenuImpact(payload);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '全局菜单影响分析失败');
+  } finally {
+    impactLoading.value = false;
+  }
+};
+
+const handlePreviewTenantImpact = async () => {
+  if (!selectedTenantMenu.value?.menuCode) {
+    ElMessage.warning('请先选择要分析的租户菜单节点');
+    return;
+  }
+  if (!hasPreviewTenant.value) {
+    ElMessage.warning('影响分析需要先选择租户');
+    return;
+  }
+  const payload: MenuImpactPreviewRequest = {
+    tenantId: isSysAdmin.value ? activeTenantId.value || undefined : undefined,
+    menuCode: selectedTenantMenu.value.menuCode,
+    tenantRule: {
+      tenantId: isSysAdmin.value ? activeTenantId.value || undefined : undefined,
+      visible: tenantRuleForm.visible,
+      status: tenantRuleForm.status,
+      orgTypeCodes: normalizeValues(tenantRuleForm.orgTypeCodes),
+      orgUnitCodes: normalizeValues(tenantRuleForm.orgUnitCodes),
+      orgTags: normalizeValues(tenantRuleForm.orgTags),
+      requiredRelationTypes: normalizeValues(tenantRuleForm.requiredRelationTypes)
+    },
+    previewContext: buildPreviewPayload()
+  };
+  impactLoading.value = true;
+  try {
+    tenantImpactResult.value = await previewMenuImpact(payload);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '租户菜单影响分析失败');
+  } finally {
+    impactLoading.value = false;
+  }
+};
+
 const handleResetPreview = () => {
   fillPreviewFromSession();
   previewMenus.value = [];
   previewExecuted.value = false;
+  globalImpactResult.value = null;
+  tenantImpactResult.value = null;
 };
 
 watch(ruleFilterText, (value) => {
@@ -623,6 +700,8 @@ watch(
       previewMenus.value = [];
       previewExecuted.value = false;
       governanceCatalog.value = null;
+      globalImpactResult.value = null;
+      tenantImpactResult.value = null;
       return;
     }
     await Promise.all([
@@ -637,6 +716,7 @@ watch(
   () => selectedMenuId.value,
   () => {
     syncRuleForm(selectedMenu.value);
+    globalImpactResult.value = null;
   }
 );
 
@@ -648,6 +728,7 @@ watch(
   () => selectedTenantMenuCode.value,
   () => {
     syncTenantRuleForm(selectedTenantMenu.value);
+    tenantImpactResult.value = null;
   }
 );
 
@@ -840,7 +921,62 @@ fillPreviewFromSession();
 
           <div class="editor-actions">
             <el-button @click="handleResetGlobalRule">重置</el-button>
+            <el-button :loading="impactLoading" @click="handlePreviewGlobalImpact">分析影响</el-button>
             <el-button type="primary" :loading="globalSaving" @click="handleSaveGlobalRule">保存全局规则</el-button>
+          </div>
+
+          <div v-if="globalImpactResult" class="impact-panel">
+            <div class="impact-title">发布前影响分析</div>
+            <div class="impact-summary">{{ globalImpactResult.impactSummary || '暂无影响摘要' }}</div>
+            <div class="impact-grid">
+              <div class="impact-item">
+                <div class="impact-label">基线命中</div>
+                <div class="impact-value">{{ globalImpactResult.baselineMatched ? '命中' : '未命中' }}</div>
+              </div>
+              <div class="impact-item">
+                <div class="impact-label">变更后命中</div>
+                <div class="impact-value">{{ globalImpactResult.targetMatched ? '命中' : '未命中' }}</div>
+              </div>
+              <div class="impact-item">
+                <div class="impact-label">基线菜单数</div>
+                <div class="impact-value">{{ globalImpactResult.baselineMenuCount || 0 }}</div>
+              </div>
+              <div class="impact-item">
+                <div class="impact-label">变更后菜单数</div>
+                <div class="impact-value">{{ globalImpactResult.targetMenuCount || 0 }}</div>
+              </div>
+            </div>
+            <div class="impact-rule-grid">
+              <div class="impact-rule-item">
+                <div class="impact-label">基线规则</div>
+                <div class="impact-rule-value">{{ globalImpactResult.baselineRuleSummary || '未配置额外规则' }}</div>
+              </div>
+              <div class="impact-rule-item">
+                <div class="impact-label">目标规则</div>
+                <div class="impact-rule-value">{{ globalImpactResult.targetRuleSummary || '未配置额外规则' }}</div>
+              </div>
+            </div>
+            <div v-if="globalImpactResult.changedDimensions?.length" class="impact-tag-list">
+              <el-tag v-for="item in globalImpactResult.changedDimensions" :key="`global-impact-${item}`" type="warning">
+                {{ item }}
+              </el-tag>
+            </div>
+            <div v-if="globalImpactResult.addedMenus?.length" class="impact-diff-section">
+              <div class="impact-diff-title success">新增命中菜单</div>
+              <div class="impact-tag-list">
+                <el-tag v-for="item in globalImpactResult.addedMenus" :key="`global-added-${item.menuCode}`" type="success">
+                  {{ item.menuName || item.menuCode }}
+                </el-tag>
+              </div>
+            </div>
+            <div v-if="globalImpactResult.removedMenus?.length" class="impact-diff-section">
+              <div class="impact-diff-title danger">移除命中菜单</div>
+              <div class="impact-tag-list">
+                <el-tag v-for="item in globalImpactResult.removedMenus" :key="`global-removed-${item.menuCode}`" type="danger">
+                  {{ item.menuName || item.menuCode }}
+                </el-tag>
+              </div>
+            </div>
           </div>
         </template>
       </el-card>
@@ -1035,7 +1171,62 @@ fillPreviewFromSession();
             <div class="editor-actions">
               <el-button @click="handleResetTenantRule">重置</el-button>
               <el-button v-if="selectedTenantMenu.overrideActive" :loading="tenantClearing" @click="handleClearTenantRule">清除租户覆盖</el-button>
+              <el-button :loading="impactLoading" @click="handlePreviewTenantImpact">分析影响</el-button>
               <el-button type="primary" :loading="tenantSaving" @click="handleSaveTenantRule">保存租户覆盖</el-button>
+            </div>
+
+            <div v-if="tenantImpactResult" class="impact-panel">
+              <div class="impact-title">发布前影响分析</div>
+              <div class="impact-summary">{{ tenantImpactResult.impactSummary || '暂无影响摘要' }}</div>
+              <div class="impact-grid">
+                <div class="impact-item">
+                  <div class="impact-label">基线命中</div>
+                  <div class="impact-value">{{ tenantImpactResult.baselineMatched ? '命中' : '未命中' }}</div>
+                </div>
+                <div class="impact-item">
+                  <div class="impact-label">变更后命中</div>
+                  <div class="impact-value">{{ tenantImpactResult.targetMatched ? '命中' : '未命中' }}</div>
+                </div>
+                <div class="impact-item">
+                  <div class="impact-label">基线菜单数</div>
+                  <div class="impact-value">{{ tenantImpactResult.baselineMenuCount || 0 }}</div>
+                </div>
+                <div class="impact-item">
+                  <div class="impact-label">变更后菜单数</div>
+                  <div class="impact-value">{{ tenantImpactResult.targetMenuCount || 0 }}</div>
+                </div>
+              </div>
+              <div class="impact-rule-grid">
+                <div class="impact-rule-item">
+                  <div class="impact-label">基线规则</div>
+                  <div class="impact-rule-value">{{ tenantImpactResult.baselineRuleSummary || '未配置额外规则' }}</div>
+                </div>
+                <div class="impact-rule-item">
+                  <div class="impact-label">目标规则</div>
+                  <div class="impact-rule-value">{{ tenantImpactResult.targetRuleSummary || '未配置额外规则' }}</div>
+                </div>
+              </div>
+              <div v-if="tenantImpactResult.changedDimensions?.length" class="impact-tag-list">
+                <el-tag v-for="item in tenantImpactResult.changedDimensions" :key="`tenant-impact-${item}`" type="warning">
+                  {{ item }}
+                </el-tag>
+              </div>
+              <div v-if="tenantImpactResult.addedMenus?.length" class="impact-diff-section">
+                <div class="impact-diff-title success">新增命中菜单</div>
+                <div class="impact-tag-list">
+                  <el-tag v-for="item in tenantImpactResult.addedMenus" :key="`tenant-added-${item.menuCode}`" type="success">
+                    {{ item.menuName || item.menuCode }}
+                  </el-tag>
+                </div>
+              </div>
+              <div v-if="tenantImpactResult.removedMenus?.length" class="impact-diff-section">
+                <div class="impact-diff-title danger">移除命中菜单</div>
+                <div class="impact-tag-list">
+                  <el-tag v-for="item in tenantImpactResult.removedMenus" :key="`tenant-removed-${item.menuCode}`" type="danger">
+                    {{ item.menuName || item.menuCode }}
+                  </el-tag>
+                </div>
+              </div>
             </div>
           </template>
         </el-card>
@@ -1193,7 +1384,7 @@ fillPreviewFromSession();
               <div class="preview-stat-value">{{ previewExecuted ? previewMenuCount : '-' }}</div>
             </div>
             <div class="preview-hint">
-              预览结果会同时考虑菜单权限、组织适配规则、关系语义与体验账号白名单。
+              预览结果会同时考虑菜单权限、组织适配规则、关系语义与体验账号白名单，规则编辑区的“分析影响”也会复用这里的样本上下文。
             </div>
           </div>
 
@@ -1390,6 +1581,86 @@ fillPreviewFromSession();
   gap: 12px;
   margin-top: 12px;
   flex-wrap: wrap;
+}
+
+.impact-panel {
+  margin-top: 16px;
+  border: 1px solid #dbe4f0;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  padding: 16px;
+}
+
+.impact-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.impact-summary {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #334155;
+}
+
+.impact-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.impact-item,
+.impact-rule-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.impact-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.impact-value,
+.impact-rule-value {
+  margin-top: 8px;
+  color: #0f172a;
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+.impact-rule-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.impact-tag-list {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.impact-diff-section {
+  margin-top: 14px;
+}
+
+.impact-diff-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.impact-diff-title.success {
+  color: #15803d;
+}
+
+.impact-diff-title.danger {
+  color: #b91c1c;
 }
 
 .tenant-card {

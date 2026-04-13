@@ -44,7 +44,23 @@ public class MenuService {
         if (session == null || !StringUtils.hasText(session.getTenantId())) {
             return List.of();
         }
-        List<RbacMenu> menus = resolveEffectiveMenus(session.getTenantId());
+        return listMenus(session, resolveEffectiveMenus(session.getTenantId()));
+    }
+
+    /**
+     * 基于指定的生效菜单清单构建菜单树。
+     *
+     * @param session       登录会话
+     * @param effectiveMenus 已解析的生效菜单
+     * @return 菜单树
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    List<MenuView> listMenus(RbacUserSession session, List<RbacMenu> effectiveMenus) {
+        if (session == null || !StringUtils.hasText(session.getTenantId())) {
+            return List.of();
+        }
+        List<RbacMenu> menus = CollectionUtils.isEmpty(effectiveMenus) ? List.of() : effectiveMenus;
         List<RbacMenu> visibleMenus = menus.stream()
                 .filter(menu -> menu.getVisible() == null || menu.getVisible() == 1)
                 .toList();

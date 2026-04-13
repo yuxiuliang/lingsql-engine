@@ -5,6 +5,9 @@ import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.organization.service.OrgGovernanceCatalogService;
 import com.lingsql.rbac.entity.RbacMenu;
 import com.lingsql.rbac.model.MenuAdminView;
+import com.lingsql.rbac.model.MenuImpactDiffItemView;
+import com.lingsql.rbac.model.MenuImpactPreviewRequest;
+import com.lingsql.rbac.model.MenuImpactPreviewView;
 import com.lingsql.rbac.model.MenuPreviewRequest;
 import com.lingsql.rbac.model.MenuRuleUpdateRequest;
 import com.lingsql.rbac.model.MenuView;
@@ -20,11 +23,13 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 菜单治理服务。
@@ -237,6 +242,299 @@ public class MenuAdminService {
                 request == null ? null : request.getOrgTags(),
                 request == null ? null : request.getRelationTypes()
         );
+        return menuService.listMenus(buildPreviewSession(request, tenantId));
+    }
+
+    /**
+     * 预览菜单规则变更影响。
+     *
+     * @param request       影响分析请求
+     * @param sessionTenant 会话租户
+     * @param sysAdmin      是否系统管理员
+     * @return 影响分析结果
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    public MenuImpactPreviewView previewMenuImpact(MenuImpactPreviewRequest request, String sessionTenant, boolean sysAdmin) {
+        if (request == null) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "影响分析请求不能为空");
+        }
+        String tenantId = resolveTenantId(request.getTenantId(), sessionTenant, sysAdmin);
+        if (!StringUtils.hasText(tenantId)) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户ID不能为空");
+        }
+        MenuPreviewRequest previewContext = request.getPreviewContext() == null ? new MenuPreviewRequest() : request.getPreviewContext();
+        orgGovernanceCatalogService.validateTenantSelections(
+                tenantId,
+                previewContext.getOrgTypeCodes(),
+                previewContext.getOrgUnitCodes(),
+                previewContext.getOrgTags(),
+                previewContext.getRelationTypes()
+        );
+        RbacUserSession previewSession = buildPreviewSession(previewContext, tenantId);
+        List<MenuView> baselineMenus = menuService.listMenus(previewSession);
+
+        if (request.getMenuId() != null) {
+            return previewGlobalRuleImpact(request, tenantId, previewSession, baselineMenus);
+        }
+        if (StringUtils.hasText(request.getMenuCode())) {
+            return previewTenantRuleImpact(request, tenantId, previewSession, baselineMenus);
+        }
+        throw new BizException(ErrorCode.INVALID_PARAM, "影响分析目标不能为空");
+    }
+
+    private MenuImpactPreviewView previewGlobalRuleImpact(MenuImpactPreviewRequest request,
+                                                          String tenantId,
+                                                          RbacUserSession previewSession,
+                                                          List<MenuView> baselineMenus) {
+        RbacMenu globalMenu = menuRepository.findById(request.getMenuId())
+                .orElseThrow(() -> new BizException(ErrorCode.MENU_NOT_FOUND, "菜单不存在"));
+        if (StringUtils.hasText(globalMenu.getTenantId())) {
+            throw new BizException(ErrorCode.FORBIDDEN, "当前仅支持分析全局菜单规则");
+        }
+        RbacMenu previewGlobalMenu = copyMenuEntity(globalMenu);
+        applyRuleFields(previewGlobalMenu, request.getGlobalRule());
+        List<RbacMenu> targetEffectiveMenus = resolveEffectiveMenusForPreview(
+                tenantId,
+                Map.of(normalizeValue(previewGlobalMenu.getMenuCode()), previewGlobalMenu),
+                Map.of()
+        );
+        return buildImpactPreviewView(
+                tenantId,
+                false,
+                globalMenu.getMenuCode(),
+                globalMenu.getMenuName(),
+                buildRuleSummary(globalMenu),
+                buildRuleSummary(previewGlobalMenu),
+                determineChangedDimensions(globalMenu, previewGlobalMenu),
+                baselineMenus,
+                menuService.listMenus(previewSession, targetEffectiveMenus)
+        );
+    }
+
+    private MenuImpactPreviewView previewTenantRuleImpact(MenuImpactPreviewRequest request,
+                                                          String tenantId,
+                                                          RbacUserSession previewSession,
+                                                          List<MenuView> baselineMenus) {
+        String normalizedMenuCode = normalizeValue(request.getMenuCode());
+        if (!StringUtils.hasText(normalizedMenuCode)) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "菜单编码不能为空");
+        }
+        TenantMenuRuleUpdateRequest tenantRule = request.getTenantRule() == null ? new TenantMenuRuleUpdateRequest() : request.getTenantRule();
+        orgGovernanceCatalogService.validateTenantSelections(
+                tenantId,
+                tenantRule.getOrgTypeCodes(),
+                tenantRule.getOrgUnitCodes(),
+                tenantRule.getOrgTags(),
+                tenantRule.getRequiredRelationTypes()
+        );
+        RbacMenu globalMenu = menuRepository.findByTenantIdIsNullAndMenuCode(normalizedMenuCode)
+                .orElseThrow(() -> new BizException(ErrorCode.MENU_NOT_FOUND, "菜单不存在"));
+        RbacMenu baselineEffectiveMenu = menuService.mergeMenu(
+                globalMenu,
+                menuRepository.findByTenantIdAndMenuCode(tenantId, normalizedMenuCode).orElse(null)
+        );
+        RbacMenu previewOverride = menuRepository.findByTenantIdAndMenuCode(tenantId, normalizedMenuCode)
+                .map(this::copyMenuEntity)
+                .orElseGet(() -> createTenantOverrideSkeleton(globalMenu, tenantId));
+        applyTenantOverrideFields(previewOverride, tenantRule);
+        List<RbacMenu> targetEffectiveMenus = resolveEffectiveMenusForPreview(
+                tenantId,
+                Map.of(),
+                Map.of(normalizedMenuCode, previewOverride)
+        );
+        RbacMenu targetEffectiveMenu = menuService.mergeMenu(globalMenu, previewOverride);
+        return buildImpactPreviewView(
+                tenantId,
+                true,
+                globalMenu.getMenuCode(),
+                globalMenu.getMenuName(),
+                buildRuleSummary(baselineEffectiveMenu),
+                buildRuleSummary(targetEffectiveMenu),
+                determineChangedDimensions(baselineEffectiveMenu, targetEffectiveMenu),
+                baselineMenus,
+                menuService.listMenus(previewSession, targetEffectiveMenus)
+        );
+    }
+
+    private MenuImpactPreviewView buildImpactPreviewView(String tenantId,
+                                                         boolean tenantOverrideMode,
+                                                         String menuCode,
+                                                         String menuName,
+                                                         String baselineRuleSummary,
+                                                         String targetRuleSummary,
+                                                         List<String> changedDimensions,
+                                                         List<MenuView> baselineMenus,
+                                                         List<MenuView> targetMenus) {
+        Map<String, MenuImpactDiffItemView> baselineMapping = flattenMenuTree(baselineMenus);
+        Map<String, MenuImpactDiffItemView> targetMapping = flattenMenuTree(targetMenus);
+        List<MenuImpactDiffItemView> addedMenus = targetMapping.entrySet().stream()
+                .filter(entry -> !baselineMapping.containsKey(entry.getKey()))
+                .map(Map.Entry::getValue)
+                .toList();
+        List<MenuImpactDiffItemView> removedMenus = baselineMapping.entrySet().stream()
+                .filter(entry -> !targetMapping.containsKey(entry.getKey()))
+                .map(Map.Entry::getValue)
+                .toList();
+
+        MenuImpactPreviewView view = new MenuImpactPreviewView();
+        view.setTenantId(tenantId);
+        view.setTenantOverrideMode(tenantOverrideMode);
+        view.setMenuCode(menuCode);
+        view.setMenuName(menuName);
+        view.setBaselineMenuCount(baselineMapping.size());
+        view.setTargetMenuCount(targetMapping.size());
+        view.setAddedMenuCount(addedMenus.size());
+        view.setRemovedMenuCount(removedMenus.size());
+        view.setBaselineMatched(baselineMapping.containsKey(normalizeValue(menuCode)));
+        view.setTargetMatched(targetMapping.containsKey(normalizeValue(menuCode)));
+        view.setBaselineRuleSummary(baselineRuleSummary);
+        view.setTargetRuleSummary(targetRuleSummary);
+        view.setChangedDimensions(changedDimensions);
+        view.setAddedMenus(addedMenus);
+        view.setRemovedMenus(removedMenus);
+        view.setImpactSummary(buildImpactSummary(view));
+        return view;
+    }
+
+    private String buildImpactSummary(MenuImpactPreviewView view) {
+        String targetStatus = view.isTargetMatched() ? "目标菜单可见" : "目标菜单不可见";
+        return "基线菜单 " + defaultCount(view.getBaselineMenuCount())
+                + " 项，目标菜单 " + defaultCount(view.getTargetMenuCount())
+                + " 项，新增 " + defaultCount(view.getAddedMenuCount())
+                + " 项，移除 " + defaultCount(view.getRemovedMenuCount())
+                + " 项，当前样本上下文下" + targetStatus + "。";
+    }
+
+    private int defaultCount(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private Map<String, MenuImpactDiffItemView> flattenMenuTree(List<MenuView> menus) {
+        Map<String, MenuImpactDiffItemView> mapping = new LinkedHashMap<>();
+        if (CollectionUtils.isEmpty(menus)) {
+            return mapping;
+        }
+        for (MenuView menu : menus) {
+            collectMenuTree(mapping, menu);
+        }
+        return mapping;
+    }
+
+    private void collectMenuTree(Map<String, MenuImpactDiffItemView> mapping, MenuView menu) {
+        if (menu == null || !StringUtils.hasText(menu.getMenuCode())) {
+            return;
+        }
+        String normalizedCode = normalizeValue(menu.getMenuCode());
+        mapping.putIfAbsent(normalizedCode, toDiffItem(menu));
+        if (CollectionUtils.isEmpty(menu.getChildren())) {
+            return;
+        }
+        for (MenuView child : menu.getChildren()) {
+            collectMenuTree(mapping, child);
+        }
+    }
+
+    private MenuImpactDiffItemView toDiffItem(MenuView menu) {
+        MenuImpactDiffItemView item = new MenuImpactDiffItemView();
+        item.setMenuCode(menu.getMenuCode());
+        item.setMenuName(menu.getMenuName());
+        item.setPath(menu.getPath());
+        return item;
+    }
+
+    private List<RbacMenu> resolveEffectiveMenusForPreview(String tenantId,
+                                                           Map<String, RbacMenu> previewGlobalMenus,
+                                                           Map<String, RbacMenu> previewTenantOverrides) {
+        if (!StringUtils.hasText(tenantId)) {
+            return List.of();
+        }
+        Map<String, RbacMenu> globalPreviewMapping = previewGlobalMenus == null ? Map.of() : previewGlobalMenus;
+        Map<String, RbacMenu> tenantOverrideMapping = new HashMap<>();
+        for (RbacMenu menu : menuRepository.findByTenantId(tenantId.trim())) {
+            if (menu == null || !StringUtils.hasText(menu.getMenuCode())) {
+                continue;
+            }
+            tenantOverrideMapping.put(normalizeValue(menu.getMenuCode()), menu);
+        }
+        if (previewTenantOverrides != null && !previewTenantOverrides.isEmpty()) {
+            tenantOverrideMapping.putAll(previewTenantOverrides);
+        }
+        List<RbacMenu> resolvedMenus = new ArrayList<>();
+        for (RbacMenu globalMenu : menuRepository.findByTenantIdIsNull()) {
+            if (globalMenu == null || !StringUtils.hasText(globalMenu.getMenuCode())) {
+                continue;
+            }
+            RbacMenu effectiveGlobalMenu = globalPreviewMapping.getOrDefault(normalizeValue(globalMenu.getMenuCode()), globalMenu);
+            RbacMenu effectiveMenu = menuService.mergeMenu(
+                    effectiveGlobalMenu,
+                    tenantOverrideMapping.get(normalizeValue(effectiveGlobalMenu.getMenuCode()))
+            );
+            if (isActiveStatus(effectiveMenu == null ? null : effectiveMenu.getStatus())) {
+                resolvedMenus.add(effectiveMenu);
+            }
+        }
+        return resolvedMenus;
+    }
+
+    private String buildRuleSummary(RbacMenu menu) {
+        if (menu == null) {
+            return "未配置额外规则";
+        }
+        List<String> segments = new ArrayList<>();
+        if (menu.getVisible() != null) {
+            segments.add(menu.getVisible() == 1 ? "显示" : "隐藏");
+        }
+        if (menu.getStatus() != null) {
+            segments.add(menu.getStatus() == 1 ? "启用" : "停用");
+        }
+        List<String> orgTypeCodes = parseConfiguredValues(menu.getOrgTypeCodes());
+        if (!orgTypeCodes.isEmpty()) {
+            segments.add("组织类型 " + String.join(" / ", orgTypeCodes));
+        }
+        List<String> orgUnitCodes = parseConfiguredValues(menu.getOrgUnitCodes());
+        if (!orgUnitCodes.isEmpty()) {
+            segments.add("组织编码 " + String.join(" / ", orgUnitCodes));
+        }
+        List<String> orgTags = parseConfiguredValues(menu.getOrgTags());
+        if (!orgTags.isEmpty()) {
+            segments.add("组织标签 " + String.join(" / ", orgTags));
+        }
+        List<String> relationTypes = parseConfiguredValues(menu.getRequiredRelationTypes());
+        if (!relationTypes.isEmpty()) {
+            segments.add("关系语义 " + String.join(" / ", relationTypes));
+        }
+        return segments.isEmpty() ? "未配置额外规则" : String.join("；", segments);
+    }
+
+    private List<String> determineChangedDimensions(RbacMenu baselineMenu, RbacMenu targetMenu) {
+        List<String> dimensions = new ArrayList<>();
+        if (!java.util.Objects.equals(baselineMenu == null ? null : baselineMenu.getVisible(), targetMenu == null ? null : targetMenu.getVisible())) {
+            dimensions.add("显示策略");
+        }
+        if (!java.util.Objects.equals(baselineMenu == null ? null : baselineMenu.getStatus(), targetMenu == null ? null : targetMenu.getStatus())) {
+            dimensions.add("启用状态");
+        }
+        if (!parseConfiguredValues(baselineMenu == null ? null : baselineMenu.getOrgTypeCodes())
+                .equals(parseConfiguredValues(targetMenu == null ? null : targetMenu.getOrgTypeCodes()))) {
+            dimensions.add("组织类型");
+        }
+        if (!parseConfiguredValues(baselineMenu == null ? null : baselineMenu.getOrgUnitCodes())
+                .equals(parseConfiguredValues(targetMenu == null ? null : targetMenu.getOrgUnitCodes()))) {
+            dimensions.add("组织编码");
+        }
+        if (!parseConfiguredValues(baselineMenu == null ? null : baselineMenu.getOrgTags())
+                .equals(parseConfiguredValues(targetMenu == null ? null : targetMenu.getOrgTags()))) {
+            dimensions.add("组织标签");
+        }
+        if (!parseConfiguredValues(baselineMenu == null ? null : baselineMenu.getRequiredRelationTypes())
+                .equals(parseConfiguredValues(targetMenu == null ? null : targetMenu.getRequiredRelationTypes()))) {
+            dimensions.add("关系语义");
+        }
+        return dimensions;
+    }
+
+    private RbacUserSession buildPreviewSession(MenuPreviewRequest request, String tenantId) {
         RbacUserSession session = new RbacUserSession();
         session.setTenantId(tenantId);
         session.setPermissions(normalizeValues(request == null ? null : request.getPermissionCodes()));
@@ -246,7 +544,33 @@ public class MenuAdminService {
         session.setRelationScopes(buildRelationScopes(request == null ? null : request.getRelationTypes()));
         session.setExperience(request != null && Boolean.TRUE.equals(request.getExperience()));
         session.setMenuWhitelist(normalizeValues(request == null ? null : request.getMenuWhitelist()));
-        return menuService.listMenus(session);
+        return session;
+    }
+
+    private RbacMenu copyMenuEntity(RbacMenu source) {
+        if (source == null) {
+            return null;
+        }
+        RbacMenu copied = new RbacMenu();
+        copied.setId(source.getId());
+        copied.setTenantId(source.getTenantId());
+        copied.setMenuCode(source.getMenuCode());
+        copied.setMenuName(source.getMenuName());
+        copied.setParentId(source.getParentId());
+        copied.setPath(source.getPath());
+        copied.setComponent(source.getComponent());
+        copied.setIcon(source.getIcon());
+        copied.setSort(source.getSort());
+        copied.setVisible(source.getVisible());
+        copied.setStatus(source.getStatus());
+        copied.setPermCode(source.getPermCode());
+        copied.setOrgTypeCodes(source.getOrgTypeCodes());
+        copied.setOrgUnitCodes(source.getOrgUnitCodes());
+        copied.setOrgTags(source.getOrgTags());
+        copied.setRequiredRelationTypes(source.getRequiredRelationTypes());
+        copied.setCreateTime(source.getCreateTime());
+        copied.setUpdateTime(source.getUpdateTime());
+        return copied;
     }
 
     /**
@@ -650,5 +974,9 @@ public class MenuAdminService {
             return null;
         }
         return value.trim();
+    }
+
+    private boolean isActiveStatus(Integer status) {
+        return status == null || status == 1;
     }
 }

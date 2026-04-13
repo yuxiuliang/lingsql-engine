@@ -3,6 +3,8 @@ package com.lingsql.web;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.model.MenuAdminView;
+import com.lingsql.rbac.model.MenuImpactPreviewRequest;
+import com.lingsql.rbac.model.MenuImpactPreviewView;
 import com.lingsql.rbac.model.MenuPreviewRequest;
 import com.lingsql.rbac.model.MenuRuleUpdateRequest;
 import com.lingsql.rbac.model.MenuView;
@@ -179,6 +181,22 @@ public class MenuAdminController {
         RbacUserSession session = requireSession();
         boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
         return ApiResponse.success(menuAdminService.previewMenus(request, session.getTenantId(), sysAdmin));
+    }
+
+    /**
+     * 预览菜单规则变更影响。
+     *
+     * @param request 影响分析请求
+     * @return 影响分析结果
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    @PostMapping("/impact")
+    @PreAuthorize("hasAuthority('ADMIN:MENU:READ')")
+    public ApiResponse<MenuImpactPreviewView> previewMenuImpact(@RequestBody MenuImpactPreviewRequest request) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return ApiResponse.success(menuAdminService.previewMenuImpact(request, session.getTenantId(), sysAdmin));
     }
 
     /**

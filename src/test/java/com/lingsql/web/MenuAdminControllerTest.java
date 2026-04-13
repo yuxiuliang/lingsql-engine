@@ -3,6 +3,8 @@ package com.lingsql.web;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.model.MenuAdminView;
+import com.lingsql.rbac.model.MenuImpactPreviewRequest;
+import com.lingsql.rbac.model.MenuImpactPreviewView;
 import com.lingsql.rbac.model.MenuPreviewRequest;
 import com.lingsql.rbac.model.MenuRuleUpdateRequest;
 import com.lingsql.rbac.model.MenuView;
@@ -93,6 +95,23 @@ class MenuAdminControllerTest {
         assertEquals(200, response.getCode());
         assertEquals(1, response.getData().size());
         verify(menuAdminService).previewMenus(request, "tenant-a", false);
+    }
+
+    @Test
+    void previewMenuImpactShouldUseSessionTenantForTenantAdmin() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        MenuImpactPreviewRequest request = new MenuImpactPreviewRequest();
+        request.setMenuCode("MENU_CHAIN");
+        MenuImpactPreviewView view = new MenuImpactPreviewView();
+        view.setMenuCode("MENU_CHAIN");
+        view.setTargetMatched(true);
+        when(menuAdminService.previewMenuImpact(request, "tenant-a", false)).thenReturn(view);
+
+        ApiResponse<MenuImpactPreviewView> response = controller.previewMenuImpact(request);
+
+        assertEquals(200, response.getCode());
+        assertEquals("MENU_CHAIN", response.getData().getMenuCode());
+        verify(menuAdminService).previewMenuImpact(request, "tenant-a", false);
     }
 
     @Test

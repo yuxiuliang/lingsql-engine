@@ -303,6 +303,58 @@ export interface MenuPreviewRequest {
 }
 
 /**
+ * 菜单影响差异项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuImpactDiffItemView {
+  menuCode?: string;
+  menuName?: string;
+  path?: string;
+}
+
+/**
+ * 菜单影响分析请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuImpactPreviewRequest {
+  tenantId?: string;
+  menuId?: number;
+  menuCode?: string;
+  globalRule?: MenuRuleUpdateRequest;
+  tenantRule?: TenantMenuRuleUpdateRequest;
+  previewContext?: MenuPreviewRequest;
+}
+
+/**
+ * 菜单影响分析结果。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuImpactPreviewView {
+  tenantId?: string;
+  menuCode?: string;
+  menuName?: string;
+  tenantOverrideMode?: boolean;
+  baselineMenuCount?: number;
+  targetMenuCount?: number;
+  addedMenuCount?: number;
+  removedMenuCount?: number;
+  baselineMatched?: boolean;
+  targetMatched?: boolean;
+  baselineRuleSummary?: string;
+  targetRuleSummary?: string;
+  changedDimensions?: string[];
+  impactSummary?: string;
+  addedMenus?: MenuImpactDiffItemView[];
+  removedMenus?: MenuImpactDiffItemView[];
+}
+
+/**
  * 数据权限命中组织预览项。
  *
  * @author 余炘洋
@@ -698,6 +750,21 @@ export const clearTenantMenuRule = async (menuCode: string, tenantId?: string): 
  */
 export const previewMenuTree = async (payload: MenuPreviewRequest): Promise<MenuView[]> => {
   return request<MenuView[]>('/api/v1/admin/menus/preview', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 预览菜单规则变更影响。
+ *
+ * @param payload 请求体
+ * @return 影响分析结果
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const previewMenuImpact = async (payload: MenuImpactPreviewRequest): Promise<MenuImpactPreviewView> => {
+  return request<MenuImpactPreviewView>('/api/v1/admin/menus/impact', {
     method: 'POST',
     body: JSON.stringify(payload || {})
   });
