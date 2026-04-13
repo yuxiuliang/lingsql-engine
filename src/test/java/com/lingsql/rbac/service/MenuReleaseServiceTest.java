@@ -167,4 +167,60 @@ class MenuReleaseServiceTest {
 
         assertEquals(ErrorCode.CONFLICT, ex.getErrorCode());
     }
+
+    @Test
+    void reviewRecordShouldRejectSelfReview() {
+        MenuReleaseRecordRepository repository = Mockito.mock(MenuReleaseRecordRepository.class);
+        MenuAdminService menuAdminService = Mockito.mock(MenuAdminService.class);
+        MenuReleaseService service = new MenuReleaseService(repository, menuAdminService, new ObjectMapper());
+
+        MenuReleaseRecord entity = new MenuReleaseRecord();
+        entity.setId(5L);
+        entity.setTenantId("tenant-a");
+        entity.setReleaseStatus("DRAFT");
+        entity.setRequestedByUserId(500L);
+        when(repository.findById(5L)).thenReturn(Optional.of(entity));
+
+        MenuReleaseReviewRequest request = new MenuReleaseReviewRequest();
+        request.setDecision("APPROVED");
+
+        RbacUserSession session = new RbacUserSession();
+        session.setUserId(500L);
+        session.setTenantId("tenant-a");
+
+        BizException ex = assertThrows(BizException.class,
+                () -> service.reviewRecord(5L, request, "tenant-a", false, session));
+
+        assertEquals(ErrorCode.FORBIDDEN, ex.getErrorCode());
+    }
+
+    @Test
+    void applyRecordShouldRejectSelfApply() throws Exception {
+        MenuReleaseRecordRepository repository = Mockito.mock(MenuReleaseRecordRepository.class);
+        MenuAdminService menuAdminService = Mockito.mock(MenuAdminService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        MenuReleaseService service = new MenuReleaseService(repository, menuAdminService, objectMapper);
+
+        MenuImpactPreviewRequest impactRequest = new MenuImpactPreviewRequest();
+        impactRequest.setTenantId("tenant-a");
+        impactRequest.setMenuCode("MENU_CHAIN");
+
+        MenuReleaseRecord entity = new MenuReleaseRecord();
+        entity.setId(6L);
+        entity.setTenantId("tenant-a");
+        entity.setReleaseType("TENANT_RULE");
+        entity.setReleaseStatus("APPROVED");
+        entity.setRequestedByUserId(600L);
+        entity.setImpactRequestJson(objectMapper.writeValueAsString(impactRequest));
+        when(repository.findById(6L)).thenReturn(Optional.of(entity));
+
+        RbacUserSession session = new RbacUserSession();
+        session.setUserId(600L);
+        session.setTenantId("tenant-a");
+
+        BizException ex = assertThrows(BizException.class,
+                () -> service.applyRecord(6L, "tenant-a", false, session));
+
+        assertEquals(ErrorCode.FORBIDDEN, ex.getErrorCode());
+    }
 }

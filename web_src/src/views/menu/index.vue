@@ -165,6 +165,8 @@ const activeTenantName = computed(() => {
   return isSysAdmin.value ? authStore.activeTenantName : authStore.tenantName;
 });
 
+const currentUserId = computed(() => authStore.userId || 0);
+
 const hasPreviewTenant = computed(() => {
   return !isSysAdmin.value || !!activeTenantId.value;
 });
@@ -1631,8 +1633,15 @@ fillPreviewFromSession();
         <el-table-column prop="appliedByName" label="应用人" min-width="140" show-overflow-tooltip/>
         <el-table-column label="操作" width="240" fixed="right">
           <template #default="{row}">
+            <el-tag
+              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId === currentUserId"
+              type="warning"
+              effect="plain"
+            >
+              需他人审核
+            </el-tag>
             <el-button
-              v-if="row.releaseStatus === 'DRAFT'"
+              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId !== currentUserId"
               link
               type="success"
               :disabled="releaseSubmitting"
@@ -1641,7 +1650,7 @@ fillPreviewFromSession();
               审核通过
             </el-button>
             <el-button
-              v-if="row.releaseStatus === 'DRAFT'"
+              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId !== currentUserId"
               link
               type="danger"
               :disabled="releaseSubmitting"
@@ -1649,8 +1658,15 @@ fillPreviewFromSession();
             >
               驳回
             </el-button>
+            <el-tag
+              v-if="row.releaseStatus === 'APPROVED' && row.requestedByUserId === currentUserId"
+              type="warning"
+              effect="plain"
+            >
+              需他人应用
+            </el-tag>
             <el-button
-              v-if="row.releaseStatus === 'APPROVED'"
+              v-if="row.releaseStatus === 'APPROVED' && row.requestedByUserId !== currentUserId"
               link
               type="primary"
               :disabled="releaseSubmitting"

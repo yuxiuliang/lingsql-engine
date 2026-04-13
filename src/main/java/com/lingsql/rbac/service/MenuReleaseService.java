@@ -148,6 +148,7 @@ public class MenuReleaseService {
         if (!STATUS_DRAFT.equals(entity.getReleaseStatus())) {
             throw new BizException(ErrorCode.CONFLICT, "当前发布单状态不允许审核");
         }
+        validateSegregation(entity, session, "审核");
         String decision = normalizeStatus(request == null ? null : request.getDecision(), true);
         if (!STATUS_APPROVED.equals(decision) && !STATUS_REJECTED.equals(decision)) {
             throw new BizException(ErrorCode.INVALID_PARAM, "审核结论仅支持 APPROVED / REJECTED");
@@ -186,6 +187,7 @@ public class MenuReleaseService {
         if (!STATUS_APPROVED.equals(entity.getReleaseStatus())) {
             throw new BizException(ErrorCode.CONFLICT, "仅已审批的发布单允许应用");
         }
+        validateSegregation(entity, session, "应用");
         MenuImpactPreviewRequest impactRequest = readImpactRequest(entity.getImpactRequestJson());
         if (RELEASE_TYPE_GLOBAL.equals(entity.getReleaseType())) {
             menuAdminService.updateGlobalMenuRule(impactRequest.getMenuId(), impactRequest.getGlobalRule());
@@ -325,6 +327,15 @@ public class MenuReleaseService {
         }
         if (!targetTenant.trim().equals(sessionTenant.trim())) {
             throw new BizException(ErrorCode.FORBIDDEN, "无权限访问");
+        }
+    }
+
+    private void validateSegregation(MenuReleaseRecord entity, RbacUserSession session, String phase) {
+        if (entity == null || entity.getRequestedByUserId() == null || session == null || session.getUserId() == null) {
+            return;
+        }
+        if (entity.getRequestedByUserId().equals(session.getUserId())) {
+            throw new BizException(ErrorCode.FORBIDDEN, "发布单创建人不能" + phase + "自己的发布单");
         }
     }
 
