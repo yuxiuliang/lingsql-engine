@@ -7,10 +7,14 @@ import com.lingsql.rbac.model.DataScopeRule;
 import com.lingsql.rbac.model.RbacDataScopeType;
 import com.lingsql.rbac.model.RoleCreateRequest;
 import com.lingsql.rbac.model.RoleDataScopePreviewRequest;
+import com.lingsql.rbac.model.RoleScopeReleaseCreateRequest;
+import com.lingsql.rbac.model.RoleScopeReleaseReviewRequest;
+import com.lingsql.rbac.model.RoleScopeReleaseView;
 import com.lingsql.rbac.model.RoleView;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.rbac.service.DataScopePreviewService;
 import com.lingsql.rbac.service.RoleAdminService;
+import com.lingsql.rbac.service.RoleScopeReleaseService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,6 +38,7 @@ class RoleAdminControllerTest {
 
     private RoleAdminService roleAdminService;
     private DataScopePreviewService dataScopePreviewService;
+    private RoleScopeReleaseService roleScopeReleaseService;
     private AuditOperationExecutor auditOperationExecutor;
     private RoleAdminController controller;
 
@@ -41,8 +46,9 @@ class RoleAdminControllerTest {
     void setUp() {
         roleAdminService = Mockito.mock(RoleAdminService.class);
         dataScopePreviewService = Mockito.mock(DataScopePreviewService.class);
+        roleScopeReleaseService = Mockito.mock(RoleScopeReleaseService.class);
         auditOperationExecutor = Mockito.mock(AuditOperationExecutor.class);
-        controller = new RoleAdminController(roleAdminService, dataScopePreviewService, auditOperationExecutor);
+        controller = new RoleAdminController(roleAdminService, dataScopePreviewService, roleScopeReleaseService, auditOperationExecutor);
     }
 
     @AfterEach
@@ -123,6 +129,69 @@ class RoleAdminControllerTest {
         assertEquals(200, response.getCode());
         assertEquals("角色继承预览", response.getData().getSummary());
         verify(dataScopePreviewService).previewRoleScope(request, "tenant-a", false);
+    }
+
+    @Test
+    void listScopeReleasesShouldUseSessionTenantForTenantAdmin() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        RoleScopeReleaseView view = new RoleScopeReleaseView();
+        view.setId(1L);
+        view.setRoleCode("ROLE_GOV");
+        when(roleScopeReleaseService.listRecords("tenant-a", null, "tenant-a", false)).thenReturn(List.of(view));
+
+        ApiResponse<List<RoleScopeReleaseView>> response = controller.listScopeReleases(null, null);
+
+        assertEquals(200, response.getCode());
+        assertEquals(1, response.getData().size());
+        verify(roleScopeReleaseService).listRecords("tenant-a", null, "tenant-a", false);
+    }
+
+    @Test
+    void createScopeReleaseShouldDelegateByAuditExecutor() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        RoleScopeReleaseCreateRequest request = new RoleScopeReleaseCreateRequest();
+        RoleScopeReleaseView view = new RoleScopeReleaseView();
+        view.setId(2L);
+        view.setRoleCode("ROLE_FINANCE");
+        when(roleScopeReleaseService.createRecord(eq(request), eq("tenant-a"), eq(false), any(RbacUserSession.class))).thenReturn(view);
+        mockAuditExecute();
+
+        ApiResponse<RoleScopeReleaseView> response = controller.createScopeRelease(request, new MockHttpServletRequest());
+
+        assertEquals(200, response.getCode());
+        assertEquals("ROLE_FINANCE", response.getData().getRoleCode());
+    }
+
+    @Test
+    void reviewScopeReleaseShouldDelegateByAuditExecutor() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        RoleScopeReleaseReviewRequest request = new RoleScopeReleaseReviewRequest();
+        request.setDecision("APPROVED");
+        RoleScopeReleaseView view = new RoleScopeReleaseView();
+        view.setId(3L);
+        view.setReleaseStatus("APPROVED");
+        when(roleScopeReleaseService.reviewRecord(eq(3L), eq(request), eq("tenant-a"), eq(false), any(RbacUserSession.class))).thenReturn(view);
+        mockAuditExecute();
+
+        ApiResponse<RoleScopeReleaseView> response = controller.reviewScopeRelease(3L, request, new MockHttpServletRequest());
+
+        assertEquals(200, response.getCode());
+        assertEquals("APPROVED", response.getData().getReleaseStatus());
+    }
+
+    @Test
+    void applyScopeReleaseShouldDelegateByAuditExecutor() {
+        bindSession("tenant-a", List.of("TENANT_ADMIN"));
+        RoleScopeReleaseView view = new RoleScopeReleaseView();
+        view.setId(4L);
+        view.setReleaseStatus("APPLIED");
+        when(roleScopeReleaseService.applyRecord(eq(4L), eq("tenant-a"), eq(false), any(RbacUserSession.class))).thenReturn(view);
+        mockAuditExecute();
+
+        ApiResponse<RoleScopeReleaseView> response = controller.applyScopeRelease(4L, new MockHttpServletRequest());
+
+        assertEquals(200, response.getCode());
+        assertEquals("APPLIED", response.getData().getReleaseStatus());
     }
 
     private void mockAuditExecute() {

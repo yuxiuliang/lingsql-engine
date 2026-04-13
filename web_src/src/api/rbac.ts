@@ -509,6 +509,65 @@ export interface RoleDataScopePreviewRequest {
 }
 
 /**
+ * 角色数据权限发布单视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface RoleScopeReleaseView {
+  id?: number;
+  tenantId?: string;
+  roleId?: number;
+  roleCode?: string;
+  roleName?: string;
+  releaseTitle?: string;
+  baselineSummary?: string;
+  targetSummary?: string;
+  impactSummary?: string;
+  matchedOrgCount?: number;
+  affectedUserCount?: number;
+  addedOrgCount?: number;
+  removedOrgCount?: number;
+  changeRemark?: string;
+  releaseStatus?: string;
+  requestedByUserId?: number;
+  requestedByName?: string;
+  reviewedByUserId?: number;
+  reviewedByName?: string;
+  reviewComment?: string;
+  reviewedTime?: string;
+  appliedByUserId?: number;
+  appliedByName?: string;
+  appliedTime?: string;
+  createTime?: string;
+  updateTime?: string;
+}
+
+/**
+ * 角色数据权限发布单创建请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface RoleScopeReleaseCreateRequest {
+  tenantId?: string;
+  releaseTitle?: string;
+  changeRemark?: string;
+  previewRequest: RoleDataScopePreviewRequest;
+}
+
+/**
+ * 角色数据权限发布单审核请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface RoleScopeReleaseReviewRequest {
+  decision: string;
+  reviewComment?: string;
+}
+
+/**
  * 用户数据权限预览请求。
  *
  * @author 余炘洋
@@ -666,6 +725,72 @@ export const previewRoleDataScope = async (payload: RoleDataScopePreviewRequest)
   return request<DataScopePreviewView>('/api/v1/admin/roles/preview-data-scope', {
     method: 'POST',
     body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 查询角色数据权限发布单列表。
+ *
+ * @param tenantId 租户ID
+ * @param status 状态
+ * @return 发布单列表
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const fetchRoleScopeReleaseRecords = async (tenantId?: string, status?: string): Promise<RoleScopeReleaseView[]> => {
+  const query = new URLSearchParams();
+  if (tenantId) {
+    query.set('tenantId', tenantId);
+  }
+  if (status) {
+    query.set('status', status);
+  }
+  const queryString = query.toString();
+  return request<RoleScopeReleaseView[]>(`/api/v1/admin/roles/scope-releases${queryString ? `?${queryString}` : ''}`);
+};
+
+/**
+ * 创建角色数据权限发布单。
+ *
+ * @param payload 请求体
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const createRoleScopeReleaseRecord = async (payload: RoleScopeReleaseCreateRequest): Promise<RoleScopeReleaseView> => {
+  return request<RoleScopeReleaseView>('/api/v1/admin/roles/scope-releases', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 审核角色数据权限发布单。
+ *
+ * @param id 发布单ID
+ * @param payload 请求体
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const reviewRoleScopeReleaseRecord = async (id: number, payload: RoleScopeReleaseReviewRequest): Promise<RoleScopeReleaseView> => {
+  return request<RoleScopeReleaseView>(`/api/v1/admin/roles/scope-releases/${id}/review`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 应用角色数据权限发布单。
+ *
+ * @param id 发布单ID
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const applyRoleScopeReleaseRecord = async (id: number): Promise<RoleScopeReleaseView> => {
+  return request<RoleScopeReleaseView>(`/api/v1/admin/roles/scope-releases/${id}/apply`, {
+    method: 'PUT'
   });
 };
 

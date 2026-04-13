@@ -10,17 +10,24 @@ import {
   type OrgUnitView
 } from '@/api/organization';
 import {
+  applyRoleScopeReleaseRecord,
+  createRoleScopeReleaseRecord,
   createRole,
   DataScopePreviewView,
   DataScopeRule,
   fetchPermissions,
   fetchRoles,
+  fetchRoleScopeReleaseRecords,
   PermissionView,
   previewRoleDataScope,
   RoleCreateRequest,
   RoleDataScopePreviewRequest,
+  RoleScopeReleaseCreateRequest,
+  RoleScopeReleaseReviewRequest,
+  RoleScopeReleaseView,
   RoleUpdateRequest,
   RoleView,
+  reviewRoleScopeReleaseRecord,
   updateRole
 } from '@/api/rbac';
 
@@ -37,6 +44,9 @@ const previewOrgUnitIds = ref<number[]>([]);
 const baselineDataScope = ref<DataScopeRule | null>(null);
 const sampleSql = ref('');
 const governanceCatalog = ref<OrgGovernanceCatalogView | null>(null);
+const releaseRecords = ref<RoleScopeReleaseView[]>([]);
+const releaseLoading = ref(false);
+const releaseSubmitting = ref(false);
 const scopeTypeOptions = [
   {label: '全部数据', value: 'ALL'},
   {label: '本租户', value: 'TENANT'},
@@ -54,6 +64,13 @@ const defaultRelationTypeLabelMapping: Record<string, string> = {
   SERVICE: '服务',
   OWNERSHIP: '归口',
   MATRIX: '矩阵'
+};
+
+const releaseStatusLabelMap: Record<string, string> = {
+  DRAFT: '待审核',
+  APPROVED: '已通过',
+  REJECTED: '已驳回',
+  APPLIED: '已应用'
 };
 
 const form = reactive<RoleCreateRequest & RoleUpdateRequest>({
@@ -224,6 +241,8 @@ const relationTypeOptions = computed(() => resolveCatalogOptions(
   defaultRelationTypeLabelMapping
 ));
 
+const currentUserId = computed(() => authStore.userId || 0);
+
 /**
  * 组织节点选项。
  *
@@ -317,6 +336,21 @@ const loadGovernanceCatalog = async () => {
       return;
     }
     ElMessage.error(message);
+  }
+};
+
+const loadReleaseRecords = async () => {
+  try {
+    if (!hasTenantSelected.value) {
+      releaseRecords.value = [];
+      return;
+    }
+    releaseLoading.value = true;
+    releaseRecords.value = await fetchRoleScopeReleaseRecords(activeTenantId.value || undefined);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载角色数据权限发布单失败');
+  } finally {
+    releaseLoading.value = false;
   }
 };
 
@@ -471,6 +505,99 @@ const handlePreviewDataScope = async () => {
   }
 };
 
+const handleCreateScopeRelease = async () => {
+  if (!editingId.value) {
+    ElMessage.warning('请先选择已有角色后再生成发布单');
+    return;
+  }
+  const changeRemark = window.prompt('可选：请输入本次角色数据权限变更说明', '') || '';
+  const payload: RoleScopeReleaseCreateRequest = {
+    tenantId: activeTenantId.value || undefined,
+    changeRemark: changeRemark.trim() || undefined,
+    previewRequest: {
+      tenantId: activeTenantId.value || undefined,
+      roleId: editingId.value,
+      dataScope: buildDataScopePayload(),
+      baselineDataScope: baselineDataScope.value || createDefaultDataScope(),
+      orgUnitIds: previewOrgUnitIds.value || [],
+      sampleSql: sampleSql.value || undefined
+    }
+  };
+  releaseSubmitting.value = true;
+  try {
+    await createRoleScopeReleaseRecord(payload);
+    ElMessage.success('角色数据权限发布单已创建');
+    await loadReleaseRecords();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '创建角色数据权限发布单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
+const handleReviewScopeRelease = async (record: RoleScopeReleaseView, decision: 'APPROVED' | 'REJECTED') => {
+  if (!record?.id) {
+    return;
+  }
+  const reviewComment = window.prompt(
+    decision === 'APPROVED' ? '可选：请输入审核通过说明' : '可选：请输入驳回原因',
+    ''
+  ) || '';
+  const payload: RoleScopeReleaseReviewRequest = {
+    decision,
+    reviewComment: reviewComment.trim() || undefined
+  };
+  releaseSubmitting.value = true;
+  try {
+    await reviewRoleScopeReleaseRecord(record.id, payload);
+    ElMessage.success(decision === 'APPROVED' ? '发布单已审核通过' : '发布单已驳回');
+    await loadReleaseRecords();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '审核角色数据权限发布单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
+const handleApplyScopeRelease = async (record: RoleScopeReleaseView) => {
+  if (!record?.id) {
+    return;
+  }
+  if (!window.confirm(`确认应用发布单“${record.releaseTitle || record.roleName || record.roleCode}”吗？`)) {
+    return;
+  }
+  releaseSubmitting.value = true;
+  try {
+    await applyRoleScopeReleaseRecord(record.id);
+    ElMessage.success('角色数据权限发布单已应用');
+    await Promise.all([
+      loadRoles(),
+      loadReleaseRecords()
+    ]);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '应用角色数据权限发布单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
+const resolveReleaseStatusLabel = (status?: string) => {
+  return releaseStatusLabelMap[status || 'DRAFT'] || status || '待审核';
+};
+
+const resolveReleaseStatusType = (status?: string) => {
+  if (status === 'APPROVED') {
+    return 'success';
+  }
+  if (status === 'REJECTED') {
+    return 'danger';
+  }
+  if (status === 'APPLIED') {
+    return 'primary';
+  }
+  return 'warning';
+};
+
 watch(
   () => activeTenantId.value,
   () => {
@@ -480,6 +607,7 @@ watch(
     loadRoles();
     loadOrgs();
     loadGovernanceCatalog();
+    loadReleaseRecords();
   },
   {immediate: true}
 );
@@ -523,6 +651,77 @@ loadPermissions();
         <el-table-column label="操作" width="120">
           <template #default="scope">
             <el-button size="small" @click="handleEdit(scope.row)">编辑</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-card v-if="hasTenantSelected" class="card" shadow="never">
+      <div class="toolbar">
+        <div class="filters">
+          <span class="tips">角色数据权限发布单</span>
+        </div>
+        <div class="toolbar-actions">
+          <el-button size="small" :loading="releaseLoading" @click="loadReleaseRecords">刷新发布单</el-button>
+        </div>
+      </div>
+
+      <el-table :data="releaseRecords" border v-loading="releaseLoading">
+        <el-table-column prop="createTime" label="创建时间" min-width="160"/>
+        <el-table-column prop="releaseTitle" label="发布单标题" min-width="220" show-overflow-tooltip/>
+        <el-table-column prop="roleName" label="角色" min-width="160" show-overflow-tooltip/>
+        <el-table-column label="状态" width="110">
+          <template #default="{row}">
+            <el-tag :type="resolveReleaseStatusType(row.releaseStatus)">{{ resolveReleaseStatusLabel(row.releaseStatus) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="impactSummary" label="影响摘要" min-width="260" show-overflow-tooltip/>
+        <el-table-column prop="requestedByName" label="创建人" min-width="140" show-overflow-tooltip/>
+        <el-table-column prop="reviewedByName" label="审核人" min-width="140" show-overflow-tooltip/>
+        <el-table-column prop="appliedByName" label="应用人" min-width="140" show-overflow-tooltip/>
+        <el-table-column label="操作" width="230" fixed="right">
+          <template #default="{row}">
+            <el-tag
+              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId === currentUserId"
+              type="warning"
+              effect="plain"
+            >
+              需他人审核
+            </el-tag>
+            <el-button
+              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId !== currentUserId"
+              link
+              type="success"
+              :disabled="releaseSubmitting"
+              @click="handleReviewScopeRelease(row, 'APPROVED')"
+            >
+              审核通过
+            </el-button>
+            <el-button
+              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId !== currentUserId"
+              link
+              type="danger"
+              :disabled="releaseSubmitting"
+              @click="handleReviewScopeRelease(row, 'REJECTED')"
+            >
+              驳回
+            </el-button>
+            <el-tag
+              v-if="row.releaseStatus === 'APPROVED' && row.requestedByUserId === currentUserId"
+              type="warning"
+              effect="plain"
+            >
+              需他人应用
+            </el-tag>
+            <el-button
+              v-if="row.releaseStatus === 'APPROVED' && row.requestedByUserId !== currentUserId"
+              link
+              type="primary"
+              :disabled="releaseSubmitting"
+              @click="handleApplyScopeRelease(row)"
+            >
+              应用
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -609,6 +808,7 @@ loadPermissions();
         <el-form-item>
           <div class="preview-toolbar">
             <el-button type="primary" plain :loading="previewLoading" @click="handlePreviewDataScope">预览权限命中</el-button>
+            <el-button v-if="editingId && previewResult" plain :loading="releaseSubmitting" @click="handleCreateScopeRelease">生成发布单</el-button>
             <span class="preview-tip">建议至少选择一个样本组织，便于展开组织型/关系型权限的命中范围。</span>
           </div>
         </el-form-item>

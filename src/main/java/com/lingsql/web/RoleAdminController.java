@@ -5,6 +5,9 @@ import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.model.DataScopePreviewView;
 import com.lingsql.rbac.model.RoleCreateRequest;
 import com.lingsql.rbac.model.RoleDataScopePreviewRequest;
+import com.lingsql.rbac.model.RoleScopeReleaseCreateRequest;
+import com.lingsql.rbac.model.RoleScopeReleaseReviewRequest;
+import com.lingsql.rbac.model.RoleScopeReleaseView;
 import com.lingsql.rbac.model.RoleUpdateRequest;
 import com.lingsql.rbac.model.RoleView;
 import com.lingsql.rbac.security.RbacSecurityUtils;
@@ -12,6 +15,7 @@ import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.rbac.security.SecureTenantResolver;
 import com.lingsql.rbac.service.DataScopePreviewService;
 import com.lingsql.rbac.service.RoleAdminService;
+import com.lingsql.rbac.service.RoleScopeReleaseService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +46,7 @@ public class RoleAdminController {
 
     private final RoleAdminService roleAdminService;
     private final DataScopePreviewService dataScopePreviewService;
+    private final RoleScopeReleaseService roleScopeReleaseService;
     private final AuditOperationExecutor auditOperationExecutor;
 
     /**
@@ -121,6 +126,98 @@ public class RoleAdminController {
                 request,
                 http,
                 () -> roleAdminService.updateRole(id, request, session.getTenantId(), sysAdmin)
+        );
+    }
+
+    /**
+     * 查询角色数据权限发布单列表。
+     *
+     * @param tenantId 租户ID
+     * @param status 发布状态
+     * @return 发布单列表
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    @GetMapping("/scope-releases")
+    @PreAuthorize("hasAuthority('ADMIN:ROLE:READ')")
+    public ApiResponse<List<RoleScopeReleaseView>> listScopeReleases(@RequestParam(required = false) String tenantId,
+                                                                     @RequestParam(required = false) String status) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        String resolvedTenant = sysAdmin ? normalize(tenantId) : session.getTenantId();
+        return ApiResponse.success(roleScopeReleaseService.listRecords(resolvedTenant, status, session.getTenantId(), sysAdmin));
+    }
+
+    /**
+     * 创建角色数据权限发布单。
+     *
+     * @param request 请求体
+     * @param http 请求
+     * @return 发布单
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    @PostMapping("/scope-releases")
+    @PreAuthorize("hasAuthority('ADMIN:ROLE:WRITE')")
+    public ApiResponse<RoleScopeReleaseView> createScopeRelease(@RequestBody RoleScopeReleaseCreateRequest request,
+                                                                HttpServletRequest http) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return auditOperationExecutor.execute(
+                "ROLE_SCOPE_RELEASE_CREATE",
+                "ROLE_SCOPE_RELEASE",
+                request,
+                http,
+                () -> roleScopeReleaseService.createRecord(request, session.getTenantId(), sysAdmin, session)
+        );
+    }
+
+    /**
+     * 审核角色数据权限发布单。
+     *
+     * @param id 发布单ID
+     * @param request 请求体
+     * @param http 请求
+     * @return 发布单
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    @PutMapping("/scope-releases/{id}/review")
+    @PreAuthorize("hasAuthority('ADMIN:ROLE:WRITE')")
+    public ApiResponse<RoleScopeReleaseView> reviewScopeRelease(@PathVariable Long id,
+                                                                @RequestBody RoleScopeReleaseReviewRequest request,
+                                                                HttpServletRequest http) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return auditOperationExecutor.execute(
+                "ROLE_SCOPE_RELEASE_REVIEW",
+                "ROLE_SCOPE_RELEASE",
+                request,
+                http,
+                () -> roleScopeReleaseService.reviewRecord(id, request, session.getTenantId(), sysAdmin, session)
+        );
+    }
+
+    /**
+     * 应用角色数据权限发布单。
+     *
+     * @param id 发布单ID
+     * @param http 请求
+     * @return 发布单
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    @PutMapping("/scope-releases/{id}/apply")
+    @PreAuthorize("hasAuthority('ADMIN:ROLE:WRITE')")
+    public ApiResponse<RoleScopeReleaseView> applyScopeRelease(@PathVariable Long id, HttpServletRequest http) {
+        RbacUserSession session = requireSession();
+        boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
+        return auditOperationExecutor.execute(
+                "ROLE_SCOPE_RELEASE_APPLY",
+                "ROLE_SCOPE_RELEASE",
+                "id=" + id,
+                http,
+                () -> roleScopeReleaseService.applyRecord(id, session.getTenantId(), sysAdmin, session)
         );
     }
 

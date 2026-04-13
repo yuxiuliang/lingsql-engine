@@ -271,6 +271,18 @@ public class RoleAdminService {
     }
 
     /**
+     * 查询当前角色数据权限规则。
+     *
+     * @param roleId 角色ID
+     * @return 数据权限规则
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    DataScopeRule resolveCurrentRoleDataScope(Long roleId) {
+        return resolveRoleDataScope(roleId);
+    }
+
+    /**
      * 应用角色数据权限配置。
      *
      * @param role 角色

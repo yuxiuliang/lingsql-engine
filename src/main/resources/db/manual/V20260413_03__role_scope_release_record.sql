@@ -1,0 +1,36 @@
+CREATE TABLE IF NOT EXISTS `t_lingsql_engine_role_scope_release_record`
+(
+  `id`                  bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id`           varchar(64)  NOT NULL COMMENT '租户ID',
+  `release_title`       varchar(255) NOT NULL COMMENT '发布单标题',
+  `role_id`             bigint       NOT NULL COMMENT '角色ID',
+  `role_code`           varchar(128) NOT NULL COMMENT '角色编码',
+  `role_name`           varchar(255) NOT NULL COMMENT '角色名称',
+  `baseline_summary`    text         DEFAULT NULL COMMENT '基线摘要',
+  `target_summary`      text         DEFAULT NULL COMMENT '目标摘要',
+  `impact_summary`      text         DEFAULT NULL COMMENT '影响摘要',
+  `matched_org_count`   int          DEFAULT 0 COMMENT '命中组织数',
+  `affected_user_count` int          DEFAULT 0 COMMENT '受影响用户数',
+  `added_org_count`     int          DEFAULT 0 COMMENT '新增组织数',
+  `removed_org_count`   int          DEFAULT 0 COMMENT '移除组织数',
+  `preview_request_json` text        DEFAULT NULL COMMENT '预览请求快照(JSON)',
+  `preview_snapshot_json` text       DEFAULT NULL COMMENT '预览结果快照(JSON)',
+  `change_remark`       text         DEFAULT NULL COMMENT '变更说明',
+  `release_status`      varchar(32)  NOT NULL COMMENT '发布状态：DRAFT / APPROVED / REJECTED / APPLIED',
+  `requested_by_user_id` bigint      NOT NULL COMMENT '创建人ID',
+  `requested_by_name`   varchar(128) DEFAULT NULL COMMENT '创建人名称',
+  `reviewed_by_user_id` bigint       DEFAULT NULL COMMENT '审核人ID',
+  `reviewed_by_name`    varchar(128) DEFAULT NULL COMMENT '审核人名称',
+  `review_comment`      text         DEFAULT NULL COMMENT '审核意见',
+  `reviewed_time`       datetime     DEFAULT NULL COMMENT '审核时间',
+  `applied_by_user_id`  bigint       DEFAULT NULL COMMENT '应用人ID',
+  `applied_by_name`     varchar(128) DEFAULT NULL COMMENT '应用人名称',
+  `applied_time`        datetime     DEFAULT NULL COMMENT '应用时间',
+  `create_time`         datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`         datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_role_scope_release_tenant_status` (`tenant_id`, `release_status`, `create_time` DESC, `id` DESC),
+  KEY `idx_role_scope_release_role_id` (`role_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='角色数据权限发布单';
