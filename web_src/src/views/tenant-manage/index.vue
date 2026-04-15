@@ -881,6 +881,69 @@ const handleOpenNotificationAnalysis = async (row: TenantView) => {
 };
 
 /**
+ * 构建通知分析使用的租户上下文。
+ *
+ * @param tenantId 租户ID
+ * @param tenantName 租户名称
+ * @param channels 通道列表
+ * @return 租户上下文
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const buildNotificationTenantContext = (tenantId?: string, tenantName?: string, channels?: string[]) => {
+  const matched = tenants.value.find((item) => item.tenantId === tenantId);
+  if (matched) {
+    return {
+      ...matched,
+      notificationChannels: matched.notificationChannels?.length ? matched.notificationChannels : (channels || [])
+    };
+  }
+  return {
+    id: 0,
+    tenantId: tenantId || '',
+    tenantName: tenantName || tenantId || '未知租户',
+    notificationChannels: channels || [],
+    status: 1
+  } as TenantView;
+};
+
+/**
+ * 从通知风险项打开租户分析。
+ *
+ * @param issue 风险项
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleOpenNotificationAnalysisByIssue = async (issue: TenantNotificationChannelIssueView) => {
+  const target = buildNotificationTenantContext(issue.tenantId, issue.tenantName, issue.selectedChannels || []);
+  await handleOpenNotificationAnalysis(target);
+};
+
+/**
+ * 从最近测试记录打开租户分析。
+ *
+ * @param record 测试记录
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleOpenNotificationAnalysisByRecord = async (record: TenantNotificationChannelRecentTestView) => {
+  const target = buildNotificationTenantContext(record.tenantId, record.tenantName, record.requestedChannels || []);
+  await handleOpenNotificationAnalysis(target);
+};
+
+/**
+ * 从通知风险项直接发起复测。
+ *
+ * @param issue 风险项
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleRetestNotificationIssue = async (issue: TenantNotificationChannelIssueView) => {
+  const target = buildNotificationTenantContext(issue.tenantId, issue.tenantName, issue.selectedChannels || []);
+  await handleTestTenantNotificationChannels(target);
+};
+
+/**
  * 打开通知通道历史测试详情。
  *
  * @param record 历史测试记录
@@ -1526,6 +1589,23 @@ refreshTenantData();
           </el-table-column>
           <el-table-column prop="reason" label="风险说明" min-width="240" show-overflow-tooltip/>
           <el-table-column prop="suggestion" label="建议动作" min-width="260" show-overflow-tooltip/>
+          <el-table-column label="操作" width="180">
+            <template #default="scope">
+              <div class="row-actions">
+                <el-button link type="primary" @click="handleOpenNotificationAnalysisByIssue(scope.row)">
+                  租户分析
+                </el-button>
+                <el-button
+                  link
+                  type="warning"
+                  :disabled="!(scope.row.selectedChannels || []).length || notificationTestLoading"
+                  @click="handleRetestNotificationIssue(scope.row)"
+                >
+                  直接复测
+                </el-button>
+              </div>
+            </template>
+          </el-table-column>
         </el-table>
       </div>
     </el-card>
@@ -1725,11 +1805,16 @@ refreshTenantData();
         <el-table-column label="摘要" min-width="320" show-overflow-tooltip>
           <template #default="scope">{{ scope.row.summary || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="110">
+        <el-table-column label="操作" width="160">
           <template #default="scope">
-            <el-button link type="primary" @click="handleOpenNotificationHistoryDetail(scope.row)">
-              查看明细
-            </el-button>
+            <div class="row-actions">
+              <el-button link type="primary" @click="handleOpenNotificationHistoryDetail(scope.row)">
+                查看明细
+              </el-button>
+              <el-button link type="success" @click="handleOpenNotificationAnalysisByRecord(scope.row)">
+                租户分析
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -2232,11 +2317,16 @@ refreshTenantData();
               <el-table-column label="摘要" min-width="260" show-overflow-tooltip>
                 <template #default="scope">{{ scope.row.summary || '-' }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="110">
+              <el-table-column label="操作" width="160">
                 <template #default="scope">
-                  <el-button link type="primary" @click="handleOpenNotificationHistoryDetail(scope.row)">
-                    查看明细
-                  </el-button>
+                  <div class="row-actions">
+                    <el-button link type="primary" @click="handleOpenNotificationHistoryDetail(scope.row)">
+                      查看明细
+                    </el-button>
+                    <el-button link type="success" @click="handleOpenNotificationAnalysisByRecord(scope.row)">
+                      租户分析
+                    </el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
