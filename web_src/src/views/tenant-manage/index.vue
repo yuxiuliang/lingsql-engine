@@ -388,6 +388,130 @@ const resolveNotificationChannelLabel = (channel?: string) => {
 };
 
 /**
+ * 解析通知时间窗口展示文本。
+ *
+ * @return 展示文本
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const resolveNotificationTimeRangeText = () => {
+  if (notificationTimeRange.value.length !== 2) {
+    return '全部时间';
+  }
+  return `${notificationTimeRange.value[0]} ~ ${notificationTimeRange.value[1]}`;
+};
+
+/**
+ * 写入剪贴板。
+ *
+ * @param text 文本
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const copyText = async (text: string) => {
+  if (!text.trim()) {
+    ElMessage.warning('暂无可复制的摘要内容');
+    return;
+  }
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  if (typeof document !== 'undefined') {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+  }
+};
+
+/**
+ * 构建全局通知分析摘要。
+ *
+ * @return 摘要
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const buildNotificationGlobalSummary = () => {
+  const configuredChannels = (notificationHealth.value?.configuredChannels || []).map(resolveNotificationChannelLabel).join('、') || '无';
+  return [
+    '【通知治理全局摘要】',
+    `统计时间窗口：${resolveNotificationTimeRangeText()}`,
+    `系统通知开关：${notificationHealth.value?.alertEnabled ? '已启用' : '已关闭'}`,
+    `已配置通道：${configuredChannels}`,
+    `使用默认通道租户：${notificationHealth.value?.tenantUsingNotificationChannels ?? 0}`,
+    `风险租户：${notificationHealth.value?.tenantIssueCount ?? 0}`,
+    `样本测试数：${notificationFailureStats.value?.totalTests ?? 0}`,
+    `失败测试数：${notificationFailureStats.value?.failedTests ?? 0}`,
+    `样本成功率：${(notificationFailureStats.value?.successRate ?? 0).toFixed(2)}%`,
+    `失败统计摘要：${notificationFailureStats.value?.summary || '暂无'}`,
+    `最近记录摘要：${recentNotificationTests.value.length > 0 ? `最近 ${recentNotificationTests.value.length} 条记录已载入` : '暂无最近测试记录'}`
+  ].join('\n');
+};
+
+/**
+ * 构建单租户通知分析摘要。
+ *
+ * @return 摘要
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const buildTenantNotificationSummary = () => {
+  if (!notificationAnalysisTenant.value) {
+    return '';
+  }
+  const channels = (notificationAnalysisTenant.value.notificationChannels || []).map(resolveNotificationChannelLabel).join('、') || '未配置';
+  return [
+    '【租户通知分析摘要】',
+    `租户：${notificationAnalysisTenant.value.tenantName || '未命名租户'}（${notificationAnalysisTenant.value.tenantId || '--'}）`,
+    `时间窗口：${resolveNotificationTimeRangeText()}`,
+    `默认通知通道：${channels}`,
+    `当前风险：${notificationAnalysisIssue.value?.reason || '无'}`,
+    `建议动作：${notificationAnalysisIssue.value?.suggestion || '继续保持或扩大覆盖'}`,
+    `样本测试数：${tenantNotificationFailureStats.value?.totalTests ?? 0}`,
+    `失败测试数：${tenantNotificationFailureStats.value?.failedTests ?? 0}`,
+    `样本成功率：${(tenantNotificationFailureStats.value?.successRate ?? 0).toFixed(2)}%`,
+    `失败统计摘要：${tenantNotificationFailureStats.value?.summary || '暂无'}`,
+    `最近记录数：${tenantRecentNotificationTests.value.length}`
+  ].join('\n');
+};
+
+/**
+ * 复制全局通知摘要。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleCopyNotificationGlobalSummary = async () => {
+  try {
+    await copyText(buildNotificationGlobalSummary());
+    ElMessage.success('全局通知摘要已复制');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '复制全局通知摘要失败');
+  }
+};
+
+/**
+ * 复制单租户通知摘要。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleCopyTenantNotificationSummary = async () => {
+  try {
+    await copyText(buildTenantNotificationSummary());
+    ElMessage.success('租户通知摘要已复制');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '复制租户通知摘要失败');
+  }
+};
+
+/**
  * 解析通知时间范围筛选参数。
  *
  * @return 时间范围参数
@@ -1791,6 +1915,9 @@ refreshTenantData();
     </div>
 
     <div class="section-actions">
+      <el-button size="small" type="primary" plain @click="handleCopyNotificationGlobalSummary">
+        复制全局通知摘要
+      </el-button>
       <el-button size="small" @click="applyNotificationSectionRecommendations(true)">
         恢复推荐布局
       </el-button>
@@ -2642,6 +2769,9 @@ refreshTenantData();
           <div class="analysis-subtitle">{{ notificationAnalysisTenant.tenantId || '--' }}</div>
           <div class="workbench-time">分析更新时间：{{ notificationAnalysisUpdatedAt || '--' }}</div>
           <div class="analysis-actions">
+            <el-button size="small" type="primary" plain @click="handleCopyTenantNotificationSummary">
+              复制租户摘要
+            </el-button>
             <el-button size="small" :loading="notificationAnalysisLoading" @click="loadTenantNotificationAnalysis(notificationAnalysisTenant)">
               刷新分析
             </el-button>
