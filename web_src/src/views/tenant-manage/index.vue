@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, reactive, ref} from 'vue';
+import {computed, reactive, ref, watch} from 'vue';
 import {ElMessage, ElMessageBox} from 'element-plus';
 import {
   createTenant,
@@ -39,6 +39,7 @@ import {
 } from '@/utils/mysql-jdbc';
 
 const authStore = useAuthStore();
+const NOTIFICATION_FILTER_STORAGE_KEY = 'lingsql:tenant-manage:notification-filters:v1';
 const tenants = ref<TenantView[]>([]);
 const lifecycleSummary = ref<TenantLifecycleSummaryView | null>(null);
 const lifecycleWorkbench = ref<TenantLifecycleWorkbenchView | null>(null);
@@ -267,6 +268,69 @@ const recentNotificationFilter = reactive({
   operatorKeyword: '',
   limit: 10
 });
+
+/**
+ * 恢复通知分析筛选偏好。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const restoreNotificationFilterPreference = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    const raw = window.localStorage.getItem(NOTIFICATION_FILTER_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+    const parsed = JSON.parse(raw) as {
+      tenantId?: string;
+      success?: '' | '1' | '0';
+      channel?: '' | 'webhook' | 'dingtalk' | 'wecom';
+      operatorKeyword?: string;
+      limit?: number;
+      notificationTimeRange?: string[];
+    };
+    recentNotificationFilter.tenantId = typeof parsed.tenantId === 'string' ? parsed.tenantId : '';
+    recentNotificationFilter.success = parsed.success === '1' || parsed.success === '0' ? parsed.success : '';
+    recentNotificationFilter.channel = parsed.channel === 'webhook'
+      || parsed.channel === 'dingtalk'
+      || parsed.channel === 'wecom'
+      ? parsed.channel
+      : '';
+    recentNotificationFilter.operatorKeyword = typeof parsed.operatorKeyword === 'string' ? parsed.operatorKeyword : '';
+    recentNotificationFilter.limit = parsed.limit === 20 || parsed.limit === 50 ? parsed.limit : 10;
+    notificationTimeRange.value = Array.isArray(parsed.notificationTimeRange) && parsed.notificationTimeRange.length === 2
+      ? parsed.notificationTimeRange.filter((item): item is string => typeof item === 'string')
+      : [];
+  } catch (error) {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(NOTIFICATION_FILTER_STORAGE_KEY);
+    }
+  }
+};
+
+/**
+ * 持久化通知分析筛选偏好。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const persistNotificationFilterPreference = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const payload = {
+    tenantId: recentNotificationFilter.tenantId,
+    success: recentNotificationFilter.success,
+    channel: recentNotificationFilter.channel,
+    operatorKeyword: recentNotificationFilter.operatorKeyword,
+    limit: recentNotificationFilter.limit,
+    notificationTimeRange: notificationTimeRange.value
+  };
+  window.localStorage.setItem(NOTIFICATION_FILTER_STORAGE_KEY, JSON.stringify(payload));
+};
 
 /**
  * 判断是否系统管理员。
@@ -508,6 +572,21 @@ const resetRecentNotificationFilters = async () => {
   await loadRecentNotificationTests();
   await loadNotificationFailureStats();
 };
+
+watch(
+  () => ({
+    tenantId: recentNotificationFilter.tenantId,
+    success: recentNotificationFilter.success,
+    channel: recentNotificationFilter.channel,
+    operatorKeyword: recentNotificationFilter.operatorKeyword,
+    limit: recentNotificationFilter.limit,
+    notificationTimeRange: [...notificationTimeRange.value]
+  }),
+  () => {
+    persistNotificationFilterPreference();
+  },
+  {deep: true}
+);
 
 /**
  * 加载套餐列表。
@@ -1235,6 +1314,7 @@ const isMessageBoxCancel = (error: unknown) => {
   return error === 'cancel' || error === 'close';
 };
 
+restoreNotificationFilterPreference();
 loadPlans();
 loadOrgTemplates();
 refreshTenantData();
