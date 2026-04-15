@@ -85,6 +85,34 @@ const notificationAnalysisIssue = computed(() => {
   }
   return notificationIssueMap.value.get(tenantId) || null;
 });
+const notificationOverviewCards = computed(() => {
+  return [
+    {
+      key: 'configured_channels',
+      label: '已配置通道',
+      value: notificationHealth.value?.configuredChannels?.length ?? 0,
+      emphasisClass: 'success'
+    },
+    {
+      key: 'tenant_using_channels',
+      label: '使用默认通道租户',
+      value: notificationHealth.value?.tenantUsingNotificationChannels ?? 0,
+      emphasisClass: undefined
+    },
+    {
+      key: 'notification_failures',
+      label: '失败测试数',
+      value: notificationFailureStats.value?.failedTests ?? 0,
+      emphasisClass: 'danger'
+    },
+    {
+      key: 'notification_success_rate',
+      label: '样本成功率',
+      value: `${(notificationFailureStats.value?.successRate ?? 0).toFixed(2)}%`,
+      emphasisClass: 'success'
+    }
+  ];
+});
 
 const notificationNextSteps = computed(() => {
   const steps: Array<{
@@ -1066,6 +1094,33 @@ const handleNotificationSuggestionAction = async (action?: string) => {
 };
 
 /**
+ * 处理通知概览卡片点击。
+ *
+ * @param key 卡片键
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleNotificationOverviewCardClick = async (key: string) => {
+  if (key === 'configured_channels' || key === 'tenant_using_channels') {
+    await loadNotificationHealth();
+    ElMessage.success('已刷新通知通道健康预检，请查看系统配置与风险租户。');
+    return;
+  }
+  if (key === 'notification_failures' || key === 'notification_success_rate') {
+    await loadNotificationFailureStats();
+    await loadRecentNotificationTests();
+    if (key === 'notification_failures') {
+      const failedRecord = recentNotificationTests.value.find((item) => item.success !== true);
+      if (failedRecord) {
+        await handleOpenNotificationAnalysisByRecord(failedRecord);
+        return;
+      }
+    }
+    ElMessage.success('已刷新通知失败统计与最近记录，请继续下钻分析。');
+  }
+};
+
+/**
  * 打开通知通道历史测试详情。
  *
  * @param record 历史测试记录
@@ -1545,6 +1600,20 @@ refreshTenantData();
       <el-card shadow="never" class="summary-card">
         <div class="summary-label">严重风险</div>
         <div class="summary-value danger">{{ lifecycleSummary?.criticalRisk ?? 0 }}</div>
+      </el-card>
+    </div>
+
+    <div class="summary-grid notification-summary-grid">
+      <el-card
+        v-for="item in notificationOverviewCards"
+        :key="item.key"
+        shadow="never"
+        class="summary-card notification-summary-card"
+        @click="handleNotificationOverviewCardClick(item.key)"
+      >
+        <div class="summary-label">{{ item.label }}</div>
+        <div class="summary-value" :class="item.emphasisClass">{{ item.value }}</div>
+        <div class="summary-tip">点击后自动跳转到相关通知分析区域</div>
       </el-card>
     </div>
 
@@ -2591,9 +2660,30 @@ refreshTenantData();
   border-radius: 10px;
 }
 
+.notification-summary-grid {
+  margin-bottom: 16px;
+}
+
+.notification-summary-card {
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.notification-summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  border-color: #cbd5e1;
+}
+
 .summary-label {
   color: #64748b;
   font-size: 13px;
+}
+
+.summary-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #64748b;
 }
 
 .summary-value {
