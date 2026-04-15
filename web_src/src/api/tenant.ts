@@ -179,6 +179,37 @@ export interface TenantNotificationChannelTestView {
 }
 
 /**
+ * 租户通知通道风险项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelIssueView {
+  tenantId?: string;
+  tenantName?: string;
+  selectedChannels?: string[];
+  unavailableChannels?: string[];
+  reason?: string;
+  suggestion?: string;
+}
+
+/**
+ * 租户通知通道健康视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelHealthView {
+  alertEnabled?: boolean;
+  configuredChannels?: string[];
+  unconfiguredChannels?: string[];
+  tenantUsingNotificationChannels?: number;
+  tenantIssueCount?: number;
+  summary?: string;
+  issues?: TenantNotificationChannelIssueView[];
+}
+
+/**
  * 租户续期请求。
  *
  * @author 余炘洋
@@ -267,6 +298,17 @@ export const fetchTenantLifecycleSummary = async (): Promise<TenantLifecycleSumm
  */
 export const fetchTenantLifecycleWorkbench = async (limit = 50): Promise<TenantLifecycleWorkbenchView> => {
   return request<TenantLifecycleWorkbenchView>(`/api/v1/admin/tenants/lifecycle/workbench?limit=${limit}`);
+};
+
+/**
+ * 查询租户默认通知通道健康情况。
+ *
+ * @return 健康视图
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export const fetchTenantNotificationChannelHealth = async (): Promise<TenantNotificationChannelHealthView> => {
+  return request<TenantNotificationChannelHealthView>('/api/v1/admin/tenants/notification-channels/health');
 };
 
 /**

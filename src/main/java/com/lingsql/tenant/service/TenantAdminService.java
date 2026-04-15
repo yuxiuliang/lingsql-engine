@@ -31,6 +31,8 @@ import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleOpsTaskView;
 import com.lingsql.tenant.model.TenantLifecycleSnapshot;
 import com.lingsql.tenant.model.TenantLifecycleState;
+import com.lingsql.tenant.model.TenantNotificationChannelHealthView;
+import com.lingsql.tenant.model.TenantNotificationChannelIssueView;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
 import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
 import com.lingsql.tenant.model.TenantNotificationChannelTestChannelView;
@@ -203,6 +205,51 @@ public class TenantAdminService {
         workbench.setP2Count((int) limitedTasks.stream().filter(task -> PRIORITY_P2.equals(task.getPriority())).count());
         workbench.setTasks(limitedTasks);
         return workbench;
+    }
+
+    /**
+     * 查询租户默认通知通道健康情况。
+     *
+     * @return 健康视图
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    public TenantNotificationChannelHealthView notificationChannelHealth() {
+        boolean alertEnabled = opsAlertService.isAlertEnabled();
+        List<String> configuredChannels = opsAlertService.getConfiguredChannels();
+        List<String> unconfiguredChannels = opsAlertService.getUnconfiguredChannels();
+        List<TenantNotificationChannelIssueView> issues = new ArrayList<>();
+        int tenantUsingNotificationChannels = 0;
+        for (TenantInfo tenant : tenantRepository.findByIsDeleted(NOT_DELETED)) {
+            List<String> selectedChannels = parseNotificationChannels(tenant.getNotificationChannels());
+            if (selectedChannels.isEmpty()) {
+                continue;
+            }
+            tenantUsingNotificationChannels += 1;
+            List<String> unavailableChannels = resolveUnavailableChannels(selectedChannels, alertEnabled, configuredChannels);
+            if (unavailableChannels.isEmpty()) {
+                continue;
+            }
+            TenantNotificationChannelIssueView issue = new TenantNotificationChannelIssueView();
+            issue.setTenantId(tenant.getTenantId());
+            issue.setTenantName(tenant.getTenantName());
+            issue.setSelectedChannels(selectedChannels);
+            issue.setUnavailableChannels(unavailableChannels);
+            issue.setReason(buildNotificationChannelIssueReason(alertEnabled, unavailableChannels));
+            issue.setSuggestion(buildNotificationChannelIssueSuggestion(alertEnabled, unavailableChannels));
+            issues.add(issue);
+        }
+        issues.sort(Comparator.comparing(TenantNotificationChannelIssueView::getTenantId, Comparator.nullsLast(String::compareTo)));
+
+        TenantNotificationChannelHealthView view = new TenantNotificationChannelHealthView();
+        view.setAlertEnabled(alertEnabled);
+        view.setConfiguredChannels(configuredChannels);
+        view.setUnconfiguredChannels(unconfiguredChannels);
+        view.setTenantUsingNotificationChannels(tenantUsingNotificationChannels);
+        view.setTenantIssueCount(issues.size());
+        view.setSummary(buildNotificationChannelHealthSummary(alertEnabled, configuredChannels, issues));
+        view.setIssues(issues);
+        return view;
     }
 
     /**
@@ -766,6 +813,46 @@ public class TenantAdminService {
         String resolvedTenantName = StringUtils.hasText(tenantName) ? tenantName : "未命名租户";
         return "这是一条来自租户管理后台的测试消息，用于验证默认通知通道是否可用。租户="
                 + resolvedTenantName + "（" + resolvedTenantId + "），通道=" + String.join(",", channels);
+    }
+
+    private List<String> resolveUnavailableChannels(List<String> selectedChannels,
+                                                    boolean alertEnabled,
+                                                    List<String> configuredChannels) {
+        if (!alertEnabled) {
+            return selectedChannels;
+        }
+        return selectedChannels.stream()
+                .filter(channel -> !configuredChannels.contains(channel))
+                .toList();
+    }
+
+    private String buildNotificationChannelIssueReason(boolean alertEnabled, List<String> unavailableChannels) {
+        if (!alertEnabled) {
+            return "系统通知总开关未启用，当前租户默认通知通道不会生效。";
+        }
+        return "以下通道在系统侧尚未配置：" + String.join("、", unavailableChannels);
+    }
+
+    private String buildNotificationChannelIssueSuggestion(boolean alertEnabled, List<String> unavailableChannels) {
+        if (!alertEnabled) {
+            return "请先启用 lingsql.alert.enabled，再重新测试租户默认通知通道。";
+        }
+        return "请补齐 " + String.join("、", unavailableChannels) + " 的系统 Webhook 配置，或调整租户默认通知通道。";
+    }
+
+    private String buildNotificationChannelHealthSummary(boolean alertEnabled,
+                                                         List<String> configuredChannels,
+                                                         List<TenantNotificationChannelIssueView> issues) {
+        if (!alertEnabled) {
+            return "系统通知总开关当前关闭，所有租户默认通知通道均处于不可用状态。";
+        }
+        if (configuredChannels.isEmpty()) {
+            return "系统通知总开关已开启，但尚未配置任何可用通道。";
+        }
+        if (issues.isEmpty()) {
+            return "所有已配置默认通知通道的租户均通过预检。";
+        }
+        return "共有 " + issues.size() + " 个租户使用了当前不可用的默认通知通道，请优先处理。";
     }
 
     private TenantLifecycleOpsTaskView buildOpsTask(TenantInfo tenant,

@@ -99,6 +99,57 @@ public class OpsAlertService {
         return sendAlertInternal(title, message, details, channels);
     }
 
+    /**
+     * 当前系统是否启用了告警总开关。
+     *
+     * @return 是否启用
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    public boolean isAlertEnabled() {
+        LingSqlProperties.Alert alert = properties.getAlert();
+        return alert != null && alert.isEnabled();
+    }
+
+    /**
+     * 查询当前已配置的通知通道。
+     *
+     * @return 已配置通道
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    public List<String> getConfiguredChannels() {
+        LingSqlProperties.Alert alert = properties.getAlert();
+        if (alert == null) {
+            return Collections.emptyList();
+        }
+        List<String> configuredChannels = new ArrayList<>();
+        if (StringUtils.hasText(alert.getWebhookUrl())) {
+            configuredChannels.add("webhook");
+        }
+        if (StringUtils.hasText(alert.getDingTalkWebhookUrl())) {
+            configuredChannels.add("dingtalk");
+        }
+        if (StringUtils.hasText(alert.getWeComWebhookUrl())) {
+            configuredChannels.add("wecom");
+        }
+        return configuredChannels;
+    }
+
+    /**
+     * 查询当前未配置的通知通道。
+     *
+     * @return 未配置通道
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    public List<String> getUnconfiguredChannels() {
+        List<String> configuredChannels = getConfiguredChannels();
+        return List.of("webhook", "dingtalk", "wecom").stream()
+                .filter(channel -> !configuredChannels.contains(channel))
+                .toList();
+    }
+
     private AlertDispatchResult sendAlertInternal(String title,
                                                   String message,
                                                   Map<String, Object> details,

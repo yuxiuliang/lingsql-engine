@@ -14,6 +14,8 @@ import com.lingsql.rbac.repository.RbacRolePermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
 import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
+import com.lingsql.tenant.entity.TenantInfo;
+import com.lingsql.tenant.model.TenantNotificationChannelHealthView;
 import com.lingsql.tenant.model.TenantNotificationChannelTestRequest;
 import com.lingsql.tenant.model.TenantNotificationChannelTestView;
 import com.lingsql.tenant.repository.TenantRepository;
@@ -58,9 +60,43 @@ class TenantAdminServiceNotificationChannelTest {
         assertEquals(2, view.getChannelResults().size());
     }
 
+    @Test
+    void shouldBuildNotificationChannelHealthView() {
+        TenantRepository tenantRepository = Mockito.mock(TenantRepository.class);
+        OpsAlertService opsAlertService = Mockito.mock(OpsAlertService.class);
+        TenantAdminService service = buildService(tenantRepository, opsAlertService);
+
+        TenantInfo healthyTenant = new TenantInfo();
+        healthyTenant.setTenantId("TENANT_OK");
+        healthyTenant.setTenantName("健康租户");
+        healthyTenant.setNotificationChannels("webhook");
+        TenantInfo riskyTenant = new TenantInfo();
+        riskyTenant.setTenantId("TENANT_RISK");
+        riskyTenant.setTenantName("风险租户");
+        riskyTenant.setNotificationChannels("webhook,dingtalk");
+
+        when(tenantRepository.findByIsDeleted(0)).thenReturn(List.of(healthyTenant, riskyTenant));
+        when(opsAlertService.isAlertEnabled()).thenReturn(true);
+        when(opsAlertService.getConfiguredChannels()).thenReturn(List.of("webhook"));
+        when(opsAlertService.getUnconfiguredChannels()).thenReturn(List.of("dingtalk", "wecom"));
+
+        TenantNotificationChannelHealthView view = service.notificationChannelHealth();
+
+        assertTrue(Boolean.TRUE.equals(view.getAlertEnabled()));
+        assertEquals(2, view.getTenantUsingNotificationChannels());
+        assertEquals(1, view.getTenantIssueCount());
+        assertEquals(1, view.getIssues().size());
+        assertEquals("TENANT_RISK", view.getIssues().getFirst().getTenantId());
+        assertTrue(view.getIssues().getFirst().getReason().contains("dingtalk"));
+    }
+
     private TenantAdminService buildService(OpsAlertService opsAlertService) {
+        return buildService(Mockito.mock(TenantRepository.class), opsAlertService);
+    }
+
+    private TenantAdminService buildService(TenantRepository tenantRepository, OpsAlertService opsAlertService) {
         return new TenantAdminService(
-                Mockito.mock(TenantRepository.class),
+                tenantRepository,
                 Mockito.mock(TenantDbConfigRepository.class),
                 Mockito.mock(RbacPermissionRepository.class),
                 Mockito.mock(RbacTenantPermissionRepository.class),

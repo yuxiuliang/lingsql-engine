@@ -126,6 +126,19 @@ class OpsAlertServiceTest {
         }
     }
 
+    @Test
+    void shouldExposeConfiguredAndUnconfiguredChannels() {
+        LingSqlProperties properties = new LingSqlProperties();
+        properties.getAlert().setEnabled(true);
+        properties.getAlert().setWebhookUrl("http://127.0.0.1/test");
+        properties.getAlert().setWeComWebhookUrl("http://127.0.0.1/wecom");
+        OpsAlertService service = new OpsAlertService(properties, new ObjectMapper());
+
+        assertTrue(service.isAlertEnabled());
+        assertEquals(List.of("webhook", "wecom"), service.getConfiguredChannels());
+        assertEquals(List.of("dingtalk"), service.getUnconfiguredChannels());
+    }
+
     private static final class MockWebhookServer implements AutoCloseable {
 
         private final HttpServer server;

@@ -5,6 +5,7 @@ import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
+import com.lingsql.tenant.model.TenantNotificationChannelHealthView;
 import com.lingsql.tenant.model.TenantNotificationChannelTestRequest;
 import com.lingsql.tenant.model.TenantNotificationChannelTestView;
 import com.lingsql.tenant.model.TenantView;
@@ -144,6 +145,31 @@ class TenantAdminControllerLifecycleTest {
         assertEquals(200, response.getCode());
         assertEquals(2, response.getData().getTotalTasks());
         verify(tenantAdminService, times(1)).lifecycleWorkbench(20);
+    }
+
+    @Test
+    void notificationChannelHealthShouldReturnForbiddenWhenNotSysAdmin() {
+        bindSession(List.of("TENANT_ADMIN"));
+
+        ApiResponse<TenantNotificationChannelHealthView> response = controller.notificationChannelHealth();
+
+        assertEquals(403, response.getCode());
+        assertEquals("无权限访问", response.getMessage());
+        verifyNoInteractions(tenantAdminService);
+    }
+
+    @Test
+    void notificationChannelHealthShouldSucceedForSysAdmin() {
+        bindSession(List.of("SYS_ADMIN"));
+        TenantNotificationChannelHealthView view = new TenantNotificationChannelHealthView();
+        view.setTenantIssueCount(1);
+        when(tenantAdminService.notificationChannelHealth()).thenReturn(view);
+
+        ApiResponse<TenantNotificationChannelHealthView> response = controller.notificationChannelHealth();
+
+        assertEquals(200, response.getCode());
+        assertEquals(1, response.getData().getTenantIssueCount());
+        verify(tenantAdminService, times(1)).notificationChannelHealth();
     }
 
     @Test

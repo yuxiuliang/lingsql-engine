@@ -8,6 +8,7 @@ import com.lingsql.tenant.model.TenantCreateRequest;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
+import com.lingsql.tenant.model.TenantNotificationChannelHealthView;
 import com.lingsql.tenant.model.TenantNotificationChannelTestRequest;
 import com.lingsql.tenant.model.TenantNotificationChannelTestView;
 import com.lingsql.tenant.model.TenantUpdateRequest;
@@ -89,6 +90,22 @@ public class TenantAdminController {
             return ApiResponse.forbidden("无权限访问");
         }
         return ApiResponse.success(tenantAdminService.lifecycleWorkbench(limit));
+    }
+
+    /**
+     * 查询租户默认通知通道健康情况。
+     *
+     * @return 健康视图
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    @GetMapping("/notification-channels/health")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
+    public ApiResponse<TenantNotificationChannelHealthView> notificationChannelHealth() {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return ApiResponse.success(tenantAdminService.notificationChannelHealth());
     }
 
     /**

@@ -5,10 +5,13 @@ import {
   createTenant,
   deleteTenant,
   extendTenantLifecycle,
+  fetchTenantNotificationChannelHealth,
   fetchTenantLifecycleWorkbench,
   fetchTenants,
   fetchTenantLifecycleSummary,
   reactivateTenant,
+  TenantNotificationChannelHealthView,
+  TenantNotificationChannelIssueView,
   TenantNotificationChannelTestView,
   TenantCreateRequest,
   TenantLifecycleExtendRequest,
@@ -35,8 +38,10 @@ const authStore = useAuthStore();
 const tenants = ref<TenantView[]>([]);
 const lifecycleSummary = ref<TenantLifecycleSummaryView | null>(null);
 const lifecycleWorkbench = ref<TenantLifecycleWorkbenchView | null>(null);
+const notificationHealth = ref<TenantNotificationChannelHealthView | null>(null);
 const loading = ref(false);
 const workbenchLoading = ref(false);
+const notificationHealthLoading = ref(false);
 const planList = ref<BillingPlanView[]>([]);
 const orgTemplateList = ref<OrgTemplateView[]>([]);
 const dialogVisible = ref(false);
@@ -48,6 +53,15 @@ const notificationTestLoading = ref(false);
 const notificationTestContext = ref('');
 const notificationTestResult = ref<TenantNotificationChannelTestView | null>(null);
 const initConfig = ref(false);
+const notificationIssueMap = computed(() => {
+  const map = new Map<string, TenantNotificationChannelIssueView>();
+  (notificationHealth.value?.issues || []).forEach((item) => {
+    if (item.tenantId) {
+      map.set(item.tenantId, item);
+    }
+  });
+  return map;
+});
 const planOptions = computed(() => {
   const options = new Set<string>();
   planList.value.forEach((plan) => {
@@ -319,6 +333,23 @@ const loadLifecycleWorkbench = async () => {
 };
 
 /**
+ * 加载通知通道健康情况。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const loadNotificationHealth = async () => {
+  notificationHealthLoading.value = true;
+  try {
+    notificationHealth.value = await fetchTenantNotificationChannelHealth();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载通知通道健康情况失败');
+  } finally {
+    notificationHealthLoading.value = false;
+  }
+};
+
+/**
  * 加载套餐列表。
  *
  * @author 余炘洋
@@ -359,7 +390,8 @@ const refreshTenantData = async () => {
   await Promise.all([
     loadTenants(),
     loadLifecycleSummary(),
-    loadLifecycleWorkbench()
+    loadLifecycleWorkbench(),
+    loadNotificationHealth()
   ]);
 };
 
@@ -595,6 +627,33 @@ const resolveStatusType = (status?: number) => {
  */
 const resolveNotificationTestType = (success?: boolean) => {
   return success ? 'success' : 'danger';
+};
+
+/**
+ * 解析通知健康状态标签类型。
+ *
+ * @param enabled 是否启用
+ * @return 标签类型
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const resolveNotificationHealthType = (enabled?: boolean) => {
+  return enabled ? 'success' : 'danger';
+};
+
+/**
+ * 获取租户通知通道风险项。
+ *
+ * @param row 租户信息
+ * @return 风险项
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const resolveTenantNotificationIssue = (row: TenantView) => {
+  if (!row.tenantId) {
+    return null;
+  }
+  return notificationIssueMap.value.get(row.tenantId) || null;
 };
 
 /**
@@ -1039,6 +1098,118 @@ refreshTenantData();
       </el-table>
     </el-card>
 
+    <el-card class="card channel-health-card" shadow="never">
+      <template #header>
+        <div class="workbench-header">
+          <span>通知通道健康预检</span>
+          <el-button link type="primary" :disabled="notificationHealthLoading" @click="loadNotificationHealth">刷新预检</el-button>
+        </div>
+      </template>
+      <div v-loading="notificationHealthLoading">
+        <div class="channel-health-overview">
+          <div class="channel-health-item">
+            <div class="summary-label">系统通知开关</div>
+            <div class="channel-health-value">
+              <el-tag :type="resolveNotificationHealthType(notificationHealth?.alertEnabled)">
+                {{ notificationHealth?.alertEnabled ? '已启用' : '已关闭' }}
+              </el-tag>
+            </div>
+          </div>
+          <div class="channel-health-item">
+            <div class="summary-label">已配置通道</div>
+            <div class="summary-value">{{ notificationHealth?.configuredChannels?.length ?? 0 }}</div>
+          </div>
+          <div class="channel-health-item">
+            <div class="summary-label">使用默认通道租户</div>
+            <div class="summary-value">{{ notificationHealth?.tenantUsingNotificationChannels ?? 0 }}</div>
+          </div>
+          <div class="channel-health-item">
+            <div class="summary-label">风险租户</div>
+            <div class="summary-value danger">{{ notificationHealth?.tenantIssueCount ?? 0 }}</div>
+          </div>
+        </div>
+        <div class="channel-health-tags">
+          <div class="channel-health-tag-group">
+            <span class="channel-health-tag-label">系统已配置</span>
+            <template v-if="notificationHealth?.configuredChannels?.length">
+              <el-tag
+                v-for="channel in notificationHealth.configuredChannels"
+                :key="`configured-${channel}`"
+                type="success"
+              >
+                {{ resolveNotificationChannelLabel(channel) }}
+              </el-tag>
+            </template>
+            <span v-else class="toolbar-tip">暂无</span>
+          </div>
+          <div class="channel-health-tag-group">
+            <span class="channel-health-tag-label">系统未配置</span>
+            <template v-if="notificationHealth?.unconfiguredChannels?.length">
+              <el-tag
+                v-for="channel in notificationHealth.unconfiguredChannels"
+                :key="`unconfigured-${channel}`"
+                type="danger"
+              >
+                {{ resolveNotificationChannelLabel(channel) }}
+              </el-tag>
+            </template>
+            <span v-else class="toolbar-tip">无缺失</span>
+          </div>
+        </div>
+        <div class="channel-health-summary">
+          {{ notificationHealth?.summary || '暂未获取到通知通道健康信息。' }}
+        </div>
+        <el-empty
+          v-if="!notificationHealth?.issues?.length"
+          description="当前没有默认通知通道风险租户"
+        />
+        <el-table
+          v-else
+          :data="notificationHealth.issues || []"
+          border
+          size="small"
+          max-height="320"
+        >
+          <el-table-column prop="tenantName" label="租户" min-width="160">
+            <template #default="scope">
+              <div>{{ scope.row.tenantName || '未命名租户' }}</div>
+              <div class="toolbar-tip">{{ scope.row.tenantId || '--' }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="已选通道" min-width="180">
+            <template #default="scope">
+              <div class="channel-list">
+                <el-tag
+                  v-for="channel in scope.row.selectedChannels || []"
+                  :key="`${scope.row.tenantId}-${channel}`"
+                  size="small"
+                  effect="plain"
+                >
+                  {{ resolveNotificationChannelLabel(channel) }}
+                </el-tag>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="不可用通道" min-width="180">
+            <template #default="scope">
+              <div class="channel-list">
+                <el-tag
+                  v-for="channel in scope.row.unavailableChannels || []"
+                  :key="`${scope.row.tenantId}-missing-${channel}`"
+                  size="small"
+                  type="danger"
+                >
+                  {{ resolveNotificationChannelLabel(channel) }}
+                </el-tag>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="reason" label="风险说明" min-width="240" show-overflow-tooltip/>
+          <el-table-column prop="suggestion" label="建议动作" min-width="260" show-overflow-tooltip/>
+        </el-table>
+      </div>
+    </el-card>
+
     <el-card class="card" shadow="never">
       <div class="toolbar">
         <div class="toolbar-actions">
@@ -1082,7 +1253,22 @@ refreshTenantData();
         <el-table-column prop="contactName" label="联系人" min-width="120"/>
         <el-table-column label="默认通知通道" min-width="180" show-overflow-tooltip>
           <template #default="scope">
-            <span>{{ scope.row.notificationChannels?.length ? scope.row.notificationChannels.join(' / ') : '未配置' }}</span>
+            <template v-if="scope.row.notificationChannels?.length">
+              <div class="channel-list">
+                <el-tag
+                  v-for="channel in scope.row.notificationChannels"
+                  :key="`${scope.row.tenantId}-${channel}`"
+                  size="small"
+                  effect="plain"
+                >
+                  {{ resolveNotificationChannelLabel(channel) }}
+                </el-tag>
+              </div>
+              <div v-if="resolveTenantNotificationIssue(scope.row)" class="channel-risk-tip">
+                缺少 {{ resolveTenantNotificationIssue(scope.row)?.unavailableChannels?.map(resolveNotificationChannelLabel).join(' / ') }}
+              </div>
+            </template>
+            <span v-else>未配置</span>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="90">
@@ -1430,6 +1616,10 @@ refreshTenantData();
   margin-bottom: 16px;
 }
 
+.channel-health-card {
+  margin-bottom: 16px;
+}
+
 .workbench-header {
   display: flex;
   justify-content: space-between;
@@ -1464,6 +1654,54 @@ refreshTenantData();
 .toolbar-actions {
   display: flex;
   gap: 8px;
+}
+
+.channel-health-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.channel-health-item {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.channel-health-value {
+  margin-top: 8px;
+}
+
+.channel-health-tags {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.channel-health-tag-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.channel-health-tag-label {
+  min-width: 88px;
+  color: #475569;
+  font-size: 13px;
+}
+
+.channel-health-summary {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  line-height: 1.7;
 }
 
 .row-actions {
@@ -1504,6 +1742,18 @@ refreshTenantData();
 .risk-score {
   font-weight: 600;
   color: #b45309;
+}
+
+.channel-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.channel-risk-tip {
+  margin-top: 6px;
+  color: #dc2626;
+  font-size: 12px;
 }
 
 .notification-test-summary {
@@ -1560,6 +1810,7 @@ refreshTenantData();
     grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
 
+  .channel-health-tag-group,
   .form-inline-actions,
   .notification-test-result-bar {
     flex-direction: column;
