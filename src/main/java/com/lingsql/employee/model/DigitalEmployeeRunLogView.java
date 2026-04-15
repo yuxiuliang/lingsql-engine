@@ -27,7 +27,9 @@ public class DigitalEmployeeRunLogView {
     private String requestId;
     private Long durationMs;
     private Integer alertDeliveryStatus;
+    private String alertDeliveryDetail;
     private Integer pushDeliveryStatus;
+    private String pushDeliveryDetail;
     private LocalDateTime createTime;
 }
 

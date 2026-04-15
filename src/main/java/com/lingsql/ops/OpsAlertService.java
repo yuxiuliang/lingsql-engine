@@ -2,6 +2,8 @@ package com.lingsql.ops;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.config.LingSqlProperties;
+import com.lingsql.ops.model.AlertDispatchChannelResult;
+import com.lingsql.ops.model.AlertDispatchResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -47,7 +49,7 @@ public class OpsAlertService {
      * @date 2026-02-27
      */
     public boolean sendAlert(String title, String message, Map<String, Object> details) {
-        return sendAlertInternal(title, message, details, null);
+        return sendAlertWithResult(title, message, details).success();
     }
 
     /**
@@ -62,20 +64,53 @@ public class OpsAlertService {
      * @date 2026-04-14
      */
     public boolean sendAlertToChannels(String title, String message, Map<String, Object> details, List<String> channels) {
+        return sendAlertToChannelsWithResult(title, message, details, channels).success();
+    }
+
+    /**
+     * 发送告警并返回结构化投递结果。
+     *
+     * @param title   告警标题
+     * @param message 告警内容
+     * @param details 扩展字段
+     * @return 投递结果
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    public AlertDispatchResult sendAlertWithResult(String title, String message, Map<String, Object> details) {
+        return sendAlertInternal(title, message, details, null);
+    }
+
+    /**
+     * 按指定通道发送告警并返回结构化投递结果。
+     *
+     * @param title    告警标题
+     * @param message  告警内容
+     * @param details  扩展字段
+     * @param channels 指定通道
+     * @return 投递结果
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    public AlertDispatchResult sendAlertToChannelsWithResult(String title,
+                                                             String message,
+                                                             Map<String, Object> details,
+                                                             List<String> channels) {
         return sendAlertInternal(title, message, details, channels);
     }
 
-    private boolean sendAlertInternal(String title,
-                                      String message,
-                                      Map<String, Object> details,
-                                      List<String> channels) {
+    private AlertDispatchResult sendAlertInternal(String title,
+                                                  String message,
+                                                  Map<String, Object> details,
+                                                  List<String> channels) {
         LingSqlProperties.Alert alert = properties.getAlert();
         if (alert == null || !alert.isEnabled()) {
-            return false;
+            return AlertDispatchResult.skipped("系统告警总开关未启用");
         }
-        List<AlertTarget> targets = resolveTargets(alert, channels);
+        List<String> normalizedChannels = normalizeChannels(channels);
+        List<AlertTarget> targets = resolveTargets(alert, normalizedChannels);
         if (targets.isEmpty()) {
-            return false;
+            return AlertDispatchResult.skipped(buildNoTargetSummary(normalizedChannels));
         }
         try {
             Duration connectTimeout = resolveDuration(alert.getConnectTimeout(), Duration.ofSeconds(3));
@@ -83,26 +118,28 @@ public class OpsAlertService {
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(connectTimeout)
                     .build();
+            List<AlertDispatchChannelResult> channelResults = new ArrayList<>();
             boolean anySuccess = false;
             boolean allSuccess = true;
             for (AlertTarget target : targets) {
-                boolean success = sendToTarget(client, readTimeout, target, title, message, details);
-                anySuccess = anySuccess || success;
-                allSuccess = allSuccess && success;
+                AlertDispatchChannelResult channelResult = sendToTarget(client, readTimeout, target, title, message, details);
+                channelResults.add(channelResult);
+                anySuccess = anySuccess || channelResult.success();
+                allSuccess = allSuccess && channelResult.success();
             }
-            return alert.isRequireAllChannels() ? allSuccess : anySuccess;
+            return AlertDispatchResult.completed(alert.isRequireAllChannels() ? allSuccess : anySuccess, channelResults);
         } catch (Exception ex) {
             log.warn("告警发送异常: {}", ex.getMessage());
-            return false;
+            return AlertDispatchResult.skipped("告警客户端初始化失败: " + safeMessage(ex.getMessage()));
         }
     }
 
-    private boolean sendToTarget(HttpClient client,
-                                 Duration readTimeout,
-                                 AlertTarget target,
-                                 String title,
-                                 String message,
-                                 Map<String, Object> details) {
+    private AlertDispatchChannelResult sendToTarget(HttpClient client,
+                                                    Duration readTimeout,
+                                                    AlertTarget target,
+                                                    String title,
+                                                    String message,
+                                                    Map<String, Object> details) {
         try {
             Map<String, Object> payload = buildPayloadByChannel(target.channel(), title, message, details);
             String body = objectMapper.writeValueAsString(payload);
@@ -115,13 +152,13 @@ public class OpsAlertService {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             int statusCode = response.statusCode();
             if (statusCode >= 200 && statusCode < 300) {
-                return true;
+                return AlertDispatchChannelResult.success(target.channel(), statusCode);
             }
             log.warn("告警发送失败: channel={}, status={}, body={}", target.channel(), statusCode, response.body());
-            return false;
+            return AlertDispatchChannelResult.failure(target.channel(), statusCode, abbreviate(response.body(), 160));
         } catch (Exception ex) {
             log.warn("告警发送异常: channel={}, message={}", target.channel(), ex.getMessage());
-            return false;
+            return AlertDispatchChannelResult.failure(target.channel(), null, safeMessage(ex.getMessage()));
         }
     }
 
@@ -153,6 +190,13 @@ public class OpsAlertService {
                 .map(value -> value.trim().toLowerCase(Locale.ROOT))
                 .distinct()
                 .toList();
+    }
+
+    private String buildNoTargetSummary(List<String> normalizedChannels) {
+        if (normalizedChannels == null || normalizedChannels.isEmpty()) {
+            return "未配置可用通知通道";
+        }
+        return "指定通道未配置或不可用: " + String.join(", ", normalizedChannels);
     }
 
     private Map<String, Object> buildPayloadByChannel(String channel,
@@ -243,6 +287,20 @@ public class OpsAlertService {
             return fallback;
         }
         return source;
+    }
+
+    private String safeMessage(String message) {
+        if (!StringUtils.hasText(message)) {
+            return "未知异常";
+        }
+        return abbreviate(message.trim(), 160);
+    }
+
+    private String abbreviate(String value, int maxLength) {
+        if (!StringUtils.hasText(value) || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength) + "...";
     }
 
     private record AlertTarget(String channel, String url) {

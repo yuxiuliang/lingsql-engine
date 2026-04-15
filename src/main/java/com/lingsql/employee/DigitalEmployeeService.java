@@ -23,6 +23,7 @@ import com.lingsql.executor.ResultRefiner;
 import com.lingsql.executor.SmartSqlExecutor;
 import com.lingsql.executor.SqlExecutionResult;
 import com.lingsql.ops.OpsAlertService;
+import com.lingsql.ops.model.AlertDispatchResult;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
@@ -490,8 +491,12 @@ public class DigitalEmployeeService {
         runLog.setRequestId(RequestTraceContext.resolveRequestId());
         runLog.setDurationMs(durationMs);
         runLog.setCreateTime(now);
-        runLog.setAlertDeliveryStatus(sendScheduledAlertIfNecessary(employee, triggerSource, runLog, safeResult, question, answer));
-        runLog.setPushDeliveryStatus(sendScheduledResultIfNecessary(employee, triggerSource, runLog, safeResult, question, answer));
+        AlertDispatchResult alertDispatchResult = sendScheduledAlertIfNecessary(employee, triggerSource, runLog, safeResult, question, answer);
+        AlertDispatchResult pushDispatchResult = sendScheduledResultIfNecessary(employee, triggerSource, runLog, safeResult, question, answer);
+        runLog.setAlertDeliveryStatus(resolveDispatchStatus(alertDispatchResult));
+        runLog.setAlertDeliveryDetail(resolveDispatchDetail(alertDispatchResult));
+        runLog.setPushDeliveryStatus(resolveDispatchStatus(pushDispatchResult));
+        runLog.setPushDeliveryDetail(resolveDispatchDetail(pushDispatchResult));
         DigitalEmployeeRunLog savedRunLog = runLogRepository.save(runLog);
 
         long runCount = employee.getRunCount() == null ? 0L : employee.getRunCount();
@@ -667,12 +672,12 @@ public class DigitalEmployeeService {
         return normalizeText(template);
     }
 
-    private Integer sendScheduledAlertIfNecessary(DigitalEmployee employee,
-                                                  String triggerSource,
-                                                  DigitalEmployeeRunLog runLog,
-                                                  SqlExecutionResult executionResult,
-                                                  String question,
-                                                  String answer) {
+    private AlertDispatchResult sendScheduledAlertIfNecessary(DigitalEmployee employee,
+                                                              String triggerSource,
+                                                              DigitalEmployeeRunLog runLog,
+                                                              SqlExecutionResult executionResult,
+                                                              String question,
+                                                              String answer) {
         if (!TRIGGER_SOURCE_SCHEDULED.equals(triggerSource) || !ACTIVE_STATUS.equals(employee.getAlertEnabled())) {
             return null;
         }
@@ -690,17 +695,19 @@ public class DigitalEmployeeService {
         }
         String title = "数字员工订阅告警";
         String message = buildAlertMessage(employee, alertRuleType, executionResult, resultRows);
-        return opsAlertService.sendAlert(title, message, buildAlertDetails(employee, runLog, question, answer, executionResult, resultRows))
-                ? ACTIVE_STATUS
-                : INACTIVE_STATUS;
+        return opsAlertService.sendAlertWithResult(
+                title,
+                message,
+                buildAlertDetails(employee, runLog, question, answer, executionResult, resultRows)
+        );
     }
 
-    private Integer sendScheduledResultIfNecessary(DigitalEmployee employee,
-                                                   String triggerSource,
-                                                   DigitalEmployeeRunLog runLog,
-                                                   SqlExecutionResult executionResult,
-                                                   String question,
-                                                   String answer) {
+    private AlertDispatchResult sendScheduledResultIfNecessary(DigitalEmployee employee,
+                                                               String triggerSource,
+                                                               DigitalEmployeeRunLog runLog,
+                                                               SqlExecutionResult executionResult,
+                                                               String question,
+                                                               String answer) {
         if (!TRIGGER_SOURCE_SCHEDULED.equals(triggerSource)
                 || !ACTIVE_STATUS.equals(employee.getPushEnabled())
                 || executionResult == null
@@ -710,14 +717,12 @@ public class DigitalEmployeeService {
         Map<String, String> templateValues = buildPushTemplateValues(employee, runLog, executionResult, question, answer);
         String title = renderPushTemplate(employee.getPushTitleTemplate(), DEFAULT_PUSH_TITLE_TEMPLATE, templateValues);
         String message = renderPushTemplate(employee.getPushMessageTemplate(), DEFAULT_PUSH_MESSAGE_TEMPLATE, templateValues);
-        return opsAlertService.sendAlertToChannels(
+        return opsAlertService.sendAlertToChannelsWithResult(
                 title,
                 message,
                 buildPushDetails(employee, runLog, executionResult, question, answer),
                 resolveEffectivePushChannels(employee)
-        )
-                ? ACTIVE_STATUS
-                : INACTIVE_STATUS;
+        );
     }
 
     private String buildAlertMessage(DigitalEmployee employee,
@@ -842,6 +847,20 @@ public class DigitalEmployeeService {
             return DEFAULT_PUSH_MAX_ROWS;
         }
         return Math.max(0, Math.min(pushMaxRows, MAX_PUSH_MAX_ROWS));
+    }
+
+    private Integer resolveDispatchStatus(AlertDispatchResult dispatchResult) {
+        if (dispatchResult == null) {
+            return null;
+        }
+        return dispatchResult.success() ? ACTIVE_STATUS : INACTIVE_STATUS;
+    }
+
+    private String resolveDispatchDetail(AlertDispatchResult dispatchResult) {
+        if (dispatchResult == null) {
+            return null;
+        }
+        return dispatchResult.summarize();
     }
 
     private List<String> renderPreviewRows(List<Map<String, Object>> data, int maxRows) {
@@ -1065,7 +1084,9 @@ public class DigitalEmployeeService {
         view.setRequestId(runLog.getRequestId());
         view.setDurationMs(runLog.getDurationMs());
         view.setAlertDeliveryStatus(runLog.getAlertDeliveryStatus());
+        view.setAlertDeliveryDetail(runLog.getAlertDeliveryDetail());
         view.setPushDeliveryStatus(runLog.getPushDeliveryStatus());
+        view.setPushDeliveryDetail(runLog.getPushDeliveryDetail());
         view.setCreateTime(runLog.getCreateTime());
         return view;
     }

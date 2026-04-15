@@ -189,7 +189,9 @@ export interface DigitalEmployeeRunLogView {
   requestId?: string;
   durationMs?: number;
   alertDeliveryStatus?: number | null;
+  alertDeliveryDetail?: string;
   pushDeliveryStatus?: number | null;
+  pushDeliveryDetail?: string;
   createTime?: string;
 }
 

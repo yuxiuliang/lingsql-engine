@@ -38,9 +38,11 @@ const runLoading = ref(false);
 const dialogVisible = ref(false);
 const runDialogVisible = ref(false);
 const resultDialogVisible = ref(false);
+const deliveryDialogVisible = ref(false);
 const editingEmployeeId = ref<number | null>(null);
 const runningEmployee = ref<DigitalEmployeeView | null>(null);
 const runResult = ref<DigitalEmployeeRunResult | null>(null);
+const selectedRunLog = ref<DigitalEmployeeRunLogView | null>(null);
 
 const filterForm = reactive({
   tenantId: '',
@@ -496,6 +498,54 @@ const resolveDeliveryType = (status?: number | null) => {
 };
 
 /**
+ * 判断是否存在投递诊断信息。
+ *
+ * @param row 运行日志
+ * @return 是否存在
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const hasDeliveryDiagnostics = (row: DigitalEmployeeRunLogView) => {
+  return Boolean(
+    row.alertDeliveryDetail?.trim()
+    || row.pushDeliveryDetail?.trim()
+    || row.alertDeliveryStatus != null
+    || row.pushDeliveryStatus != null
+  );
+};
+
+/**
+ * 打开投递诊断弹窗。
+ *
+ * @param row 运行日志
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleOpenDeliveryDialog = (row: DigitalEmployeeRunLogView) => {
+  selectedRunLog.value = row;
+  deliveryDialogVisible.value = true;
+};
+
+/**
+ * 解析投递诊断文本。
+ *
+ * @param detail 诊断明细
+ * @param status 投递状态
+ * @return 展示文本
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const resolveDeliveryDetailText = (detail?: string, status?: number | null) => {
+  if (detail?.trim()) {
+    return detail.trim();
+  }
+  if (status == null) {
+    return '本次未触发该类投递。';
+  }
+  return status === 1 ? '投递成功，但未记录额外诊断信息。' : '投递失败，但未记录额外诊断信息。';
+};
+
+/**
  * 解析订阅计划文案。
  *
  * @param row 数字员工
@@ -889,6 +939,18 @@ onMounted(async () => {
           <el-table-column label="错误信息" min-width="220" show-overflow-tooltip>
             <template #default="scope">{{ scope.row.errorMessage || '-' }}</template>
           </el-table-column>
+          <el-table-column label="投递诊断" width="120" fixed="right">
+            <template #default="scope">
+              <el-button
+                link
+                type="primary"
+                :disabled="!hasDeliveryDiagnostics(scope.row)"
+                @click="handleOpenDeliveryDialog(scope.row)"
+              >
+                查看诊断
+              </el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </div>
       <el-pagination
@@ -1082,6 +1144,52 @@ onMounted(async () => {
         <el-button type="primary" @click="resultDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="deliveryDialogVisible" title="投递诊断" width="720px" destroy-on-close>
+      <template v-if="selectedRunLog">
+        <div class="delivery-summary">
+          <div class="delivery-summary-item">
+            <span class="delivery-summary-label">员工</span>
+            <span class="delivery-summary-value">{{ selectedRunLog.employeeName || '-' }}</span>
+          </div>
+          <div class="delivery-summary-item">
+            <span class="delivery-summary-label">执行时间</span>
+            <span class="delivery-summary-value">{{ formatDateTime(selectedRunLog.createTime) }}</span>
+          </div>
+          <div class="delivery-summary-item">
+            <span class="delivery-summary-label">触发来源</span>
+            <span class="delivery-summary-value">{{ selectedRunLog.triggerSource === 'SCHEDULED' ? '定时' : '手动' }}</span>
+          </div>
+        </div>
+        <div class="delivery-grid">
+          <div class="delivery-card">
+            <div class="delivery-card-header">
+              <div class="delivery-card-title">告警投递</div>
+              <el-tag :type="resolveDeliveryType(selectedRunLog.alertDeliveryStatus)">
+                {{ resolveDeliveryText(selectedRunLog.alertDeliveryStatus) }}
+              </el-tag>
+            </div>
+            <div class="delivery-card-content">
+              {{ resolveDeliveryDetailText(selectedRunLog.alertDeliveryDetail, selectedRunLog.alertDeliveryStatus) }}
+            </div>
+          </div>
+          <div class="delivery-card">
+            <div class="delivery-card-header">
+              <div class="delivery-card-title">结果推送</div>
+              <el-tag :type="resolveDeliveryType(selectedRunLog.pushDeliveryStatus)">
+                {{ resolveDeliveryText(selectedRunLog.pushDeliveryStatus) }}
+              </el-tag>
+            </div>
+            <div class="delivery-card-content">
+              {{ resolveDeliveryDetailText(selectedRunLog.pushDeliveryDetail, selectedRunLog.pushDeliveryStatus) }}
+            </div>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <el-button type="primary" @click="deliveryDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1216,6 +1324,65 @@ onMounted(async () => {
   margin-top: 12px;
   display: flex;
   justify-content: center;
+}
+
+.delivery-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.delivery-summary-item {
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  padding: 12px 14px;
+}
+
+.delivery-summary-label {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.delivery-summary-value {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.delivery-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.delivery-card {
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  padding: 16px;
+}
+
+.delivery-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.delivery-card-title {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.delivery-card-content {
+  color: #334155;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .primary-text {

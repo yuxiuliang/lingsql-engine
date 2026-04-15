@@ -2,6 +2,7 @@ package com.lingsql.ops;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.config.LingSqlProperties;
+import com.lingsql.ops.model.AlertDispatchResult;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
@@ -102,6 +103,26 @@ class OpsAlertServiceTest {
             assertEquals(0, webhook.requestCount());
             assertEquals(1, dingTalkWebhook.requestCount());
             assertEquals(1, weComWebhook.requestCount());
+        }
+    }
+
+    @Test
+    void shouldReturnStructuredDeliveryDetailWhenChannelFailed() throws Exception {
+        try (MockWebhookServer failedWebhook = new MockWebhookServer(500);
+             MockWebhookServer weComWebhook = new MockWebhookServer(200)) {
+            LingSqlProperties properties = new LingSqlProperties();
+            properties.getAlert().setEnabled(true);
+            properties.getAlert().setWebhookUrl(failedWebhook.url());
+            properties.getAlert().setWeComWebhookUrl(weComWebhook.url());
+            properties.getAlert().setRequireAllChannels(false);
+            OpsAlertService service = new OpsAlertService(properties, new ObjectMapper());
+
+            AlertDispatchResult result = service.sendAlertWithResult("告警", "测试消息", Map.of("tenantId", "t-004"));
+
+            assertTrue(result.success());
+            assertEquals(2, result.channelResults().size());
+            assertTrue(result.summarize().contains("Webhook=失败(HTTP 500)"));
+            assertTrue(result.summarize().contains("企微=成功(HTTP 200)"));
         }
     }
 

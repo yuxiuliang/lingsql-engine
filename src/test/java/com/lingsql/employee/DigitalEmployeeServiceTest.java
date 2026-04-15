@@ -12,6 +12,8 @@ import com.lingsql.executor.ResultRefiner;
 import com.lingsql.executor.SmartSqlExecutor;
 import com.lingsql.executor.SqlExecutionResult;
 import com.lingsql.ops.OpsAlertService;
+import com.lingsql.ops.model.AlertDispatchChannelResult;
+import com.lingsql.ops.model.AlertDispatchResult;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.repository.TenantRepository;
 import org.junit.jupiter.api.Test;
@@ -234,7 +236,10 @@ class DigitalEmployeeServiceTest {
             return log;
         });
         when(employeeRepository.save(any(DigitalEmployee.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(opsAlertService.sendAlert(anyString(), anyString(), anyMap())).thenReturn(true);
+        when(opsAlertService.sendAlertWithResult(anyString(), anyString(), anyMap()))
+                .thenReturn(AlertDispatchResult.completed(true, List.of(
+                        AlertDispatchChannelResult.success("webhook", 200)
+                )));
 
         DigitalEmployeeService service = new DigitalEmployeeService(
                 employeeRepository,
@@ -250,10 +255,11 @@ class DigitalEmployeeServiceTest {
 
         assertNotNull(result);
         assertTrue(Boolean.TRUE.equals(result.getSuccess()));
-        Mockito.verify(opsAlertService).sendAlert(eq("数字员工订阅告警"), anyString(), anyMap());
+        Mockito.verify(opsAlertService).sendAlertWithResult(eq("数字员工订阅告警"), anyString(), anyMap());
         ArgumentCaptor<DigitalEmployeeRunLog> runLogCaptor = ArgumentCaptor.forClass(DigitalEmployeeRunLog.class);
         Mockito.verify(runLogRepository).save(runLogCaptor.capture());
         assertEquals(1, runLogCaptor.getValue().getAlertDeliveryStatus());
+        assertTrue(runLogCaptor.getValue().getAlertDeliveryDetail().contains("Webhook=成功"));
     }
 
     @Test
@@ -298,7 +304,11 @@ class DigitalEmployeeServiceTest {
             return log;
         });
         when(employeeRepository.save(any(DigitalEmployee.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(opsAlertService.sendAlertToChannels(anyString(), anyString(), anyMap(), anyList())).thenReturn(true);
+        when(opsAlertService.sendAlertToChannelsWithResult(anyString(), anyString(), anyMap(), anyList()))
+                .thenReturn(AlertDispatchResult.completed(true, List.of(
+                        AlertDispatchChannelResult.success("dingtalk", 200),
+                        AlertDispatchChannelResult.success("wecom", 200)
+                )));
 
         DigitalEmployeeService service = new DigitalEmployeeService(
                 employeeRepository,
@@ -318,7 +328,7 @@ class DigitalEmployeeServiceTest {
         ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<List<String>> channelsCaptor = ArgumentCaptor.forClass(List.class);
-        Mockito.verify(opsAlertService).sendAlertToChannels(titleCaptor.capture(), messageCaptor.capture(), detailsCaptor.capture(), channelsCaptor.capture());
+        Mockito.verify(opsAlertService).sendAlertToChannelsWithResult(titleCaptor.capture(), messageCaptor.capture(), detailsCaptor.capture(), channelsCaptor.capture());
         assertTrue(titleCaptor.getValue().contains("[经营日报] 日报推送助手 完成"));
         assertTrue(messageCaptor.getValue().contains("问题 统计昨日销售额"));
         assertEquals(List.of("dingtalk", "wecom"), channelsCaptor.getValue());
@@ -331,6 +341,7 @@ class DigitalEmployeeServiceTest {
         ArgumentCaptor<DigitalEmployeeRunLog> runLogCaptor = ArgumentCaptor.forClass(DigitalEmployeeRunLog.class);
         Mockito.verify(runLogRepository).save(runLogCaptor.capture());
         assertEquals(1, runLogCaptor.getValue().getPushDeliveryStatus());
+        assertTrue(runLogCaptor.getValue().getPushDeliveryDetail().contains("钉钉=成功"));
     }
 
     @Test
@@ -373,7 +384,10 @@ class DigitalEmployeeServiceTest {
             return log;
         });
         when(employeeRepository.save(any(DigitalEmployee.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(opsAlertService.sendAlertToChannels(anyString(), anyString(), anyMap(), anyList())).thenReturn(true);
+        when(opsAlertService.sendAlertToChannelsWithResult(anyString(), anyString(), anyMap(), anyList()))
+                .thenReturn(AlertDispatchResult.completed(true, List.of(
+                        AlertDispatchChannelResult.success("webhook", 200)
+                )));
 
         DigitalEmployeeService service = new DigitalEmployeeService(
                 employeeRepository,
@@ -388,7 +402,7 @@ class DigitalEmployeeServiceTest {
         service.runScheduled(11L, java.time.LocalDateTime.of(2026, 4, 15, 8, 0, 0));
 
         ArgumentCaptor<List<String>> channelsCaptor = ArgumentCaptor.forClass(List.class);
-        Mockito.verify(opsAlertService).sendAlertToChannels(anyString(), anyString(), anyMap(), channelsCaptor.capture());
+        Mockito.verify(opsAlertService).sendAlertToChannelsWithResult(anyString(), anyString(), anyMap(), channelsCaptor.capture());
         assertEquals(List.of("webhook"), channelsCaptor.getValue());
     }
 }
