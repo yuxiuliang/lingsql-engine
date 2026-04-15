@@ -7,6 +7,7 @@ import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.model.TenantCreateRequest;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
+import com.lingsql.tenant.model.TenantNotificationChannelFailureStatsView;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
 import com.lingsql.tenant.model.TenantNotificationChannelHealthView;
 import com.lingsql.tenant.model.TenantNotificationChannelRecentTestView;
@@ -130,6 +131,27 @@ public class TenantAdminController {
             return ApiResponse.forbidden("无权限访问");
         }
         return ApiResponse.success(tenantNotificationChannelHistoryService.listRecentTests(tenantId, limit));
+    }
+
+    /**
+     * 查询通知通道失败问题分布。
+     *
+     * @param tenantId 租户ID
+     * @param limit    统计样本数
+     * @return 失败统计
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    @GetMapping("/notification-channels/tests/stats")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
+    public ApiResponse<TenantNotificationChannelFailureStatsView> notificationChannelFailureStats(
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) Integer limit
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return ApiResponse.success(tenantNotificationChannelHistoryService.summarizeFailures(tenantId, limit));
     }
 
     /**

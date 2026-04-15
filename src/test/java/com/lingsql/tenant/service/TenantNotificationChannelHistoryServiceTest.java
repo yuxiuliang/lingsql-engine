@@ -5,6 +5,7 @@ import com.lingsql.audit.model.AuditLogQuery;
 import com.lingsql.audit.model.AuditLogView;
 import com.lingsql.audit.service.AuditLogService;
 import com.lingsql.common.result.PageResult;
+import com.lingsql.tenant.model.TenantNotificationChannelFailureStatsView;
 import com.lingsql.tenant.model.TenantNotificationChannelRecentTestView;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -67,5 +68,67 @@ class TenantNotificationChannelHistoryServiceTest {
         ArgumentCaptor<AuditLogQuery> queryCaptor = ArgumentCaptor.forClass(AuditLogQuery.class);
         verify(auditLogService).query(queryCaptor.capture(), Mockito.eq(1), Mockito.eq(10));
         assertEquals("TENANT_NOTIFICATION_CHANNEL_TEST", queryCaptor.getValue().getAction());
+    }
+
+    @Test
+    void shouldSummarizeFailureStatsFromRecentTests() {
+        AuditLogService auditLogService = Mockito.mock(AuditLogService.class);
+        TenantNotificationChannelHistoryService service = new TenantNotificationChannelHistoryService(auditLogService, new ObjectMapper());
+
+        AuditLogView failedAudit = new AuditLogView();
+        failedAudit.setId(201L);
+        failedAudit.setTenantId("TENANT_A");
+        failedAudit.setSuccess(0);
+        failedAudit.setDetail("""
+                {
+                  "tenantId":"TENANT_A",
+                  "requestedChannels":["webhook","dingtalk"],
+                  "success":false,
+                  "summary":"Webhook 成功，钉钉失败",
+                  "channelResults":[
+                    {"channel":"dingtalk","success":false,"statusCode":500,"detail":"internal error"},
+                    {"channel":"webhook","success":true,"statusCode":200,"detail":"ok"}
+                  ]
+                }
+                """);
+        AuditLogView failedAudit2 = new AuditLogView();
+        failedAudit2.setId(202L);
+        failedAudit2.setTenantId("TENANT_A");
+        failedAudit2.setSuccess(0);
+        failedAudit2.setDetail("""
+                {
+                  "tenantId":"TENANT_A",
+                  "requestedChannels":["wecom"],
+                  "success":false,
+                  "summary":"企微超时",
+                  "channelResults":[
+                    {"channel":"wecom","success":false,"statusCode":504,"detail":"timeout"}
+                  ]
+                }
+                """);
+        AuditLogView successAudit = new AuditLogView();
+        successAudit.setId(203L);
+        successAudit.setTenantId("TENANT_A");
+        successAudit.setSuccess(1);
+        successAudit.setDetail("""
+                {
+                  "tenantId":"TENANT_A",
+                  "requestedChannels":["webhook"],
+                  "success":true,
+                  "summary":"全部成功"
+                }
+                """);
+
+        when(auditLogService.query(Mockito.any(AuditLogQuery.class), Mockito.eq(1), Mockito.eq(100)))
+                .thenReturn(new PageResult<>(List.of(failedAudit, failedAudit2, successAudit), 3, 1, 100));
+
+        TenantNotificationChannelFailureStatsView view = service.summarizeFailures("TENANT_A", 100);
+
+        assertEquals("TENANT_A", view.getTenantId());
+        assertEquals(3, view.getTotalTests());
+        assertEquals(2, view.getFailedTests());
+        assertEquals(33.33D, view.getSuccessRate(), 0.01D);
+        assertEquals("dingtalk", view.getTopFailingChannels().getFirst().getChannel());
+        assertEquals("internal error", view.getTopFailureReasons().getFirst().getReason());
     }
 }

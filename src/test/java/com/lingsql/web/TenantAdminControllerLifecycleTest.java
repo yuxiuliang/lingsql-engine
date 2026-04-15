@@ -5,6 +5,7 @@ import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
+import com.lingsql.tenant.model.TenantNotificationChannelFailureStatsView;
 import com.lingsql.tenant.model.TenantNotificationChannelHealthView;
 import com.lingsql.tenant.model.TenantNotificationChannelRecentTestView;
 import com.lingsql.tenant.model.TenantNotificationChannelTestRequest;
@@ -201,6 +202,31 @@ class TenantAdminControllerLifecycleTest {
         assertEquals(1, response.getData().size());
         assertEquals("t-001", response.getData().getFirst().getTenantId());
         verify(tenantNotificationChannelHistoryService, times(1)).listRecentTests("t-001", 5);
+    }
+
+    @Test
+    void notificationChannelFailureStatsShouldReturnForbiddenWhenNotSysAdmin() {
+        bindSession(List.of("TENANT_ADMIN"));
+
+        ApiResponse<TenantNotificationChannelFailureStatsView> response = controller.notificationChannelFailureStats(null, 100);
+
+        assertEquals(403, response.getCode());
+        assertEquals("无权限访问", response.getMessage());
+        verifyNoInteractions(tenantNotificationChannelHistoryService);
+    }
+
+    @Test
+    void notificationChannelFailureStatsShouldSucceedForSysAdmin() {
+        bindSession(List.of("SYS_ADMIN"));
+        TenantNotificationChannelFailureStatsView view = new TenantNotificationChannelFailureStatsView();
+        view.setFailedTests(2);
+        when(tenantNotificationChannelHistoryService.summarizeFailures("t-001", 100)).thenReturn(view);
+
+        ApiResponse<TenantNotificationChannelFailureStatsView> response = controller.notificationChannelFailureStats("t-001", 100);
+
+        assertEquals(200, response.getCode());
+        assertEquals(2, response.getData().getFailedTests());
+        verify(tenantNotificationChannelHistoryService, times(1)).summarizeFailures("t-001", 100);
     }
 
     @Test

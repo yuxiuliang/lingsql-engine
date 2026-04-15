@@ -228,6 +228,44 @@ export interface TenantNotificationChannelRecentTestView {
 }
 
 /**
+ * 通知通道失败通道聚合项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelFailureChannelView {
+  channel?: string;
+  failureCount?: number;
+}
+
+/**
+ * 通知通道失败原因聚合项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelFailureReasonView {
+  reason?: string;
+  count?: number;
+}
+
+/**
+ * 通知通道失败统计视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelFailureStatsView {
+  tenantId?: string;
+  totalTests?: number;
+  failedTests?: number;
+  successRate?: number;
+  summary?: string;
+  topFailingChannels?: TenantNotificationChannelFailureChannelView[];
+  topFailureReasons?: TenantNotificationChannelFailureReasonView[];
+}
+
+/**
  * 租户续期请求。
  *
  * @author 余炘洋
@@ -351,6 +389,31 @@ export const fetchRecentTenantNotificationChannelTests = async (params: {
   const suffix = query.toString();
   return request<TenantNotificationChannelRecentTestView[]>(
     `/api/v1/admin/tenants/notification-channels/tests/recent${suffix ? `?${suffix}` : ''}`
+  );
+};
+
+/**
+ * 查询通知通道失败问题分布。
+ *
+ * @param params 查询参数
+ * @return 失败统计
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export const fetchTenantNotificationChannelFailureStats = async (params: {
+  tenantId?: string;
+  limit?: number;
+} = {}): Promise<TenantNotificationChannelFailureStatsView> => {
+  const query = new URLSearchParams();
+  if (params.tenantId) {
+    query.set('tenantId', params.tenantId);
+  }
+  if (params.limit != null) {
+    query.set('limit', String(params.limit));
+  }
+  const suffix = query.toString();
+  return request<TenantNotificationChannelFailureStatsView>(
+    `/api/v1/admin/tenants/notification-channels/tests/stats${suffix ? `?${suffix}` : ''}`
   );
 };
 

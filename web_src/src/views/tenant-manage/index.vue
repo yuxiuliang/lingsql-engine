@@ -5,12 +5,14 @@ import {
   createTenant,
   deleteTenant,
   extendTenantLifecycle,
+  fetchTenantNotificationChannelFailureStats,
   fetchTenantNotificationChannelHealth,
   fetchRecentTenantNotificationChannelTests,
   fetchTenantLifecycleWorkbench,
   fetchTenants,
   fetchTenantLifecycleSummary,
   reactivateTenant,
+  TenantNotificationChannelFailureStatsView,
   TenantNotificationChannelHealthView,
   TenantNotificationChannelIssueView,
   TenantNotificationChannelRecentTestView,
@@ -40,10 +42,12 @@ const authStore = useAuthStore();
 const tenants = ref<TenantView[]>([]);
 const lifecycleSummary = ref<TenantLifecycleSummaryView | null>(null);
 const lifecycleWorkbench = ref<TenantLifecycleWorkbenchView | null>(null);
+const notificationFailureStats = ref<TenantNotificationChannelFailureStatsView | null>(null);
 const notificationHealth = ref<TenantNotificationChannelHealthView | null>(null);
 const recentNotificationTests = ref<TenantNotificationChannelRecentTestView[]>([]);
 const loading = ref(false);
 const workbenchLoading = ref(false);
+const notificationFailureStatsLoading = ref(false);
 const notificationHealthLoading = ref(false);
 const recentNotificationTestsLoading = ref(false);
 const planList = ref<BillingPlanView[]>([]);
@@ -354,6 +358,23 @@ const loadNotificationHealth = async () => {
 };
 
 /**
+ * 加载通知通道失败统计。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const loadNotificationFailureStats = async () => {
+  notificationFailureStatsLoading.value = true;
+  try {
+    notificationFailureStats.value = await fetchTenantNotificationChannelFailureStats({limit: 100});
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载通知通道失败统计失败');
+  } finally {
+    notificationFailureStatsLoading.value = false;
+  }
+};
+
+/**
  * 加载最近的通知通道测试记录。
  *
  * @author 余炘洋
@@ -411,6 +432,7 @@ const refreshTenantData = async () => {
   await Promise.all([
     loadTenants(),
     loadLifecycleSummary(),
+    loadNotificationFailureStats(),
     loadLifecycleWorkbench(),
     loadNotificationHealth(),
     loadRecentNotificationTests()
@@ -556,6 +578,7 @@ const handleTestFormNotificationChannels = async () => {
       tenantName: form.tenantName.trim() || undefined,
       channels: form.notificationChannels
     });
+    await loadNotificationFailureStats();
     await loadRecentNotificationTests();
     notificationTestContext.value = editingId.value ? '当前租户配置' : '开户表单配置';
     notificationTestDialogVisible.value = true;
@@ -586,6 +609,7 @@ const handleTestTenantNotificationChannels = async (row: TenantView) => {
       tenantName: row.tenantName,
       channels: row.notificationChannels
     });
+    await loadNotificationFailureStats();
     await loadRecentNotificationTests();
     notificationTestContext.value = `租户列表 / ${row.tenantName}`;
     notificationTestDialogVisible.value = true;
@@ -1237,6 +1261,70 @@ refreshTenantData();
     <el-card class="card channel-history-card" shadow="never">
       <template #header>
         <div class="workbench-header">
+          <span>通知通道失败问题分布</span>
+          <el-button link type="primary" :disabled="notificationFailureStatsLoading" @click="loadNotificationFailureStats">刷新统计</el-button>
+        </div>
+      </template>
+      <div v-loading="notificationFailureStatsLoading">
+        <div class="channel-health-overview">
+          <div class="channel-health-item">
+            <div class="summary-label">样本测试数</div>
+            <div class="summary-value">{{ notificationFailureStats?.totalTests ?? 0 }}</div>
+          </div>
+          <div class="channel-health-item">
+            <div class="summary-label">失败测试数</div>
+            <div class="summary-value danger">{{ notificationFailureStats?.failedTests ?? 0 }}</div>
+          </div>
+          <div class="channel-health-item">
+            <div class="summary-label">样本成功率</div>
+            <div class="summary-value success">{{ (notificationFailureStats?.successRate ?? 0).toFixed(2) }}%</div>
+          </div>
+        </div>
+        <div class="channel-health-summary">
+          {{ notificationFailureStats?.summary || '暂未获取到失败问题分布。' }}
+        </div>
+        <div class="failure-stats-grid">
+          <el-card shadow="never" class="failure-stats-card">
+            <template #header>失败通道 Top</template>
+            <el-empty
+              v-if="!(notificationFailureStats?.topFailingChannels || []).length"
+              description="暂无失败通道统计"
+            />
+            <el-table
+              v-else
+              :data="notificationFailureStats?.topFailingChannels || []"
+              border
+              size="small"
+            >
+              <el-table-column label="通道" min-width="160">
+                <template #default="scope">{{ resolveNotificationChannelLabel(scope.row.channel) }}</template>
+              </el-table-column>
+              <el-table-column prop="failureCount" label="失败次数" width="100"/>
+            </el-table>
+          </el-card>
+          <el-card shadow="never" class="failure-stats-card">
+            <template #header>失败原因 Top</template>
+            <el-empty
+              v-if="!(notificationFailureStats?.topFailureReasons || []).length"
+              description="暂无失败原因统计"
+            />
+            <el-table
+              v-else
+              :data="notificationFailureStats?.topFailureReasons || []"
+              border
+              size="small"
+            >
+              <el-table-column prop="reason" label="失败原因" min-width="240" show-overflow-tooltip/>
+              <el-table-column prop="count" label="次数" width="80"/>
+            </el-table>
+          </el-card>
+        </div>
+      </div>
+    </el-card>
+
+    <el-card class="card channel-history-card" shadow="never">
+      <template #header>
+        <div class="workbench-header">
           <span>最近通知通道测试记录</span>
           <el-button link type="primary" :disabled="recentNotificationTestsLoading" @click="loadRecentNotificationTests">刷新记录</el-button>
         </div>
@@ -1706,6 +1794,16 @@ refreshTenantData();
   margin-bottom: 16px;
 }
 
+.failure-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.failure-stats-card {
+  border-radius: 12px;
+}
+
 .workbench-header {
   display: flex;
   justify-content: space-between;
@@ -1897,8 +1995,10 @@ refreshTenantData();
   }
 
   .channel-health-tag-group,
+  .failure-stats-grid,
   .form-inline-actions,
   .notification-test-result-bar {
+    display: flex;
     flex-direction: column;
     align-items: flex-start;
   }
