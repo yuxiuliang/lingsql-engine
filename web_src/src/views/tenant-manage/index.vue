@@ -6,12 +6,14 @@ import {
   deleteTenant,
   extendTenantLifecycle,
   fetchTenantNotificationChannelHealth,
+  fetchRecentTenantNotificationChannelTests,
   fetchTenantLifecycleWorkbench,
   fetchTenants,
   fetchTenantLifecycleSummary,
   reactivateTenant,
   TenantNotificationChannelHealthView,
   TenantNotificationChannelIssueView,
+  TenantNotificationChannelRecentTestView,
   TenantNotificationChannelTestView,
   TenantCreateRequest,
   TenantLifecycleExtendRequest,
@@ -39,9 +41,11 @@ const tenants = ref<TenantView[]>([]);
 const lifecycleSummary = ref<TenantLifecycleSummaryView | null>(null);
 const lifecycleWorkbench = ref<TenantLifecycleWorkbenchView | null>(null);
 const notificationHealth = ref<TenantNotificationChannelHealthView | null>(null);
+const recentNotificationTests = ref<TenantNotificationChannelRecentTestView[]>([]);
 const loading = ref(false);
 const workbenchLoading = ref(false);
 const notificationHealthLoading = ref(false);
+const recentNotificationTestsLoading = ref(false);
 const planList = ref<BillingPlanView[]>([]);
 const orgTemplateList = ref<OrgTemplateView[]>([]);
 const dialogVisible = ref(false);
@@ -350,6 +354,23 @@ const loadNotificationHealth = async () => {
 };
 
 /**
+ * 加载最近的通知通道测试记录。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const loadRecentNotificationTests = async () => {
+  recentNotificationTestsLoading.value = true;
+  try {
+    recentNotificationTests.value = await fetchRecentTenantNotificationChannelTests({limit: 10});
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载最近测试记录失败');
+  } finally {
+    recentNotificationTestsLoading.value = false;
+  }
+};
+
+/**
  * 加载套餐列表。
  *
  * @author 余炘洋
@@ -391,7 +412,8 @@ const refreshTenantData = async () => {
     loadTenants(),
     loadLifecycleSummary(),
     loadLifecycleWorkbench(),
-    loadNotificationHealth()
+    loadNotificationHealth(),
+    loadRecentNotificationTests()
   ]);
 };
 
@@ -534,6 +556,7 @@ const handleTestFormNotificationChannels = async () => {
       tenantName: form.tenantName.trim() || undefined,
       channels: form.notificationChannels
     });
+    await loadRecentNotificationTests();
     notificationTestContext.value = editingId.value ? '当前租户配置' : '开户表单配置';
     notificationTestDialogVisible.value = true;
     ElMessage.success(notificationTestResult.value.success ? '通知通道测试通过' : '通知通道测试已完成，请查看诊断');
@@ -563,6 +586,7 @@ const handleTestTenantNotificationChannels = async (row: TenantView) => {
       tenantName: row.tenantName,
       channels: row.notificationChannels
     });
+    await loadRecentNotificationTests();
     notificationTestContext.value = `租户列表 / ${row.tenantName}`;
     notificationTestDialogVisible.value = true;
     ElMessage.success(notificationTestResult.value.success ? '通知通道测试通过' : '通知通道测试已完成，请查看诊断');
@@ -1210,6 +1234,64 @@ refreshTenantData();
       </div>
     </el-card>
 
+    <el-card class="card channel-history-card" shadow="never">
+      <template #header>
+        <div class="workbench-header">
+          <span>最近通知通道测试记录</span>
+          <el-button link type="primary" :disabled="recentNotificationTestsLoading" @click="loadRecentNotificationTests">刷新记录</el-button>
+        </div>
+      </template>
+      <el-empty
+        v-if="!recentNotificationTests.length && !recentNotificationTestsLoading"
+        description="最近暂无通知通道测试记录"
+      />
+      <el-table
+        v-else
+        :data="recentNotificationTests"
+        border
+        size="small"
+        v-loading="recentNotificationTestsLoading"
+        max-height="320"
+      >
+        <el-table-column label="测试时间" min-width="170">
+          <template #default="scope">{{ formatDateTime(scope.row.createTime) }}</template>
+        </el-table-column>
+        <el-table-column label="租户" min-width="180">
+          <template #default="scope">
+            <div>{{ scope.row.tenantName || '未命名租户' }}</div>
+            <div class="toolbar-tip">{{ scope.row.tenantId || '--' }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作人" min-width="120">
+          <template #default="scope">{{ scope.row.operatorUsername || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="测试通道" min-width="180">
+          <template #default="scope">
+            <div class="channel-list">
+              <el-tag
+                v-for="channel in scope.row.requestedChannels || []"
+                :key="`${scope.row.auditLogId}-${channel}`"
+                size="small"
+                effect="plain"
+              >
+                {{ resolveNotificationChannelLabel(channel) }}
+              </el-tag>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="结果" width="100">
+          <template #default="scope">
+            <el-tag :type="resolveNotificationTestType(scope.row.success)">
+              {{ scope.row.success ? '成功' : '失败' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="摘要" min-width="320" show-overflow-tooltip>
+          <template #default="scope">{{ scope.row.summary || '-' }}</template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
     <el-card class="card" shadow="never">
       <div class="toolbar">
         <div class="toolbar-actions">
@@ -1617,6 +1699,10 @@ refreshTenantData();
 }
 
 .channel-health-card {
+  margin-bottom: 16px;
+}
+
+.channel-history-card {
   margin-bottom: 16px;
 }
 

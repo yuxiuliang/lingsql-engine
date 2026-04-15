@@ -9,11 +9,13 @@ import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
 import com.lingsql.tenant.model.TenantNotificationChannelHealthView;
+import com.lingsql.tenant.model.TenantNotificationChannelRecentTestView;
 import com.lingsql.tenant.model.TenantNotificationChannelTestRequest;
 import com.lingsql.tenant.model.TenantNotificationChannelTestView;
 import com.lingsql.tenant.model.TenantUpdateRequest;
 import com.lingsql.tenant.model.TenantView;
 import com.lingsql.tenant.service.TenantAdminService;
+import com.lingsql.tenant.service.TenantNotificationChannelHistoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -41,6 +43,7 @@ import java.util.List;
 public class TenantAdminController {
 
     private final TenantAdminService tenantAdminService;
+    private final TenantNotificationChannelHistoryService tenantNotificationChannelHistoryService;
     private final AuditOperationExecutor auditOperationExecutor;
 
     /**
@@ -106,6 +109,27 @@ public class TenantAdminController {
             return ApiResponse.forbidden("无权限访问");
         }
         return ApiResponse.success(tenantAdminService.notificationChannelHealth());
+    }
+
+    /**
+     * 查询最近的通知通道测试记录。
+     *
+     * @param tenantId 租户ID
+     * @param limit    返回条数
+     * @return 最近测试记录
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    @GetMapping("/notification-channels/tests/recent")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
+    public ApiResponse<List<TenantNotificationChannelRecentTestView>> recentNotificationChannelTests(
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) Integer limit
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return ApiResponse.success(tenantNotificationChannelHistoryService.listRecentTests(tenantId, limit));
     }
 
     /**
@@ -231,7 +255,8 @@ public class TenantAdminController {
                 "TENANT",
                 request,
                 http,
-                () -> tenantAdminService.testNotificationChannels(request)
+                () -> tenantAdminService.testNotificationChannels(request),
+                result -> result
         );
     }
 

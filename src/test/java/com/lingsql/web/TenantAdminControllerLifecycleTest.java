@@ -6,10 +6,12 @@ import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
 import com.lingsql.tenant.model.TenantNotificationChannelHealthView;
+import com.lingsql.tenant.model.TenantNotificationChannelRecentTestView;
 import com.lingsql.tenant.model.TenantNotificationChannelTestRequest;
 import com.lingsql.tenant.model.TenantNotificationChannelTestView;
 import com.lingsql.tenant.model.TenantView;
 import com.lingsql.tenant.service.TenantAdminService;
+import com.lingsql.tenant.service.TenantNotificationChannelHistoryService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,14 +35,16 @@ import static org.mockito.Mockito.when;
 class TenantAdminControllerLifecycleTest {
 
     private TenantAdminService tenantAdminService;
+    private TenantNotificationChannelHistoryService tenantNotificationChannelHistoryService;
     private AuditOperationExecutor auditOperationExecutor;
     private TenantAdminController controller;
 
     @BeforeEach
     void setUp() {
         tenantAdminService = Mockito.mock(TenantAdminService.class);
+        tenantNotificationChannelHistoryService = Mockito.mock(TenantNotificationChannelHistoryService.class);
         auditOperationExecutor = Mockito.mock(AuditOperationExecutor.class);
-        controller = new TenantAdminController(tenantAdminService, auditOperationExecutor);
+        controller = new TenantAdminController(tenantAdminService, tenantNotificationChannelHistoryService, auditOperationExecutor);
     }
 
     @AfterEach
@@ -156,6 +160,7 @@ class TenantAdminControllerLifecycleTest {
         assertEquals(403, response.getCode());
         assertEquals("无权限访问", response.getMessage());
         verifyNoInteractions(tenantAdminService);
+        verifyNoInteractions(tenantNotificationChannelHistoryService);
     }
 
     @Test
@@ -170,6 +175,32 @@ class TenantAdminControllerLifecycleTest {
         assertEquals(200, response.getCode());
         assertEquals(1, response.getData().getTenantIssueCount());
         verify(tenantAdminService, times(1)).notificationChannelHealth();
+    }
+
+    @Test
+    void recentNotificationChannelTestsShouldReturnForbiddenWhenNotSysAdmin() {
+        bindSession(List.of("TENANT_ADMIN"));
+
+        ApiResponse<List<TenantNotificationChannelRecentTestView>> response = controller.recentNotificationChannelTests(null, 10);
+
+        assertEquals(403, response.getCode());
+        assertEquals("无权限访问", response.getMessage());
+        verifyNoInteractions(tenantNotificationChannelHistoryService);
+    }
+
+    @Test
+    void recentNotificationChannelTestsShouldSucceedForSysAdmin() {
+        bindSession(List.of("SYS_ADMIN"));
+        TenantNotificationChannelRecentTestView view = new TenantNotificationChannelRecentTestView();
+        view.setTenantId("t-001");
+        when(tenantNotificationChannelHistoryService.listRecentTests("t-001", 5)).thenReturn(List.of(view));
+
+        ApiResponse<List<TenantNotificationChannelRecentTestView>> response = controller.recentNotificationChannelTests("t-001", 5);
+
+        assertEquals(200, response.getCode());
+        assertEquals(1, response.getData().size());
+        assertEquals("t-001", response.getData().getFirst().getTenantId());
+        verify(tenantNotificationChannelHistoryService, times(1)).listRecentTests("t-001", 5);
     }
 
     @Test
@@ -209,12 +240,18 @@ class TenantAdminControllerLifecycleTest {
                 eq("TENANT"),
                 eq(request),
                 any(),
+                any(),
                 any()
         );
     }
 
     private void mockAuditExecute() {
         when(auditOperationExecutor.execute(anyString(), anyString(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    Supplier<?> supplier = invocation.getArgument(4);
+                    return ApiResponse.success(supplier.get());
+                });
+        when(auditOperationExecutor.execute(anyString(), anyString(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     Supplier<?> supplier = invocation.getArgument(4);
                     return ApiResponse.success(supplier.get());

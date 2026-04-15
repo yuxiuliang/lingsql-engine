@@ -210,6 +210,24 @@ export interface TenantNotificationChannelHealthView {
 }
 
 /**
+ * 租户通知通道最近测试记录。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelRecentTestView {
+  auditLogId?: number;
+  tenantId?: string;
+  tenantName?: string;
+  requestedChannels?: string[];
+  success?: boolean;
+  summary?: string;
+  operatorUsername?: string;
+  createTime?: string;
+  channelResults?: TenantNotificationChannelTestChannelView[];
+}
+
+/**
  * 租户续期请求。
  *
  * @author 余炘洋
@@ -309,6 +327,31 @@ export const fetchTenantLifecycleWorkbench = async (limit = 50): Promise<TenantL
  */
 export const fetchTenantNotificationChannelHealth = async (): Promise<TenantNotificationChannelHealthView> => {
   return request<TenantNotificationChannelHealthView>('/api/v1/admin/tenants/notification-channels/health');
+};
+
+/**
+ * 查询最近的通知通道测试记录。
+ *
+ * @param params 查询参数
+ * @return 最近测试记录
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export const fetchRecentTenantNotificationChannelTests = async (params: {
+  tenantId?: string;
+  limit?: number;
+} = {}): Promise<TenantNotificationChannelRecentTestView[]> => {
+  const query = new URLSearchParams();
+  if (params.tenantId) {
+    query.set('tenantId', params.tenantId);
+  }
+  if (params.limit != null) {
+    query.set('limit', String(params.limit));
+  }
+  const suffix = query.toString();
+  return request<TenantNotificationChannelRecentTestView[]>(
+    `/api/v1/admin/tenants/notification-channels/tests/recent${suffix ? `?${suffix}` : ''}`
+  );
 };
 
 /**
