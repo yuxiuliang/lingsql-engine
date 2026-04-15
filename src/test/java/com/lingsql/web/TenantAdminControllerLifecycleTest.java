@@ -5,6 +5,8 @@ import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
+import com.lingsql.tenant.model.TenantNotificationChannelTestRequest;
+import com.lingsql.tenant.model.TenantNotificationChannelTestView;
 import com.lingsql.tenant.model.TenantView;
 import com.lingsql.tenant.service.TenantAdminService;
 import org.junit.jupiter.api.AfterEach;
@@ -142,6 +144,47 @@ class TenantAdminControllerLifecycleTest {
         assertEquals(200, response.getCode());
         assertEquals(2, response.getData().getTotalTasks());
         verify(tenantAdminService, times(1)).lifecycleWorkbench(20);
+    }
+
+    @Test
+    void notificationChannelTestShouldReturnForbiddenWhenNotSysAdmin() {
+        bindSession(List.of("TENANT_ADMIN"));
+        TenantNotificationChannelTestRequest request = new TenantNotificationChannelTestRequest();
+        request.setChannels(List.of("webhook"));
+
+        ApiResponse<TenantNotificationChannelTestView> response = controller.testNotificationChannels(request, new MockHttpServletRequest());
+
+        assertEquals(403, response.getCode());
+        assertEquals("无权限访问", response.getMessage());
+        verifyNoInteractions(tenantAdminService);
+        verifyNoInteractions(auditOperationExecutor);
+    }
+
+    @Test
+    void notificationChannelTestShouldSucceedForSysAdmin() {
+        bindSession(List.of("SYS_ADMIN"));
+        TenantNotificationChannelTestRequest request = new TenantNotificationChannelTestRequest();
+        request.setTenantId("t-001");
+        request.setTenantName("演示租户");
+        request.setChannels(List.of("webhook"));
+        TenantNotificationChannelTestView view = new TenantNotificationChannelTestView();
+        view.setTenantId("t-001");
+        view.setSuccess(true);
+        when(tenantAdminService.testNotificationChannels(request)).thenReturn(view);
+        mockAuditExecute();
+
+        ApiResponse<TenantNotificationChannelTestView> response = controller.testNotificationChannels(request, new MockHttpServletRequest());
+
+        assertEquals(200, response.getCode());
+        assertEquals("t-001", response.getData().getTenantId());
+        verify(tenantAdminService, times(1)).testNotificationChannels(request);
+        verify(auditOperationExecutor, times(1)).execute(
+                eq("TENANT_NOTIFICATION_CHANNEL_TEST"),
+                eq("TENANT"),
+                eq(request),
+                any(),
+                any()
+        );
     }
 
     private void mockAuditExecute() {

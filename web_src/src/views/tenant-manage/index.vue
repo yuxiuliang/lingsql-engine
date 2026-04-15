@@ -9,6 +9,7 @@ import {
   fetchTenants,
   fetchTenantLifecycleSummary,
   reactivateTenant,
+  TenantNotificationChannelTestView,
   TenantCreateRequest,
   TenantLifecycleExtendRequest,
   TenantLifecycleOpsTaskView,
@@ -16,6 +17,7 @@ import {
   TenantLifecycleWorkbenchView,
   TenantUpdateRequest,
   TenantView,
+  testTenantNotificationChannels,
   updateTenant
 } from '@/api/tenant';
 import {BillingPlanView, fetchPlans} from '@/api/plan';
@@ -39,8 +41,12 @@ const planList = ref<BillingPlanView[]>([]);
 const orgTemplateList = ref<OrgTemplateView[]>([]);
 const dialogVisible = ref(false);
 const lifecycleDialogVisible = ref(false);
+const notificationTestDialogVisible = ref(false);
 const lifecycleTargetTenant = ref<TenantView | null>(null);
 const editingId = ref<number | null>(null);
+const notificationTestLoading = ref(false);
+const notificationTestContext = ref('');
+const notificationTestResult = ref<TenantNotificationChannelTestView | null>(null);
 const initConfig = ref(false);
 const planOptions = computed(() => {
   const options = new Set<string>();
@@ -116,6 +122,18 @@ const notificationChannelOptions = [
   {label: '钉钉机器人', value: 'dingtalk'},
   {label: '企业微信机器人', value: 'wecom'}
 ];
+
+/**
+ * 解析通知通道名称。
+ *
+ * @param channel 通道编码
+ * @return 展示名称
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const resolveNotificationChannelLabel = (channel?: string) => {
+  return notificationChannelOptions.find((item) => item.value === channel)?.label || channel || '未知通道';
+};
 
 /**
  * 生命周期续期表单定义。
@@ -467,6 +485,63 @@ const handleSave = async () => {
 };
 
 /**
+ * 测试当前表单中的默认通知通道。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleTestFormNotificationChannels = async () => {
+  if (!form.notificationChannels.length) {
+    ElMessage.warning('请先选择至少一个默认通知通道');
+    return;
+  }
+  notificationTestLoading.value = true;
+  try {
+    notificationTestResult.value = await testTenantNotificationChannels({
+      tenantId: form.tenantId || undefined,
+      tenantName: form.tenantName.trim() || undefined,
+      channels: form.notificationChannels
+    });
+    notificationTestContext.value = editingId.value ? '当前租户配置' : '开户表单配置';
+    notificationTestDialogVisible.value = true;
+    ElMessage.success(notificationTestResult.value.success ? '通知通道测试通过' : '通知通道测试已完成，请查看诊断');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '测试通知通道失败');
+  } finally {
+    notificationTestLoading.value = false;
+  }
+};
+
+/**
+ * 测试租户当前默认通知通道。
+ *
+ * @param row 租户信息
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleTestTenantNotificationChannels = async (row: TenantView) => {
+  if (!row.notificationChannels?.length) {
+    ElMessage.warning('该租户尚未配置默认通知通道');
+    return;
+  }
+  notificationTestLoading.value = true;
+  try {
+    notificationTestResult.value = await testTenantNotificationChannels({
+      tenantId: row.tenantId,
+      tenantName: row.tenantName,
+      channels: row.notificationChannels
+    });
+    notificationTestContext.value = `租户列表 / ${row.tenantName}`;
+    notificationTestDialogVisible.value = true;
+    ElMessage.success(notificationTestResult.value.success ? '通知通道测试通过' : '通知通道测试已完成，请查看诊断');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '测试通知通道失败');
+  } finally {
+    notificationTestLoading.value = false;
+  }
+};
+
+/**
  * 删除租户。
  *
  * @param row 租户信息
@@ -508,6 +583,37 @@ const resolveStatusText = (status?: number) => {
  */
 const resolveStatusType = (status?: number) => {
   return status === 1 ? 'success' : 'info';
+};
+
+/**
+ * 解析测试结果标签样式。
+ *
+ * @param success 是否成功
+ * @return 标签类型
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const resolveNotificationTestType = (success?: boolean) => {
+  return success ? 'success' : 'danger';
+};
+
+/**
+ * 格式化时间文本。
+ *
+ * @param value 时间字符串
+ * @return 展示文本
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const formatDateTime = (value?: string) => {
+  if (!value) {
+    return '--';
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString('zh-CN', {hour12: false});
 };
 
 /**
@@ -987,21 +1093,31 @@ refreshTenantData();
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="180"/>
-        <el-table-column label="操作" width="420">
+        <el-table-column label="操作" width="500">
           <template #default="scope">
-            <el-button size="small" :disabled="!isSysAdmin" @click="handleEdit(scope.row)">编辑</el-button>
-            <el-button size="small" type="warning" :disabled="!isSysAdmin" @click="handleExtend30Days(scope.row)">续期30天</el-button>
-            <el-button size="small" type="primary" :disabled="!isSysAdmin" @click="openLifecycleDialog(scope.row)">自定义续期</el-button>
-            <el-button
-              v-if="shouldShowReactivate(scope.row)"
-              size="small"
-              type="success"
-              :disabled="!isSysAdmin"
-              @click="handleReactivate(scope.row)"
-            >
-              恢复服务
-            </el-button>
-            <el-button size="small" type="danger" :disabled="!isSysAdmin" @click="handleDelete(scope.row)">删除</el-button>
+            <div class="row-actions">
+              <el-button size="small" :disabled="!isSysAdmin" @click="handleEdit(scope.row)">编辑</el-button>
+              <el-button
+                size="small"
+                type="info"
+                :disabled="!isSysAdmin || !scope.row.notificationChannels?.length || notificationTestLoading"
+                @click="handleTestTenantNotificationChannels(scope.row)"
+              >
+                测试通知
+              </el-button>
+              <el-button size="small" type="warning" :disabled="!isSysAdmin" @click="handleExtend30Days(scope.row)">续期30天</el-button>
+              <el-button size="small" type="primary" :disabled="!isSysAdmin" @click="openLifecycleDialog(scope.row)">自定义续期</el-button>
+              <el-button
+                v-if="shouldShowReactivate(scope.row)"
+                size="small"
+                type="success"
+                :disabled="!isSysAdmin"
+                @click="handleReactivate(scope.row)"
+              >
+                恢复服务
+              </el-button>
+              <el-button size="small" type="danger" :disabled="!isSysAdmin" @click="handleDelete(scope.row)">删除</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -1041,7 +1157,17 @@ refreshTenantData();
               :value="item.value"
             />
           </el-select>
-          <div class="form-tip">数字员工未单独选择推送通道时，会优先继承这里的默认通道。</div>
+          <div class="form-inline-actions">
+            <div class="form-tip">数字员工未单独选择推送通道时，会优先继承这里的默认通道。</div>
+            <el-button
+              link
+              type="primary"
+              :disabled="notificationTestLoading || !form.notificationChannels.length"
+              @click="handleTestFormNotificationChannels"
+            >
+              测试当前通道
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item label="到期时间">
           <el-date-picker
@@ -1192,6 +1318,56 @@ refreshTenantData();
         <el-button type="primary" @click="handleCustomExtend">确认续期</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="notificationTestDialogVisible" title="通知通道测试结果" width="720px" :close-on-click-modal="false">
+      <template v-if="notificationTestResult">
+        <div class="notification-test-summary">
+          <div class="notification-test-summary-item">
+            <span class="summary-item-label">测试来源</span>
+            <span class="summary-item-value">{{ notificationTestContext || '--' }}</span>
+          </div>
+          <div class="notification-test-summary-item">
+            <span class="summary-item-label">租户</span>
+            <span class="summary-item-value">
+              {{ notificationTestResult.tenantName || '未命名租户' }}（{{ notificationTestResult.tenantId || '未指定租户ID' }}）
+            </span>
+          </div>
+          <div class="notification-test-summary-item">
+            <span class="summary-item-label">测试时间</span>
+            <span class="summary-item-value">{{ formatDateTime(notificationTestResult.testTime) }}</span>
+          </div>
+        </div>
+        <div class="notification-test-result-bar">
+          <el-tag :type="resolveNotificationTestType(notificationTestResult.success)">
+            {{ notificationTestResult.success ? '整体成功' : '存在失败' }}
+          </el-tag>
+          <span class="notification-test-result-text">{{ notificationTestResult.summary || '-' }}</span>
+        </div>
+        <el-table :data="notificationTestResult.channelResults || []" border size="small">
+          <el-table-column label="通道" min-width="140">
+            <template #default="scope">
+              {{ resolveNotificationChannelLabel(scope.row.channel) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="结果" width="110">
+            <template #default="scope">
+              <el-tag :type="resolveNotificationTestType(scope.row.success)">
+                {{ scope.row.success ? '成功' : '失败' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="HTTP 状态" width="120">
+            <template #default="scope">{{ scope.row.statusCode ?? '--' }}</template>
+          </el-table-column>
+          <el-table-column label="诊断明细" min-width="260" show-overflow-tooltip>
+            <template #default="scope">{{ scope.row.detail || '-' }}</template>
+          </el-table-column>
+        </el-table>
+      </template>
+      <template #footer>
+        <el-button type="primary" @click="notificationTestDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1290,6 +1466,12 @@ refreshTenantData();
   gap: 8px;
 }
 
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .toolbar-tip {
   color: #94a3b8;
   font-size: 13px;
@@ -1299,6 +1481,14 @@ refreshTenantData();
   font-size: 12px;
   color: #64748b;
   margin-top: 6px;
+}
+
+.form-inline-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
 }
 
 .template-alert {
@@ -1316,6 +1506,49 @@ refreshTenantData();
   color: #b45309;
 }
 
+.notification-test-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.notification-test-summary-item {
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.summary-item-label {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.summary-item-value {
+  color: #0f172a;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.notification-test-result-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 16px;
+}
+
+.notification-test-result-text {
+  color: #334155;
+  line-height: 1.6;
+}
+
 @media (max-width: 1200px) {
   .summary-grid {
     grid-template-columns: repeat(3, minmax(120px, 1fr));
@@ -1325,6 +1558,12 @@ refreshTenantData();
 @media (max-width: 768px) {
   .summary-grid {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .form-inline-actions,
+  .notification-test-result-bar {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

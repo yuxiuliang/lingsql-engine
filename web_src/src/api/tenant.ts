@@ -138,6 +138,47 @@ export interface TenantUpdateRequest {
 }
 
 /**
+ * 租户通知通道测试请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelTestRequest {
+  tenantId?: string;
+  tenantName?: string;
+  channels: string[];
+}
+
+/**
+ * 租户通知通道测试明细。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelTestChannelView {
+  channel?: string;
+  success?: boolean;
+  statusCode?: number | null;
+  detail?: string;
+}
+
+/**
+ * 租户通知通道测试结果。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelTestView {
+  tenantId?: string;
+  tenantName?: string;
+  requestedChannels?: string[];
+  success?: boolean;
+  summary?: string;
+  testTime?: string;
+  channelResults?: TenantNotificationChannelTestChannelView[];
+}
+
+/**
  * 租户续期请求。
  *
  * @author 余炘洋
@@ -255,5 +296,22 @@ export const extendTenantLifecycle = async (id: number, payload: TenantLifecycle
 export const reactivateTenant = async (id: number): Promise<TenantView> => {
   return request<TenantView>(`/api/v1/admin/tenants/${id}/lifecycle/reactivate`, {
     method: 'POST'
+  });
+};
+
+/**
+ * 测试租户通知通道。
+ *
+ * @param payload 测试请求
+ * @return 测试结果
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export const testTenantNotificationChannels = async (
+  payload: TenantNotificationChannelTestRequest
+): Promise<TenantNotificationChannelTestView> => {
+  return request<TenantNotificationChannelTestView>('/api/v1/admin/tenants/notification-channels/test', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   });
 };

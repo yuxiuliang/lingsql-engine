@@ -4,6 +4,7 @@ import com.lingsql.billing.BillingBalanceService;
 import com.lingsql.billing.repository.BillingPlanRepository;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.executor.SqlTaskTracker;
+import com.lingsql.ops.OpsAlertService;
 import com.lingsql.organization.model.OrgTemplateApplyRequest;
 import com.lingsql.organization.service.OrganizationAdminService;
 import com.lingsql.rbac.entity.RbacPermission;
@@ -60,7 +61,8 @@ class TenantAdminServiceOrgBootstrapTest {
                 billingBalanceService,
                 Mockito.mock(BillingPlanRepository.class),
                 lifecycleService,
-                organizationAdminService
+                organizationAdminService,
+                Mockito.mock(OpsAlertService.class)
         );
 
         when(tenantRepository.existsByTenantIdAndIsDeleted(any(), any(Integer.class))).thenReturn(false);

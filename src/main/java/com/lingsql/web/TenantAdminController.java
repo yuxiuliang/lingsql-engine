@@ -8,6 +8,8 @@ import com.lingsql.tenant.model.TenantCreateRequest;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
+import com.lingsql.tenant.model.TenantNotificationChannelTestRequest;
+import com.lingsql.tenant.model.TenantNotificationChannelTestView;
 import com.lingsql.tenant.model.TenantUpdateRequest;
 import com.lingsql.tenant.model.TenantView;
 import com.lingsql.tenant.service.TenantAdminService;
@@ -186,6 +188,33 @@ public class TenantAdminController {
                 request,
                 http,
                 () -> tenantAdminService.updateTenant(id, request)
+        );
+    }
+
+    /**
+     * 测试租户默认通知通道。
+     *
+     * @param request 测试请求
+     * @param http    请求
+     * @return 测试结果
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    @PostMapping("/notification-channels/test")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
+    public ApiResponse<TenantNotificationChannelTestView> testNotificationChannels(
+            @RequestBody TenantNotificationChannelTestRequest request,
+            HttpServletRequest http
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return auditOperationExecutor.execute(
+                "TENANT_NOTIFICATION_CHANNEL_TEST",
+                "TENANT",
+                request,
+                http,
+                () -> tenantAdminService.testNotificationChannels(request)
         );
     }
 

@@ -8,6 +8,9 @@ import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.executor.SqlTaskTracker;
 import com.lingsql.billing.BillingBalanceService;
+import com.lingsql.ops.OpsAlertService;
+import com.lingsql.ops.model.AlertDispatchChannelResult;
+import com.lingsql.ops.model.AlertDispatchResult;
 import com.lingsql.organization.model.OrgTemplateApplyRequest;
 import com.lingsql.organization.service.OrganizationAdminService;
 import com.lingsql.rbac.entity.RbacPermission;
@@ -30,6 +33,9 @@ import com.lingsql.tenant.model.TenantLifecycleSnapshot;
 import com.lingsql.tenant.model.TenantLifecycleState;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
 import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
+import com.lingsql.tenant.model.TenantNotificationChannelTestChannelView;
+import com.lingsql.tenant.model.TenantNotificationChannelTestRequest;
+import com.lingsql.tenant.model.TenantNotificationChannelTestView;
 import com.lingsql.tenant.model.TenantRiskLevel;
 import com.lingsql.tenant.model.TenantRiskSnapshot;
 import com.lingsql.tenant.model.TenantUpdateRequest;
@@ -45,8 +51,10 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
@@ -100,6 +108,7 @@ public class TenantAdminService {
     private final BillingPlanRepository billingPlanRepository;
     private final TenantLifecycleService tenantLifecycleService;
     private final OrganizationAdminService organizationAdminService;
+    private final OpsAlertService opsAlertService;
 
     /**
      * 查询租户列表。
@@ -194,6 +203,41 @@ public class TenantAdminService {
         workbench.setP2Count((int) limitedTasks.stream().filter(task -> PRIORITY_P2.equals(task.getPriority())).count());
         workbench.setTasks(limitedTasks);
         return workbench;
+    }
+
+    /**
+     * 测试租户默认通知通道。
+     *
+     * @param request 测试请求
+     * @return 测试结果
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    public TenantNotificationChannelTestView testNotificationChannels(TenantNotificationChannelTestRequest request) {
+        if (request == null) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "测试请求不能为空");
+        }
+        List<String> channels = parseNotificationChannels(normalizeNotificationChannels(request.getChannels()));
+        if (channels.isEmpty()) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "至少选择一个默认通知通道");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        String tenantId = normalizeTenantId(request.getTenantId());
+        String tenantName = normalizeText(request.getTenantName());
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("tenantId", StringUtils.hasText(tenantId) ? tenantId : "-");
+        details.put("tenantName", StringUtils.hasText(tenantName) ? tenantName : "-");
+        details.put("channels", channels);
+        details.put("scene", "TENANT_NOTIFICATION_CHANNEL_TEST");
+        details.put("testTime", now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+
+        AlertDispatchResult dispatchResult = opsAlertService.sendAlertToChannelsWithResult(
+                "租户通知通道测试",
+                buildNotificationTestMessage(tenantId, tenantName, channels),
+                details,
+                channels
+        );
+        return toNotificationChannelTestView(tenantId, tenantName, channels, now, dispatchResult);
     }
 
     /**
@@ -688,6 +732,40 @@ public class TenantAdminService {
             view.setRiskReasons(riskSnapshot.reasons());
         }
         return view;
+    }
+
+    private TenantNotificationChannelTestView toNotificationChannelTestView(String tenantId,
+                                                                            String tenantName,
+                                                                            List<String> channels,
+                                                                            LocalDateTime testTime,
+                                                                            AlertDispatchResult dispatchResult) {
+        TenantNotificationChannelTestView view = new TenantNotificationChannelTestView();
+        view.setTenantId(tenantId);
+        view.setTenantName(tenantName);
+        view.setRequestedChannels(channels);
+        view.setSuccess(dispatchResult != null && dispatchResult.success());
+        view.setSummary(dispatchResult == null ? "未执行测试" : dispatchResult.summarize());
+        view.setTestTime(testTime);
+        view.setChannelResults(dispatchResult == null
+                ? List.of()
+                : dispatchResult.channelResults().stream().map(this::toNotificationChannelTestChannelView).toList());
+        return view;
+    }
+
+    private TenantNotificationChannelTestChannelView toNotificationChannelTestChannelView(AlertDispatchChannelResult result) {
+        TenantNotificationChannelTestChannelView view = new TenantNotificationChannelTestChannelView();
+        view.setChannel(result.channel());
+        view.setSuccess(result.success());
+        view.setStatusCode(result.statusCode());
+        view.setDetail(result.detail());
+        return view;
+    }
+
+    private String buildNotificationTestMessage(String tenantId, String tenantName, List<String> channels) {
+        String resolvedTenantId = StringUtils.hasText(tenantId) ? tenantId : "未指定";
+        String resolvedTenantName = StringUtils.hasText(tenantName) ? tenantName : "未命名租户";
+        return "这是一条来自租户管理后台的测试消息，用于验证默认通知通道是否可用。租户="
+                + resolvedTenantName + "（" + resolvedTenantId + "），通道=" + String.join(",", channels);
     }
 
     private TenantLifecycleOpsTaskView buildOpsTask(TenantInfo tenant,
