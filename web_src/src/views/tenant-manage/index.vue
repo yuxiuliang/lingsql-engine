@@ -92,33 +92,108 @@ const notificationAnalysisIssue = computed(() => {
   return notificationIssueMap.value.get(tenantId) || null;
 });
 const notificationOverviewCards = computed(() => {
+  const configuredChannels = notificationHealth.value?.configuredChannels?.length ?? 0;
+  const tenantUsingChannels = notificationHealth.value?.tenantUsingNotificationChannels ?? 0;
+  const failedTests = notificationFailureStats.value?.failedTests ?? 0;
+  const totalTests = notificationFailureStats.value?.totalTests ?? 0;
+  const successRate = notificationFailureStats.value?.successRate ?? 0;
   return [
     {
       key: 'configured_channels',
       label: '已配置通道',
-      value: notificationHealth.value?.configuredChannels?.length ?? 0,
-      emphasisClass: 'success'
+      value: configuredChannels,
+      emphasisClass: configuredChannels > 0 ? 'success' : undefined,
+      statusType: notificationHealth.value?.alertEnabled === false ? 'danger' : configuredChannels > 0 ? 'success' : 'warning',
+      statusText: notificationHealth.value?.alertEnabled === false ? '未启用' : configuredChannels > 0 ? '正常' : '未配置'
     },
     {
       key: 'tenant_using_channels',
       label: '使用默认通道租户',
-      value: notificationHealth.value?.tenantUsingNotificationChannels ?? 0,
-      emphasisClass: undefined
+      value: tenantUsingChannels,
+      emphasisClass: tenantUsingChannels > 0 ? 'success' : undefined,
+      statusType: tenantUsingChannels > 0 ? 'success' : 'warning',
+      statusText: tenantUsingChannels > 0 ? '已覆盖' : '待覆盖'
     },
     {
       key: 'notification_failures',
       label: '失败测试数',
-      value: notificationFailureStats.value?.failedTests ?? 0,
-      emphasisClass: 'danger'
+      value: failedTests,
+      emphasisClass: failedTests > 0 ? 'danger' : totalTests > 0 ? 'success' : undefined,
+      statusType: failedTests > 0 ? 'danger' : totalTests > 0 ? 'success' : 'info',
+      statusText: failedTests > 0 ? '需处理' : totalTests > 0 ? '稳定' : '无样本'
     },
     {
       key: 'notification_success_rate',
       label: '样本成功率',
-      value: `${(notificationFailureStats.value?.successRate ?? 0).toFixed(2)}%`,
-      emphasisClass: 'success'
+      value: `${successRate.toFixed(2)}%`,
+      emphasisClass: totalTests <= 0 ? undefined : successRate >= 95 ? 'success' : successRate >= 80 ? 'warning' : 'danger',
+      statusType: totalTests <= 0 ? 'info' : successRate >= 95 ? 'success' : successRate >= 80 ? 'warning' : 'danger',
+      statusText: totalTests <= 0 ? '无样本' : successRate >= 95 ? '健康' : successRate >= 80 ? '关注' : '风险'
     }
   ];
 });
+
+const notificationSectionMeta = computed(() => {
+  const guidanceLevel = notificationNextSteps.value.some((item) => item.level === 'danger')
+    ? 'danger'
+    : notificationNextSteps.value.some((item) => item.level === 'warning')
+      ? 'warning'
+      : notificationNextSteps.value.some((item) => item.level === 'success')
+        ? 'success'
+        : 'info';
+
+  const healthLevel = notificationHealth.value?.alertEnabled === false
+    ? 'danger'
+    : (notificationHealth.value?.tenantIssueCount ?? 0) > 0
+      ? 'warning'
+      : (notificationHealth.value?.configuredChannels?.length ?? 0) > 0
+        ? 'success'
+        : 'info';
+
+  const failureLevel = (notificationFailureStats.value?.failedTests ?? 0) > 0
+    ? 'danger'
+    : (notificationFailureStats.value?.totalTests ?? 0) > 0
+      ? 'success'
+      : 'info';
+
+  const recentLevel = recentNotificationTests.value.some((item) => item.success !== true)
+    ? 'warning'
+    : recentNotificationTests.value.length > 0
+      ? 'success'
+      : 'info';
+
+  return {
+    guidance: {
+      type: guidanceLevel,
+      text: guidanceLevel === 'danger' ? '优先处理' : guidanceLevel === 'warning' ? '建议处理' : guidanceLevel === 'success' ? '状态良好' : '提示'
+    },
+    health: {
+      type: healthLevel,
+      text: healthLevel === 'danger' ? '风险' : healthLevel === 'warning' ? '关注' : healthLevel === 'success' ? '健康' : '待配置'
+    },
+    failureStats: {
+      type: failureLevel,
+      text: failureLevel === 'danger' ? '有失败' : failureLevel === 'success' ? '稳定' : '无样本'
+    },
+    recentTests: {
+      type: recentLevel,
+      text: recentLevel === 'warning' ? '有异常' : recentLevel === 'success' ? '有记录' : '无记录'
+    }
+  };
+});
+
+const resolveSectionCardClass = (type?: string) => {
+  if (type === 'danger') {
+    return 'card--danger';
+  }
+  if (type === 'warning') {
+    return 'card--warning';
+  }
+  if (type === 'success') {
+    return 'card--success';
+  }
+  return 'card--info';
+};
 
 /**
  * 根据当前数据应用通知区块推荐展开策略。
@@ -1658,10 +1733,13 @@ refreshTenantData();
         v-for="item in notificationOverviewCards"
         :key="item.key"
         shadow="never"
-        class="summary-card notification-summary-card"
+        :class="['summary-card', 'notification-summary-card', resolveSectionCardClass(item.statusType)]"
         @click="handleNotificationOverviewCardClick(item.key)"
       >
-        <div class="summary-label">{{ item.label }}</div>
+        <div class="summary-card-header">
+          <div class="summary-label">{{ item.label }}</div>
+          <el-tag size="small" :type="item.statusType">{{ item.statusText }}</el-tag>
+        </div>
         <div class="summary-value" :class="item.emphasisClass">{{ item.value }}</div>
         <div class="summary-tip">点击后自动跳转到相关通知分析区域</div>
       </el-card>
@@ -1729,10 +1807,13 @@ refreshTenantData();
       </el-table>
     </el-card>
 
-    <el-card class="card channel-guidance-card" shadow="never">
+    <el-card :class="['card', 'channel-guidance-card', resolveSectionCardClass(notificationSectionMeta.guidance.type)]" shadow="never">
       <template #header>
         <div class="workbench-header">
-          <span>通知分析下一步建议</span>
+          <div class="section-title-with-tag">
+            <span>通知分析下一步建议</span>
+            <el-tag size="small" :type="notificationSectionMeta.guidance.type">{{ notificationSectionMeta.guidance.text }}</el-tag>
+          </div>
           <div class="analysis-actions">
             <span class="toolbar-tip">根据当前配置、测试和失败样本自动生成</span>
             <el-button link type="primary" @click="toggleNotificationSection('guidance')">
@@ -1761,10 +1842,13 @@ refreshTenantData();
       </div>
     </el-card>
 
-    <el-card class="card channel-health-card" shadow="never">
+    <el-card :class="['card', 'channel-health-card', resolveSectionCardClass(notificationSectionMeta.health.type)]" shadow="never">
       <template #header>
         <div class="workbench-header">
-          <span>通知通道健康预检</span>
+          <div class="section-title-with-tag">
+            <span>通知通道健康预检</span>
+            <el-tag size="small" :type="notificationSectionMeta.health.type">{{ notificationSectionMeta.health.text }}</el-tag>
+          </div>
           <div class="analysis-actions">
             <el-button link type="primary" :disabled="notificationHealthLoading" @click="loadNotificationHealth">刷新预检</el-button>
             <el-button link type="primary" @click="toggleNotificationSection('health')">
@@ -1895,10 +1979,13 @@ refreshTenantData();
       </div>
     </el-card>
 
-    <el-card class="card channel-history-card" shadow="never">
+    <el-card :class="['card', 'channel-history-card', resolveSectionCardClass(notificationSectionMeta.failureStats.type)]" shadow="never">
       <template #header>
         <div class="workbench-header">
-          <span>通知通道失败问题分布</span>
+          <div class="section-title-with-tag">
+            <span>通知通道失败问题分布</span>
+            <el-tag size="small" :type="notificationSectionMeta.failureStats.type">{{ notificationSectionMeta.failureStats.text }}</el-tag>
+          </div>
           <div class="analysis-actions">
             <el-button link type="primary" :disabled="notificationFailureStatsLoading" @click="loadNotificationFailureStats">刷新统计</el-button>
             <el-button link type="primary" @click="toggleNotificationSection('failureStats')">
@@ -1983,10 +2070,13 @@ refreshTenantData();
       </div>
     </el-card>
 
-    <el-card class="card channel-history-card" shadow="never">
+    <el-card :class="['card', 'channel-history-card', resolveSectionCardClass(notificationSectionMeta.recentTests.type)]" shadow="never">
       <template #header>
         <div class="workbench-header">
-          <span>最近通知通道测试记录</span>
+          <div class="section-title-with-tag">
+            <span>最近通知通道测试记录</span>
+            <el-tag size="small" :type="notificationSectionMeta.recentTests.type">{{ notificationSectionMeta.recentTests.text }}</el-tag>
+          </div>
           <div class="analysis-actions">
             <el-button link type="primary" :disabled="recentNotificationTestsLoading" @click="loadRecentNotificationTests">刷新记录</el-button>
             <el-button link :disabled="recentNotificationTestsLoading" @click="resetRecentNotificationFilters">重置筛选</el-button>
@@ -2737,6 +2827,13 @@ refreshTenantData();
   border-radius: 10px;
 }
 
+.summary-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .notification-summary-grid {
   margin-bottom: 16px;
 }
@@ -2784,6 +2881,26 @@ refreshTenantData();
 
 .card {
   border-radius: 12px;
+}
+
+.card--danger {
+  border: 1px solid #fecaca;
+  background: linear-gradient(180deg, #fff1f2 0%, #ffffff 100%);
+}
+
+.card--warning {
+  border: 1px solid #fde68a;
+  background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+}
+
+.card--success {
+  border: 1px solid #bbf7d0;
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+}
+
+.card--info {
+  border: 1px solid #cbd5e1;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
 }
 
 .workbench-card {
@@ -2929,6 +3046,12 @@ refreshTenantData();
   justify-content: space-between;
   align-items: center;
   font-weight: 600;
+}
+
+.section-title-with-tag {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .workbench-time {
