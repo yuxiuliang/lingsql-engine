@@ -1258,6 +1258,34 @@ const handleOpenNotificationHistoryDetail = (record: TenantNotificationChannelRe
 };
 
 /**
+ * 打开当前分析租户的编辑弹窗。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleEditNotificationAnalysisTenant = () => {
+  if (!notificationAnalysisTenant.value) {
+    ElMessage.info('当前没有可编辑的租户上下文。');
+    return;
+  }
+  handleEdit(notificationAnalysisTenant.value);
+};
+
+/**
+ * 对当前分析租户直接发起复测。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleRetestNotificationAnalysisTenant = async () => {
+  if (!notificationAnalysisTenant.value) {
+    ElMessage.info('当前没有可测试的租户上下文。');
+    return;
+  }
+  await handleTestTenantNotificationChannels(notificationAnalysisTenant.value);
+};
+
+/**
  * 删除租户。
  *
  * @param row 租户信息
@@ -1911,10 +1939,17 @@ refreshTenantData();
         <div class="channel-health-summary">
           {{ notificationHealth?.summary || '暂未获取到通知通道健康信息。' }}
         </div>
-        <el-empty
-          v-if="!notificationHealth?.issues?.length"
-          description="当前没有默认通知通道风险租户"
-        />
+        <div v-if="!notificationHealth?.issues?.length" class="empty-state-block">
+          <el-empty description="当前没有默认通知通道风险租户"/>
+          <div class="empty-state-actions">
+            <el-button size="small" @click="handleNotificationSuggestionAction('open_first_tenant_config')">
+              配置租户通道
+            </el-button>
+            <el-button size="small" type="primary" plain @click="handleNotificationSuggestionAction('test_first_tenant')">
+              建立测试基线
+            </el-button>
+          </div>
+        </div>
         <el-table
           v-else
           :data="notificationHealth.issues || []"
@@ -2034,10 +2069,14 @@ refreshTenantData();
         <div class="failure-stats-grid">
           <el-card shadow="never" class="failure-stats-card">
             <template #header>失败通道 Top</template>
-            <el-empty
-              v-if="!(notificationFailureStats?.topFailingChannels || []).length"
-              description="暂无失败通道统计"
-            />
+            <div v-if="!(notificationFailureStats?.topFailingChannels || []).length" class="empty-state-block">
+              <el-empty description="暂无失败通道统计"/>
+              <div class="empty-state-actions">
+                <el-button size="small" @click="handleNotificationSuggestionAction('test_first_tenant')">
+                  发起一次测试
+                </el-button>
+              </div>
+            </div>
             <el-table
               v-else
               :data="notificationFailureStats?.topFailingChannels || []"
@@ -2052,10 +2091,14 @@ refreshTenantData();
           </el-card>
           <el-card shadow="never" class="failure-stats-card">
             <template #header>失败原因 Top</template>
-            <el-empty
-              v-if="!(notificationFailureStats?.topFailureReasons || []).length"
-              description="暂无失败原因统计"
-            />
+            <div v-if="!(notificationFailureStats?.topFailureReasons || []).length" class="empty-state-block">
+              <el-empty description="暂无失败原因统计"/>
+              <div class="empty-state-actions">
+                <el-button size="small" @click="handleNotificationSuggestionAction('test_first_tenant')">
+                  发起一次测试
+                </el-button>
+              </div>
+            </div>
             <el-table
               v-else
               :data="notificationFailureStats?.topFailureReasons || []"
@@ -2140,11 +2183,21 @@ refreshTenantData();
         </el-select>
         <el-button type="primary" :loading="recentNotificationTestsLoading" @click="loadRecentNotificationTests">查询</el-button>
       </div>
-      <el-empty
+      <div
         v-show="notificationSectionState.recentTests"
         v-if="!recentNotificationTests.length && !recentNotificationTestsLoading"
-        description="最近暂无通知通道测试记录"
-      />
+        class="empty-state-block"
+      >
+        <el-empty description="最近暂无通知通道测试记录"/>
+        <div class="empty-state-actions">
+          <el-button size="small" @click="handleNotificationSuggestionAction('open_first_tenant_config')">
+            配置租户通道
+          </el-button>
+          <el-button size="small" type="primary" plain @click="handleNotificationSuggestionAction('test_first_tenant')">
+            立即测试
+          </el-button>
+        </div>
+      </div>
       <el-table
         v-show="notificationSectionState.recentTests"
         v-else
@@ -2625,12 +2678,16 @@ refreshTenantData();
           <div class="failure-stats-grid">
             <el-card shadow="never" class="failure-stats-card">
               <template #header>失败通道 Top</template>
-              <el-empty
-                v-if="!(tenantNotificationFailureStats?.topFailingChannels || []).length"
-                description="暂无失败通道统计"
-              />
-              <el-table
-                v-else
+            <div v-if="!(tenantNotificationFailureStats?.topFailingChannels || []).length" class="empty-state-block">
+              <el-empty description="暂无失败通道统计"/>
+              <div class="empty-state-actions">
+                <el-button size="small" @click="handleRetestNotificationAnalysisTenant">
+                  立即复测
+                </el-button>
+              </div>
+            </div>
+            <el-table
+              v-else
                 :data="tenantNotificationFailureStats?.topFailingChannels || []"
                 border
                 size="small"
@@ -2643,10 +2700,14 @@ refreshTenantData();
             </el-card>
             <el-card shadow="never" class="failure-stats-card">
               <template #header>失败原因 Top</template>
-              <el-empty
-                v-if="!(tenantNotificationFailureStats?.topFailureReasons || []).length"
-                description="暂无失败原因统计"
-              />
+              <div v-if="!(tenantNotificationFailureStats?.topFailureReasons || []).length" class="empty-state-block">
+                <el-empty description="暂无失败原因统计"/>
+                <div class="empty-state-actions">
+                  <el-button size="small" @click="handleRetestNotificationAnalysisTenant">
+                    立即复测
+                  </el-button>
+                </div>
+              </div>
               <el-table
                 v-else
                 :data="tenantNotificationFailureStats?.topFailureReasons || []"
@@ -2661,10 +2722,17 @@ refreshTenantData();
 
           <div class="analysis-history-section">
             <div class="analysis-section-title">最近测试记录</div>
-            <el-empty
-              v-if="!tenantRecentNotificationTests.length"
-              description="该租户最近暂无通知通道测试记录"
-            />
+            <div v-if="!tenantRecentNotificationTests.length" class="empty-state-block">
+              <el-empty description="该租户最近暂无通知通道测试记录"/>
+              <div class="empty-state-actions">
+                <el-button size="small" @click="handleEditNotificationAnalysisTenant">
+                  编辑租户通道
+                </el-button>
+                <el-button size="small" type="primary" plain @click="handleRetestNotificationAnalysisTenant">
+                  立即测试
+                </el-button>
+              </div>
+            </div>
             <el-table
               v-else
               :data="tenantRecentNotificationTests"
@@ -2763,10 +2831,14 @@ refreshTenantData();
           </div>
           <div v-else class="toolbar-tip">未记录测试通道。</div>
         </div>
-        <el-empty
-          v-if="!(notificationHistoryDetailRecord.channelResults || []).length"
-          description="本次历史记录未保存通道级明细"
-        />
+        <div v-if="!(notificationHistoryDetailRecord.channelResults || []).length" class="empty-state-block">
+          <el-empty description="本次历史记录未保存通道级明细"/>
+          <div class="empty-state-actions">
+            <el-button size="small" type="primary" plain @click="handleOpenNotificationAnalysisByRecord(notificationHistoryDetailRecord)">
+              打开租户分析
+            </el-button>
+          </div>
+        </div>
         <el-table
           v-else
           :data="notificationHistoryDetailRecord.channelResults || []"
@@ -2953,6 +3025,19 @@ refreshTenantData();
 
 .guidance-actions {
   margin-top: 12px;
+}
+
+.empty-state-block {
+  padding: 8px 0 4px;
+}
+
+.empty-state-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: -8px;
+  margin-bottom: 8px;
 }
 
 .failure-stats-grid {
