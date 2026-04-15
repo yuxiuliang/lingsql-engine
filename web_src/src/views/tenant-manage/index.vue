@@ -68,6 +68,12 @@ const notificationHistoryDetailRecord = ref<TenantNotificationChannelRecentTestV
 const notificationAnalysisTenant = ref<TenantView | null>(null);
 const tenantNotificationFailureStats = ref<TenantNotificationChannelFailureStatsView | null>(null);
 const tenantRecentNotificationTests = ref<TenantNotificationChannelRecentTestView[]>([]);
+const notificationSectionState = reactive({
+  guidance: true,
+  health: true,
+  failureStats: true,
+  recentTests: true
+});
 const initConfig = ref(false);
 const notificationIssueMap = computed(() => {
   const map = new Map<string, TenantNotificationChannelIssueView>();
@@ -113,6 +119,38 @@ const notificationOverviewCards = computed(() => {
     }
   ];
 });
+
+/**
+ * 根据当前数据应用通知区块推荐展开策略。
+ *
+ * @param force 是否强制覆盖当前折叠状态
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const applyNotificationSectionRecommendations = (force = false) => {
+  const recommended = {
+    guidance: true,
+    health: (notificationHealth.value?.tenantIssueCount ?? 0) > 0 || notificationHealth.value?.alertEnabled === false,
+    failureStats: (notificationFailureStats.value?.failedTests ?? 0) > 0,
+    recentTests: (recentNotificationTests.value?.length ?? 0) > 0
+  };
+  if (force) {
+    notificationSectionState.guidance = recommended.guidance;
+    notificationSectionState.health = recommended.health;
+    notificationSectionState.failureStats = recommended.failureStats;
+    notificationSectionState.recentTests = recommended.recentTests;
+    return;
+  }
+  if (!notificationSectionState.health && recommended.health) {
+    notificationSectionState.health = true;
+  }
+  if (!notificationSectionState.failureStats && recommended.failureStats) {
+    notificationSectionState.failureStats = true;
+  }
+  if (!notificationSectionState.recentTests && recommended.recentTests) {
+    notificationSectionState.recentTests = true;
+  }
+};
 
 const notificationNextSteps = computed(() => {
   const steps: Array<{
@@ -671,6 +709,17 @@ const resetRecentNotificationFilters = async () => {
   await loadNotificationFailureStats();
 };
 
+/**
+ * 切换通知区块展开状态。
+ *
+ * @param section 区块键
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const toggleNotificationSection = (section: keyof typeof notificationSectionState) => {
+  notificationSectionState[section] = !notificationSectionState[section];
+};
+
 watch(
   () => ({
     tenantId: recentNotificationFilter.tenantId,
@@ -732,6 +781,7 @@ const refreshTenantData = async () => {
     loadNotificationHealth(),
     loadRecentNotificationTests()
   ]);
+  applyNotificationSectionRecommendations(false);
 };
 
 /**
@@ -1617,6 +1667,13 @@ refreshTenantData();
       </el-card>
     </div>
 
+    <div class="section-actions">
+      <el-button size="small" @click="applyNotificationSectionRecommendations(true)">
+        恢复推荐布局
+      </el-button>
+      <span class="toolbar-tip">根据当前风险租户、失败样本和测试记录自动展开关键区块。</span>
+    </div>
+
     <el-card class="card workbench-card" shadow="never">
       <template #header>
         <div class="workbench-header">
@@ -1676,10 +1733,15 @@ refreshTenantData();
       <template #header>
         <div class="workbench-header">
           <span>通知分析下一步建议</span>
-          <span class="toolbar-tip">根据当前配置、测试和失败样本自动生成</span>
+          <div class="analysis-actions">
+            <span class="toolbar-tip">根据当前配置、测试和失败样本自动生成</span>
+            <el-button link type="primary" @click="toggleNotificationSection('guidance')">
+              {{ notificationSectionState.guidance ? '收起' : '展开' }}
+            </el-button>
+          </div>
         </div>
       </template>
-      <div class="guidance-grid">
+      <div v-show="notificationSectionState.guidance" class="guidance-grid">
         <div
           v-for="item in notificationNextSteps"
           :key="item.key"
@@ -1703,10 +1765,15 @@ refreshTenantData();
       <template #header>
         <div class="workbench-header">
           <span>通知通道健康预检</span>
-          <el-button link type="primary" :disabled="notificationHealthLoading" @click="loadNotificationHealth">刷新预检</el-button>
+          <div class="analysis-actions">
+            <el-button link type="primary" :disabled="notificationHealthLoading" @click="loadNotificationHealth">刷新预检</el-button>
+            <el-button link type="primary" @click="toggleNotificationSection('health')">
+              {{ notificationSectionState.health ? '收起' : '展开' }}
+            </el-button>
+          </div>
         </div>
       </template>
-      <div v-loading="notificationHealthLoading">
+      <div v-show="notificationSectionState.health" v-loading="notificationHealthLoading">
         <div class="channel-health-overview">
           <div class="channel-health-item">
             <div class="summary-label">系统通知开关</div>
@@ -1832,10 +1899,15 @@ refreshTenantData();
       <template #header>
         <div class="workbench-header">
           <span>通知通道失败问题分布</span>
-          <el-button link type="primary" :disabled="notificationFailureStatsLoading" @click="loadNotificationFailureStats">刷新统计</el-button>
+          <div class="analysis-actions">
+            <el-button link type="primary" :disabled="notificationFailureStatsLoading" @click="loadNotificationFailureStats">刷新统计</el-button>
+            <el-button link type="primary" @click="toggleNotificationSection('failureStats')">
+              {{ notificationSectionState.failureStats ? '收起' : '展开' }}
+            </el-button>
+          </div>
         </div>
       </template>
-      <div class="recent-filter-bar">
+      <div v-show="notificationSectionState.failureStats" class="recent-filter-bar">
         <div class="preset-actions">
           <el-button size="small" @click="applyNotificationTimePreset('today')">今天</el-button>
           <el-button size="small" @click="applyNotificationTimePreset('24h')">近24小时</el-button>
@@ -1854,7 +1926,7 @@ refreshTenantData();
         />
         <div class="toolbar-tip">失败统计、最近记录和单租户通知分析共用这一时间窗口。</div>
       </div>
-      <div v-loading="notificationFailureStatsLoading">
+      <div v-show="notificationSectionState.failureStats" v-loading="notificationFailureStatsLoading">
         <div class="channel-health-overview">
           <div class="channel-health-item">
             <div class="summary-label">样本测试数</div>
@@ -1918,10 +1990,13 @@ refreshTenantData();
           <div class="analysis-actions">
             <el-button link type="primary" :disabled="recentNotificationTestsLoading" @click="loadRecentNotificationTests">刷新记录</el-button>
             <el-button link :disabled="recentNotificationTestsLoading" @click="resetRecentNotificationFilters">重置筛选</el-button>
+            <el-button link type="primary" @click="toggleNotificationSection('recentTests')">
+              {{ notificationSectionState.recentTests ? '收起' : '展开' }}
+            </el-button>
           </div>
         </div>
       </template>
-      <div class="recent-filter-bar">
+      <div v-show="notificationSectionState.recentTests" class="recent-filter-bar">
         <el-select
           v-model="recentNotificationFilter.tenantId"
           clearable
@@ -1976,10 +2051,12 @@ refreshTenantData();
         <el-button type="primary" :loading="recentNotificationTestsLoading" @click="loadRecentNotificationTests">查询</el-button>
       </div>
       <el-empty
+        v-show="notificationSectionState.recentTests"
         v-if="!recentNotificationTests.length && !recentNotificationTestsLoading"
         description="最近暂无通知通道测试记录"
       />
       <el-table
+        v-show="notificationSectionState.recentTests"
         v-else
         :data="recentNotificationTests"
         border
@@ -2881,6 +2958,13 @@ refreshTenantData();
 .toolbar-actions {
   display: flex;
   gap: 8px;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .channel-health-overview {
