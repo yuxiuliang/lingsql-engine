@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, reactive, ref, watch} from 'vue';
+import {computed, nextTick, reactive, ref, watch} from 'vue';
 import {ElMessage, ElMessageBox} from 'element-plus';
 import {
   createTenant,
@@ -73,6 +73,14 @@ const tenantNotificationFailureStats = ref<TenantNotificationChannelFailureStats
 const tenantRecentNotificationTests = ref<TenantNotificationChannelRecentTestView[]>([]);
 const notificationAnalysisUpdatedAt = ref('');
 const notificationSummaryTone = ref<'internal' | 'customer'>('internal');
+const notificationHealthSectionRef = ref<HTMLElement | null>(null);
+const notificationFailureStatsSectionRef = ref<HTMLElement | null>(null);
+const notificationRecentTestsSectionRef = ref<HTMLElement | null>(null);
+const tenantListSectionRef = ref<HTMLElement | null>(null);
+const notificationAnalysisSource = ref<null | {
+  label: string;
+  section: 'health' | 'failureStats' | 'recentTests' | 'tenantList';
+}>(null);
 const notificationSectionState = reactive({
   guidance: true,
   health: true,
@@ -272,6 +280,26 @@ const applyNotificationSectionRecommendations = (force = false) => {
   if (!notificationSectionState.recentTests && recommended.recentTests) {
     notificationSectionState.recentTests = true;
   }
+};
+
+const scrollToNotificationSection = async (section: 'health' | 'failureStats' | 'recentTests' | 'tenantList') => {
+  const refMap = {
+    health: notificationHealthSectionRef,
+    failureStats: notificationFailureStatsSectionRef,
+    recentTests: notificationRecentTestsSectionRef,
+    tenantList: tenantListSectionRef
+  };
+  if (section === 'health') {
+    notificationSectionState.health = true;
+  }
+  if (section === 'failureStats') {
+    notificationSectionState.failureStats = true;
+  }
+  if (section === 'recentTests') {
+    notificationSectionState.recentTests = true;
+  }
+  await nextTick();
+  refMap[section].value?.scrollIntoView({behavior: 'smooth', block: 'start'});
 };
 
 const notificationNextSteps = computed(() => {
@@ -1424,7 +1452,14 @@ const loadTenantNotificationAnalysis = async (row: TenantView, openDrawer = true
  * @author 余炘洋
  * @date 2026-04-15
  */
-const handleOpenNotificationAnalysis = async (row: TenantView) => {
+const handleOpenNotificationAnalysis = async (
+  row: TenantView,
+  source?: {label: string; section: 'health' | 'failureStats' | 'recentTests' | 'tenantList'}
+) => {
+  notificationAnalysisSource.value = source || {
+    label: '租户列表',
+    section: 'tenantList'
+  };
   await loadTenantNotificationAnalysis(row, true);
 };
 
@@ -1464,7 +1499,10 @@ const buildNotificationTenantContext = (tenantId?: string, tenantName?: string, 
  */
 const handleOpenNotificationAnalysisByIssue = async (issue: TenantNotificationChannelIssueView) => {
   const target = buildNotificationTenantContext(issue.tenantId, issue.tenantName, issue.selectedChannels || []);
-  await handleOpenNotificationAnalysis(target);
+  await handleOpenNotificationAnalysis(target, {
+    label: '风险租户清单',
+    section: 'health'
+  });
 };
 
 /**
@@ -1476,7 +1514,10 @@ const handleOpenNotificationAnalysisByIssue = async (issue: TenantNotificationCh
  */
 const handleOpenNotificationAnalysisByRecord = async (record: TenantNotificationChannelRecentTestView) => {
   const target = buildNotificationTenantContext(record.tenantId, record.tenantName, record.requestedChannels || []);
-  await handleOpenNotificationAnalysis(target);
+  await handleOpenNotificationAnalysis(target, {
+    label: '最近测试记录',
+    section: 'recentTests'
+  });
 };
 
 /**
@@ -1625,6 +1666,18 @@ const handleRetestNotificationAnalysisTenant = async () => {
     return;
   }
   await handleTestTenantNotificationChannels(notificationAnalysisTenant.value);
+};
+
+const handleReturnToNotificationSource = async () => {
+  if (!notificationAnalysisSource.value) {
+    notificationAnalysisDrawerVisible.value = false;
+    return;
+  }
+  const source = notificationAnalysisSource.value;
+  notificationAnalysisDrawerVisible.value = false;
+  await nextTick();
+  await scrollToNotificationSection(source.section);
+  ElMessage.success(`已返回${source.label}`);
 };
 
 /**
@@ -2247,7 +2300,11 @@ refreshTenantData();
       </div>
     </el-card>
 
-    <el-card :class="['card', 'channel-health-card', resolveSectionCardClass(notificationSectionMeta.health.type)]" shadow="never">
+    <el-card
+      ref="notificationHealthSectionRef"
+      :class="['card', 'channel-health-card', resolveSectionCardClass(notificationSectionMeta.health.type)]"
+      shadow="never"
+    >
       <template #header>
         <div class="workbench-header">
           <div class="section-title-with-tag">
@@ -2396,7 +2453,11 @@ refreshTenantData();
       </div>
     </el-card>
 
-    <el-card :class="['card', 'channel-history-card', resolveSectionCardClass(notificationSectionMeta.failureStats.type)]" shadow="never">
+    <el-card
+      ref="notificationFailureStatsSectionRef"
+      :class="['card', 'channel-history-card', resolveSectionCardClass(notificationSectionMeta.failureStats.type)]"
+      shadow="never"
+    >
       <template #header>
         <div class="workbench-header">
           <div class="section-title-with-tag">
@@ -2506,7 +2567,11 @@ refreshTenantData();
       </div>
     </el-card>
 
-    <el-card :class="['card', 'channel-history-card', resolveSectionCardClass(notificationSectionMeta.recentTests.type)]" shadow="never">
+    <el-card
+      ref="notificationRecentTestsSectionRef"
+      :class="['card', 'channel-history-card', resolveSectionCardClass(notificationSectionMeta.recentTests.type)]"
+      shadow="never"
+    >
       <template #header>
         <div class="workbench-header">
           <div class="section-title-with-tag">
@@ -2656,7 +2721,7 @@ refreshTenantData();
       </el-table>
     </el-card>
 
-    <el-card class="card" shadow="never">
+    <el-card ref="tenantListSectionRef" class="card" shadow="never">
       <div class="toolbar">
         <div class="toolbar-actions">
           <el-button type="primary" :disabled="!isSysAdmin" @click="handleCreate">新增租户</el-button>
@@ -3018,8 +3083,18 @@ refreshTenantData();
         <div class="analysis-header">
           <div class="analysis-title">{{ notificationAnalysisTenant.tenantName || '未命名租户' }}</div>
           <div class="analysis-subtitle">{{ notificationAnalysisTenant.tenantId || '--' }}</div>
+          <div v-if="notificationAnalysisSource" class="analysis-source">
+            来源：{{ notificationAnalysisSource.label }}
+          </div>
           <div class="workbench-time">分析更新时间：{{ notificationAnalysisUpdatedAt || '--' }}</div>
           <div class="analysis-actions">
+            <el-button
+              v-if="notificationAnalysisSource"
+              size="small"
+              @click="handleReturnToNotificationSource"
+            >
+              返回来源
+            </el-button>
             <el-radio-group v-model="notificationSummaryTone" size="small">
               <el-radio-button value="internal">内部</el-radio-button>
               <el-radio-button value="customer">客户</el-radio-button>
@@ -3483,6 +3558,12 @@ refreshTenantData();
 .analysis-subtitle {
   margin-top: 6px;
   color: #64748b;
+  font-size: 13px;
+}
+
+.analysis-source {
+  margin-top: 6px;
+  color: #475569;
   font-size: 13px;
 }
 
