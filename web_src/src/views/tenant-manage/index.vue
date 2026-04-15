@@ -56,12 +56,14 @@ const dialogVisible = ref(false);
 const lifecycleDialogVisible = ref(false);
 const notificationTestDialogVisible = ref(false);
 const notificationAnalysisDrawerVisible = ref(false);
+const notificationHistoryDetailDialogVisible = ref(false);
 const lifecycleTargetTenant = ref<TenantView | null>(null);
 const editingId = ref<number | null>(null);
 const notificationTestLoading = ref(false);
 const notificationAnalysisLoading = ref(false);
 const notificationTestContext = ref('');
 const notificationTestResult = ref<TenantNotificationChannelTestView | null>(null);
+const notificationHistoryDetailRecord = ref<TenantNotificationChannelRecentTestView | null>(null);
 const notificationAnalysisTenant = ref<TenantView | null>(null);
 const tenantNotificationFailureStats = ref<TenantNotificationChannelFailureStatsView | null>(null);
 const tenantRecentNotificationTests = ref<TenantNotificationChannelRecentTestView[]>([]);
@@ -685,6 +687,18 @@ const loadTenantNotificationAnalysis = async (row: TenantView, openDrawer = true
  */
 const handleOpenNotificationAnalysis = async (row: TenantView) => {
   await loadTenantNotificationAnalysis(row, true);
+};
+
+/**
+ * 打开通知通道历史测试详情。
+ *
+ * @param record 历史测试记录
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleOpenNotificationHistoryDetail = (record: TenantNotificationChannelRecentTestView) => {
+  notificationHistoryDetailRecord.value = record;
+  notificationHistoryDetailDialogVisible.value = true;
 };
 
 /**
@@ -1443,6 +1457,13 @@ refreshTenantData();
         <el-table-column label="摘要" min-width="320" show-overflow-tooltip>
           <template #default="scope">{{ scope.row.summary || '-' }}</template>
         </el-table-column>
+        <el-table-column label="操作" width="110">
+          <template #default="scope">
+            <el-button link type="primary" @click="handleOpenNotificationHistoryDetail(scope.row)">
+              查看明细
+            </el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
 
@@ -1943,11 +1964,96 @@ refreshTenantData();
               <el-table-column label="摘要" min-width="260" show-overflow-tooltip>
                 <template #default="scope">{{ scope.row.summary || '-' }}</template>
               </el-table-column>
+              <el-table-column label="操作" width="110">
+                <template #default="scope">
+                  <el-button link type="primary" @click="handleOpenNotificationHistoryDetail(scope.row)">
+                    查看明细
+                  </el-button>
+                </template>
+              </el-table-column>
             </el-table>
           </div>
         </div>
       </template>
     </el-drawer>
+
+    <el-dialog
+      v-model="notificationHistoryDetailDialogVisible"
+      title="通知通道测试详情"
+      width="760px"
+      :close-on-click-modal="false"
+    >
+      <template v-if="notificationHistoryDetailRecord">
+        <div class="notification-test-summary">
+          <div class="notification-test-summary-item">
+            <span class="summary-item-label">租户</span>
+            <span class="summary-item-value">
+              {{ notificationHistoryDetailRecord.tenantName || '未命名租户' }}（{{ notificationHistoryDetailRecord.tenantId || '--' }}）
+            </span>
+          </div>
+          <div class="notification-test-summary-item">
+            <span class="summary-item-label">操作人</span>
+            <span class="summary-item-value">{{ notificationHistoryDetailRecord.operatorUsername || '-' }}</span>
+          </div>
+          <div class="notification-test-summary-item">
+            <span class="summary-item-label">测试时间</span>
+            <span class="summary-item-value">{{ formatDateTime(notificationHistoryDetailRecord.createTime) }}</span>
+          </div>
+        </div>
+        <div class="notification-test-result-bar">
+          <el-tag :type="resolveNotificationTestType(notificationHistoryDetailRecord.success)">
+            {{ notificationHistoryDetailRecord.success ? '成功' : '失败' }}
+          </el-tag>
+          <span class="notification-test-result-text">{{ notificationHistoryDetailRecord.summary || '-' }}</span>
+        </div>
+        <div class="analysis-channel-block">
+          <div class="summary-label">本次测试通道</div>
+          <div v-if="notificationHistoryDetailRecord.requestedChannels?.length" class="channel-list">
+            <el-tag
+              v-for="channel in notificationHistoryDetailRecord.requestedChannels"
+              :key="`history-detail-${notificationHistoryDetailRecord.auditLogId}-${channel}`"
+              size="small"
+              effect="plain"
+            >
+              {{ resolveNotificationChannelLabel(channel) }}
+            </el-tag>
+          </div>
+          <div v-else class="toolbar-tip">未记录测试通道。</div>
+        </div>
+        <el-empty
+          v-if="!(notificationHistoryDetailRecord.channelResults || []).length"
+          description="本次历史记录未保存通道级明细"
+        />
+        <el-table
+          v-else
+          :data="notificationHistoryDetailRecord.channelResults || []"
+          border
+          size="small"
+        >
+          <el-table-column label="通道" min-width="140">
+            <template #default="scope">
+              {{ resolveNotificationChannelLabel(scope.row.channel) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="结果" width="110">
+            <template #default="scope">
+              <el-tag :type="resolveNotificationTestType(scope.row.success)">
+                {{ scope.row.success ? '成功' : '失败' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="HTTP 状态" width="120">
+            <template #default="scope">{{ scope.row.statusCode ?? '--' }}</template>
+          </el-table-column>
+          <el-table-column label="诊断明细" min-width="280" show-overflow-tooltip>
+            <template #default="scope">{{ scope.row.detail || '-' }}</template>
+          </el-table-column>
+        </el-table>
+      </template>
+      <template #footer>
+        <el-button type="primary" @click="notificationHistoryDetailDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
