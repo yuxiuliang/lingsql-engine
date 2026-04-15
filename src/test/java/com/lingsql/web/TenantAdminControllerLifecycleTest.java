@@ -182,7 +182,7 @@ class TenantAdminControllerLifecycleTest {
     void recentNotificationChannelTestsShouldReturnForbiddenWhenNotSysAdmin() {
         bindSession(List.of("TENANT_ADMIN"));
 
-        ApiResponse<List<TenantNotificationChannelRecentTestView>> response = controller.recentNotificationChannelTests(null, null, null, null, 10);
+        ApiResponse<List<TenantNotificationChannelRecentTestView>> response = controller.recentNotificationChannelTests(null, null, null, null, null, null, 10);
 
         assertEquals(403, response.getCode());
         assertEquals("无权限访问", response.getMessage());
@@ -194,21 +194,21 @@ class TenantAdminControllerLifecycleTest {
         bindSession(List.of("SYS_ADMIN"));
         TenantNotificationChannelRecentTestView view = new TenantNotificationChannelRecentTestView();
         view.setTenantId("t-001");
-        when(tenantNotificationChannelHistoryService.listRecentTests("t-001", null, null, null, 5)).thenReturn(List.of(view));
+        when(tenantNotificationChannelHistoryService.listRecentTests("t-001", null, null, null, null, null, 5)).thenReturn(List.of(view));
 
-        ApiResponse<List<TenantNotificationChannelRecentTestView>> response = controller.recentNotificationChannelTests("t-001", null, null, null, 5);
+        ApiResponse<List<TenantNotificationChannelRecentTestView>> response = controller.recentNotificationChannelTests("t-001", null, null, null, null, null, 5);
 
         assertEquals(200, response.getCode());
         assertEquals(1, response.getData().size());
         assertEquals("t-001", response.getData().getFirst().getTenantId());
-        verify(tenantNotificationChannelHistoryService, times(1)).listRecentTests("t-001", null, null, null, 5);
+        verify(tenantNotificationChannelHistoryService, times(1)).listRecentTests("t-001", null, null, null, null, null, 5);
     }
 
     @Test
     void notificationChannelFailureStatsShouldReturnForbiddenWhenNotSysAdmin() {
         bindSession(List.of("TENANT_ADMIN"));
 
-        ApiResponse<TenantNotificationChannelFailureStatsView> response = controller.notificationChannelFailureStats(null, 100);
+        ApiResponse<TenantNotificationChannelFailureStatsView> response = controller.notificationChannelFailureStats(null, null, null, 100);
 
         assertEquals(403, response.getCode());
         assertEquals("无权限访问", response.getMessage());
@@ -220,13 +220,13 @@ class TenantAdminControllerLifecycleTest {
         bindSession(List.of("SYS_ADMIN"));
         TenantNotificationChannelFailureStatsView view = new TenantNotificationChannelFailureStatsView();
         view.setFailedTests(2);
-        when(tenantNotificationChannelHistoryService.summarizeFailures("t-001", 100)).thenReturn(view);
+        when(tenantNotificationChannelHistoryService.summarizeFailures("t-001", null, null, 100)).thenReturn(view);
 
-        ApiResponse<TenantNotificationChannelFailureStatsView> response = controller.notificationChannelFailureStats("t-001", 100);
+        ApiResponse<TenantNotificationChannelFailureStatsView> response = controller.notificationChannelFailureStats("t-001", null, null, 100);
 
         assertEquals(200, response.getCode());
         assertEquals(2, response.getData().getFailedTests());
-        verify(tenantNotificationChannelHistoryService, times(1)).summarizeFailures("t-001", 100);
+        verify(tenantNotificationChannelHistoryService, times(1)).summarizeFailures("t-001", null, null, 100);
     }
 
     @Test

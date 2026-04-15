@@ -172,6 +172,26 @@ const resolveNotificationChannelLabel = (channel?: string) => {
 };
 
 /**
+ * 解析通知时间范围筛选参数。
+ *
+ * @return 时间范围参数
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const resolveNotificationTimeRangeParams = () => {
+  if (notificationTimeRange.value.length !== 2) {
+    return {
+      startTime: undefined,
+      endTime: undefined
+    };
+  }
+  return {
+    startTime: notificationTimeRange.value[0] || undefined,
+    endTime: notificationTimeRange.value[1] || undefined
+  };
+};
+
+/**
  * 生命周期续期表单定义。
  *
  * @author 余炘洋
@@ -190,6 +210,8 @@ const lifecycleForm = reactive<TenantLifecycleForm>({
   expireTime: '',
   activate: true
 });
+
+const notificationTimeRange = ref<string[]>([]);
 
 const recentNotificationFilter = reactive({
   tenantId: '',
@@ -388,7 +410,10 @@ const loadNotificationHealth = async () => {
 const loadNotificationFailureStats = async () => {
   notificationFailureStatsLoading.value = true;
   try {
-    notificationFailureStats.value = await fetchTenantNotificationChannelFailureStats({limit: 100});
+    notificationFailureStats.value = await fetchTenantNotificationChannelFailureStats({
+      ...resolveNotificationTimeRangeParams(),
+      limit: 100
+    });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载通知通道失败统计失败');
   } finally {
@@ -410,6 +435,7 @@ const loadRecentNotificationTests = async () => {
       success: recentNotificationFilter.success === '' ? undefined : Number(recentNotificationFilter.success),
       channel: recentNotificationFilter.channel || undefined,
       operatorKeyword: recentNotificationFilter.operatorKeyword.trim() || undefined,
+      ...resolveNotificationTimeRangeParams(),
       limit: recentNotificationFilter.limit
     });
   } catch (error) {
@@ -431,7 +457,9 @@ const resetRecentNotificationFilters = async () => {
   recentNotificationFilter.channel = '';
   recentNotificationFilter.operatorKeyword = '';
   recentNotificationFilter.limit = 10;
+  notificationTimeRange.value = [];
   await loadRecentNotificationTests();
+  await loadNotificationFailureStats();
 };
 
 /**
@@ -695,8 +723,16 @@ const loadTenantNotificationAnalysis = async (row: TenantView, openDrawer = true
   notificationAnalysisLoading.value = true;
   try {
     const [stats, recentTests] = await Promise.all([
-      fetchTenantNotificationChannelFailureStats({tenantId: row.tenantId, limit: 100}),
-      fetchRecentTenantNotificationChannelTests({tenantId: row.tenantId, limit: 10})
+      fetchTenantNotificationChannelFailureStats({
+        tenantId: row.tenantId,
+        ...resolveNotificationTimeRangeParams(),
+        limit: 100
+      }),
+      fetchRecentTenantNotificationChannelTests({
+        tenantId: row.tenantId,
+        ...resolveNotificationTimeRangeParams(),
+        limit: 10
+      })
     ]);
     tenantNotificationFailureStats.value = stats;
     tenantRecentNotificationTests.value = recentTests;
@@ -1374,6 +1410,18 @@ refreshTenantData();
           <el-button link type="primary" :disabled="notificationFailureStatsLoading" @click="loadNotificationFailureStats">刷新统计</el-button>
         </div>
       </template>
+      <div class="recent-filter-bar">
+        <el-date-picker
+          v-model="notificationTimeRange"
+          type="datetimerange"
+          range-separator="至"
+          start-placeholder="开始时间"
+          end-placeholder="结束时间"
+          value-format="YYYY-MM-DD HH:mm:ss"
+          style="width: 360px"
+        />
+        <div class="toolbar-tip">失败统计、最近记录和单租户通知分析共用这一时间窗口。</div>
+      </div>
       <div v-loading="notificationFailureStatsLoading">
         <div class="channel-health-overview">
           <div class="channel-health-item">

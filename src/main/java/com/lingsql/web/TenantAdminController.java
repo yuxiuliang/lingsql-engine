@@ -18,6 +18,7 @@ import com.lingsql.tenant.model.TenantView;
 import com.lingsql.tenant.service.TenantAdminService;
 import com.lingsql.tenant.service.TenantNotificationChannelHistoryService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -128,6 +130,8 @@ public class TenantAdminController {
             @RequestParam(required = false) Integer success,
             @RequestParam(required = false) String channel,
             @RequestParam(required = false) String operatorKeyword,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
             @RequestParam(required = false) Integer limit
     ) {
         if (!isSysAdmin()) {
@@ -138,6 +142,8 @@ public class TenantAdminController {
                 success,
                 channel,
                 operatorKeyword,
+                startTime,
+                endTime,
                 limit
         ));
     }
@@ -155,12 +161,14 @@ public class TenantAdminController {
     @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
     public ApiResponse<TenantNotificationChannelFailureStatsView> notificationChannelFailureStats(
             @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
             @RequestParam(required = false) Integer limit
     ) {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        return ApiResponse.success(tenantNotificationChannelHistoryService.summarizeFailures(tenantId, limit));
+        return ApiResponse.success(tenantNotificationChannelHistoryService.summarizeFailures(tenantId, startTime, endTime, limit));
     }
 
     /**

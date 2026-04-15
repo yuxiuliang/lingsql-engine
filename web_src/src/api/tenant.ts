@@ -380,6 +380,8 @@ export const fetchRecentTenantNotificationChannelTests = async (params: {
   success?: number;
   channel?: string;
   operatorKeyword?: string;
+  startTime?: string;
+  endTime?: string;
   limit?: number;
 } = {}): Promise<TenantNotificationChannelRecentTestView[]> => {
   const query = new URLSearchParams();
@@ -394,6 +396,12 @@ export const fetchRecentTenantNotificationChannelTests = async (params: {
   }
   if (params.operatorKeyword) {
     query.set('operatorKeyword', params.operatorKeyword);
+  }
+  if (params.startTime) {
+    query.set('startTime', params.startTime);
+  }
+  if (params.endTime) {
+    query.set('endTime', params.endTime);
   }
   if (params.limit != null) {
     query.set('limit', String(params.limit));
@@ -414,11 +422,19 @@ export const fetchRecentTenantNotificationChannelTests = async (params: {
  */
 export const fetchTenantNotificationChannelFailureStats = async (params: {
   tenantId?: string;
+  startTime?: string;
+  endTime?: string;
   limit?: number;
 } = {}): Promise<TenantNotificationChannelFailureStatsView> => {
   const query = new URLSearchParams();
   if (params.tenantId) {
     query.set('tenantId', params.tenantId);
+  }
+  if (params.startTime) {
+    query.set('startTime', params.startTime);
+  }
+  if (params.endTime) {
+    query.set('endTime', params.endTime);
   }
   if (params.limit != null) {
     query.set('limit', String(params.limit));

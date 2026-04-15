@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.time.LocalDateTime;
 
 /**
  * 租户通知通道测试记录服务。
@@ -56,10 +57,14 @@ public class TenantNotificationChannelHistoryService {
                                                                          Integer success,
                                                                          String channel,
                                                                          String operatorKeyword,
+                                                                         LocalDateTime startTime,
+                                                                         LocalDateTime endTime,
                                                                          Integer limit) {
         int resolvedLimit = resolveRecentLimit(limit);
         List<TenantNotificationChannelRecentTestView> tests = listRecentTestsInternal(
                 tenantId,
+                startTime,
+                endTime,
                 shouldUseExpandedSample(success, channel, operatorKeyword) ? MAX_FILTER_SAMPLE : resolvedLimit
         );
         return tests.stream()
@@ -79,8 +84,16 @@ public class TenantNotificationChannelHistoryService {
      * @author 余炘洋
      * @date 2026-04-15
      */
-    public TenantNotificationChannelFailureStatsView summarizeFailures(String tenantId, Integer limit) {
-        List<TenantNotificationChannelRecentTestView> tests = listRecentTestsInternal(tenantId, resolveStatsLimit(limit));
+    public TenantNotificationChannelFailureStatsView summarizeFailures(String tenantId,
+                                                                       LocalDateTime startTime,
+                                                                       LocalDateTime endTime,
+                                                                       Integer limit) {
+        List<TenantNotificationChannelRecentTestView> tests = listRecentTestsInternal(
+                tenantId,
+                startTime,
+                endTime,
+                resolveStatsLimit(limit)
+        );
         int totalTests = tests.size();
         long failedTests = tests.stream().filter(item -> !Boolean.TRUE.equals(item.getSuccess())).count();
         Map<String, Integer> channelCounter = new LinkedHashMap<>();
@@ -113,10 +126,15 @@ public class TenantNotificationChannelHistoryService {
         return view;
     }
 
-    private List<TenantNotificationChannelRecentTestView> listRecentTestsInternal(String tenantId, int limit) {
+    private List<TenantNotificationChannelRecentTestView> listRecentTestsInternal(String tenantId,
+                                                                                  LocalDateTime startTime,
+                                                                                  LocalDateTime endTime,
+                                                                                  int limit) {
         AuditLogQuery query = new AuditLogQuery();
         query.setTenantId(StringUtils.hasText(tenantId) ? tenantId.trim() : null);
         query.setAction(ACTION_NOTIFICATION_CHANNEL_TEST);
+        query.setStartTime(startTime);
+        query.setEndTime(endTime);
         PageResult<AuditLogView> result = auditLogService.query(query, 1, limit);
         return (result.getList() == null ? List.<AuditLogView>of() : result.getList()).stream()
                 .map(this::toRecentTestView)

@@ -51,7 +51,7 @@ class TenantNotificationChannelHistoryServiceTest {
         when(auditLogService.query(Mockito.any(AuditLogQuery.class), Mockito.eq(1), Mockito.eq(10)))
                 .thenReturn(new PageResult<>(List.of(auditLog), 1, 1, 10));
 
-        List<TenantNotificationChannelRecentTestView> result = service.listRecentTests(null, null, null, null, 10);
+        List<TenantNotificationChannelRecentTestView> result = service.listRecentTests(null, null, null, null, null, null, 10);
 
         assertEquals(1, result.size());
         TenantNotificationChannelRecentTestView first = result.getFirst();
@@ -122,7 +122,7 @@ class TenantNotificationChannelHistoryServiceTest {
         when(auditLogService.query(Mockito.any(AuditLogQuery.class), Mockito.eq(1), Mockito.eq(100)))
                 .thenReturn(new PageResult<>(List.of(failedAudit, failedAudit2, successAudit), 3, 1, 100));
 
-        TenantNotificationChannelFailureStatsView view = service.summarizeFailures("TENANT_A", 100);
+        TenantNotificationChannelFailureStatsView view = service.summarizeFailures("TENANT_A", null, null, 100);
 
         assertEquals("TENANT_A", view.getTenantId());
         assertEquals(3, view.getTotalTests());
@@ -174,10 +174,28 @@ class TenantNotificationChannelHistoryServiceTest {
         when(auditLogService.query(Mockito.any(AuditLogQuery.class), Mockito.eq(1), Mockito.eq(200)))
                 .thenReturn(new PageResult<>(List.of(failedAudit, successAudit), 2, 1, 200));
 
-        List<TenantNotificationChannelRecentTestView> result = service.listRecentTests("TENANT_A", 0, "dingtalk", "ops", 10);
+        List<TenantNotificationChannelRecentTestView> result = service.listRecentTests("TENANT_A", 0, "dingtalk", "ops", null, null, 10);
 
         assertEquals(1, result.size());
         assertEquals(301L, result.getFirst().getAuditLogId());
         assertFalse(Boolean.TRUE.equals(result.getFirst().getSuccess()));
+    }
+
+    @Test
+    void shouldPassTimeRangeToAuditQuery() {
+        AuditLogService auditLogService = Mockito.mock(AuditLogService.class);
+        TenantNotificationChannelHistoryService service = new TenantNotificationChannelHistoryService(auditLogService, new ObjectMapper());
+        LocalDateTime startTime = LocalDateTime.of(2026, 4, 10, 0, 0, 0);
+        LocalDateTime endTime = LocalDateTime.of(2026, 4, 15, 23, 59, 59);
+
+        when(auditLogService.query(Mockito.any(AuditLogQuery.class), Mockito.eq(1), Mockito.eq(10)))
+                .thenReturn(new PageResult<>(List.of(), 0, 1, 10));
+
+        service.listRecentTests("TENANT_A", null, null, null, startTime, endTime, 10);
+
+        ArgumentCaptor<AuditLogQuery> queryCaptor = ArgumentCaptor.forClass(AuditLogQuery.class);
+        verify(auditLogService).query(queryCaptor.capture(), Mockito.eq(1), Mockito.eq(10));
+        assertEquals(startTime, queryCaptor.getValue().getStartTime());
+        assertEquals(endTime, queryCaptor.getValue().getEndTime());
     }
 }
