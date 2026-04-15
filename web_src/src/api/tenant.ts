@@ -377,11 +377,23 @@ export const fetchTenantNotificationChannelHealth = async (): Promise<TenantNoti
  */
 export const fetchRecentTenantNotificationChannelTests = async (params: {
   tenantId?: string;
+  success?: number;
+  channel?: string;
+  operatorKeyword?: string;
   limit?: number;
 } = {}): Promise<TenantNotificationChannelRecentTestView[]> => {
   const query = new URLSearchParams();
   if (params.tenantId) {
     query.set('tenantId', params.tenantId);
+  }
+  if (params.success != null) {
+    query.set('success', String(params.success));
+  }
+  if (params.channel) {
+    query.set('channel', params.channel);
+  }
+  if (params.operatorKeyword) {
+    query.set('operatorKeyword', params.operatorKeyword);
   }
   if (params.limit != null) {
     query.set('limit', String(params.limit));

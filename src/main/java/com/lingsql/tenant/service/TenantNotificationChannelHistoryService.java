@@ -38,6 +38,7 @@ public class TenantNotificationChannelHistoryService {
     private static final int MAX_LIMIT = 50;
     private static final int DEFAULT_STATS_LIMIT = 100;
     private static final int MAX_STATS_LIMIT = 200;
+    private static final int MAX_FILTER_SAMPLE = 200;
 
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
@@ -51,8 +52,22 @@ public class TenantNotificationChannelHistoryService {
      * @author 余炘洋
      * @date 2026-04-15
      */
-    public List<TenantNotificationChannelRecentTestView> listRecentTests(String tenantId, Integer limit) {
-        return listRecentTestsInternal(tenantId, resolveRecentLimit(limit));
+    public List<TenantNotificationChannelRecentTestView> listRecentTests(String tenantId,
+                                                                         Integer success,
+                                                                         String channel,
+                                                                         String operatorKeyword,
+                                                                         Integer limit) {
+        int resolvedLimit = resolveRecentLimit(limit);
+        List<TenantNotificationChannelRecentTestView> tests = listRecentTestsInternal(
+                tenantId,
+                shouldUseExpandedSample(success, channel, operatorKeyword) ? MAX_FILTER_SAMPLE : resolvedLimit
+        );
+        return tests.stream()
+                .filter(item -> matchSuccess(item, success))
+                .filter(item -> matchChannel(item, channel))
+                .filter(item -> matchOperator(item, operatorKeyword))
+                .limit(resolvedLimit)
+                .toList();
     }
 
     /**
@@ -106,6 +121,46 @@ public class TenantNotificationChannelHistoryService {
         return (result.getList() == null ? List.<AuditLogView>of() : result.getList()).stream()
                 .map(this::toRecentTestView)
                 .toList();
+    }
+
+    private boolean shouldUseExpandedSample(Integer success, String channel, String operatorKeyword) {
+        return success != null || StringUtils.hasText(channel) || StringUtils.hasText(operatorKeyword);
+    }
+
+    private boolean matchSuccess(TenantNotificationChannelRecentTestView item, Integer success) {
+        if (success == null) {
+            return true;
+        }
+        boolean expected = Integer.valueOf(1).equals(success);
+        return Boolean.valueOf(expected).equals(item.getSuccess());
+    }
+
+    private boolean matchChannel(TenantNotificationChannelRecentTestView item, String channel) {
+        if (!StringUtils.hasText(channel)) {
+            return true;
+        }
+        String expected = channel.trim().toLowerCase(Locale.ROOT);
+        boolean matchedRequested = (item.getRequestedChannels() == null ? List.<String>of() : item.getRequestedChannels()).stream()
+                .filter(StringUtils::hasText)
+                .map(value -> value.trim().toLowerCase(Locale.ROOT))
+                .anyMatch(expected::equals);
+        if (matchedRequested) {
+            return true;
+        }
+        return (item.getChannelResults() == null ? List.<TenantNotificationChannelTestChannelView>of() : item.getChannelResults()).stream()
+                .map(TenantNotificationChannelTestChannelView::getChannel)
+                .filter(StringUtils::hasText)
+                .map(value -> value.trim().toLowerCase(Locale.ROOT))
+                .anyMatch(expected::equals);
+    }
+
+    private boolean matchOperator(TenantNotificationChannelRecentTestView item, String operatorKeyword) {
+        if (!StringUtils.hasText(operatorKeyword)) {
+            return true;
+        }
+        String expected = operatorKeyword.trim().toLowerCase(Locale.ROOT);
+        return StringUtils.hasText(item.getOperatorUsername())
+                && item.getOperatorUsername().trim().toLowerCase(Locale.ROOT).contains(expected);
     }
 
     private TenantNotificationChannelRecentTestView toRecentTestView(AuditLogView view) {

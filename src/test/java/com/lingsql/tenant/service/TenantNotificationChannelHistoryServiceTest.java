@@ -51,7 +51,7 @@ class TenantNotificationChannelHistoryServiceTest {
         when(auditLogService.query(Mockito.any(AuditLogQuery.class), Mockito.eq(1), Mockito.eq(10)))
                 .thenReturn(new PageResult<>(List.of(auditLog), 1, 1, 10));
 
-        List<TenantNotificationChannelRecentTestView> result = service.listRecentTests(null, 10);
+        List<TenantNotificationChannelRecentTestView> result = service.listRecentTests(null, null, null, null, 10);
 
         assertEquals(1, result.size());
         TenantNotificationChannelRecentTestView first = result.getFirst();
@@ -130,5 +130,54 @@ class TenantNotificationChannelHistoryServiceTest {
         assertEquals(33.33D, view.getSuccessRate(), 0.01D);
         assertEquals("dingtalk", view.getTopFailingChannels().getFirst().getChannel());
         assertEquals("internal error", view.getTopFailureReasons().getFirst().getReason());
+    }
+
+    @Test
+    void shouldFilterRecentTestsBySuccessChannelAndOperator() {
+        AuditLogService auditLogService = Mockito.mock(AuditLogService.class);
+        TenantNotificationChannelHistoryService service = new TenantNotificationChannelHistoryService(auditLogService, new ObjectMapper());
+
+        AuditLogView failedAudit = new AuditLogView();
+        failedAudit.setId(301L);
+        failedAudit.setTenantId("TENANT_A");
+        failedAudit.setUsername("ops_admin");
+        failedAudit.setSuccess(0);
+        failedAudit.setCreateTime(LocalDateTime.of(2026, 4, 15, 19, 0, 0));
+        failedAudit.setDetail("""
+                {
+                  "tenantId":"TENANT_A",
+                  "tenantName":"演示租户",
+                  "requestedChannels":["dingtalk"],
+                  "success":false,
+                  "summary":"钉钉失败",
+                  "channelResults":[
+                    {"channel":"dingtalk","success":false,"statusCode":500,"detail":"robot blocked"}
+                  ]
+                }
+                """);
+        AuditLogView successAudit = new AuditLogView();
+        successAudit.setId(302L);
+        successAudit.setTenantId("TENANT_A");
+        successAudit.setUsername("sys_admin");
+        successAudit.setSuccess(1);
+        successAudit.setCreateTime(LocalDateTime.of(2026, 4, 15, 18, 0, 0));
+        successAudit.setDetail("""
+                {
+                  "tenantId":"TENANT_A",
+                  "tenantName":"演示租户",
+                  "requestedChannels":["webhook"],
+                  "success":true,
+                  "summary":"Webhook 成功"
+                }
+                """);
+
+        when(auditLogService.query(Mockito.any(AuditLogQuery.class), Mockito.eq(1), Mockito.eq(200)))
+                .thenReturn(new PageResult<>(List.of(failedAudit, successAudit), 2, 1, 200));
+
+        List<TenantNotificationChannelRecentTestView> result = service.listRecentTests("TENANT_A", 0, "dingtalk", "ops", 10);
+
+        assertEquals(1, result.size());
+        assertEquals(301L, result.getFirst().getAuditLogId());
+        assertFalse(Boolean.TRUE.equals(result.getFirst().getSuccess()));
     }
 }

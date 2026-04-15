@@ -191,6 +191,14 @@ const lifecycleForm = reactive<TenantLifecycleForm>({
   activate: true
 });
 
+const recentNotificationFilter = reactive({
+  tenantId: '',
+  success: '' as '' | '1' | '0',
+  channel: '' as '' | 'webhook' | 'dingtalk' | 'wecom',
+  operatorKeyword: '',
+  limit: 10
+});
+
 /**
  * 判断是否系统管理员。
  *
@@ -397,12 +405,33 @@ const loadNotificationFailureStats = async () => {
 const loadRecentNotificationTests = async () => {
   recentNotificationTestsLoading.value = true;
   try {
-    recentNotificationTests.value = await fetchRecentTenantNotificationChannelTests({limit: 10});
+    recentNotificationTests.value = await fetchRecentTenantNotificationChannelTests({
+      tenantId: recentNotificationFilter.tenantId || undefined,
+      success: recentNotificationFilter.success === '' ? undefined : Number(recentNotificationFilter.success),
+      channel: recentNotificationFilter.channel || undefined,
+      operatorKeyword: recentNotificationFilter.operatorKeyword.trim() || undefined,
+      limit: recentNotificationFilter.limit
+    });
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载最近测试记录失败');
   } finally {
     recentNotificationTestsLoading.value = false;
   }
+};
+
+/**
+ * 重置最近测试记录筛选条件。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const resetRecentNotificationFilters = async () => {
+  recentNotificationFilter.tenantId = '';
+  recentNotificationFilter.success = '';
+  recentNotificationFilter.channel = '';
+  recentNotificationFilter.operatorKeyword = '';
+  recentNotificationFilter.limit = 10;
+  await loadRecentNotificationTests();
 };
 
 /**
@@ -1406,9 +1435,66 @@ refreshTenantData();
       <template #header>
         <div class="workbench-header">
           <span>最近通知通道测试记录</span>
-          <el-button link type="primary" :disabled="recentNotificationTestsLoading" @click="loadRecentNotificationTests">刷新记录</el-button>
+          <div class="analysis-actions">
+            <el-button link type="primary" :disabled="recentNotificationTestsLoading" @click="loadRecentNotificationTests">刷新记录</el-button>
+            <el-button link :disabled="recentNotificationTestsLoading" @click="resetRecentNotificationFilters">重置筛选</el-button>
+          </div>
         </div>
       </template>
+      <div class="recent-filter-bar">
+        <el-select
+          v-model="recentNotificationFilter.tenantId"
+          clearable
+          filterable
+          placeholder="筛选租户"
+          style="width: 220px"
+        >
+          <el-option
+            v-for="item in tenants"
+            :key="item.tenantId"
+            :label="`${item.tenantName || item.tenantId} (${item.tenantId})`"
+            :value="item.tenantId"
+          />
+        </el-select>
+        <el-select
+          v-model="recentNotificationFilter.success"
+          clearable
+          placeholder="结果"
+          style="width: 140px"
+        >
+          <el-option label="成功" value="1"/>
+          <el-option label="失败" value="0"/>
+        </el-select>
+        <el-select
+          v-model="recentNotificationFilter.channel"
+          clearable
+          placeholder="通道"
+          style="width: 160px"
+        >
+          <el-option
+            v-for="item in notificationChannelOptions"
+            :key="`recent-${item.value}`"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
+        <el-input
+          v-model="recentNotificationFilter.operatorKeyword"
+          placeholder="搜索操作人"
+          style="width: 180px"
+          clearable
+        />
+        <el-select
+          v-model="recentNotificationFilter.limit"
+          placeholder="样本条数"
+          style="width: 140px"
+        >
+          <el-option :value="10" label="最近10条"/>
+          <el-option :value="20" label="最近20条"/>
+          <el-option :value="50" label="最近50条"/>
+        </el-select>
+        <el-button type="primary" :loading="recentNotificationTestsLoading" @click="loadRecentNotificationTests">查询</el-button>
+      </div>
       <el-empty
         v-if="!recentNotificationTests.length && !recentNotificationTestsLoading"
         description="最近暂无通知通道测试记录"
@@ -2156,6 +2242,13 @@ refreshTenantData();
   margin-top: 12px;
 }
 
+.recent-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
 .analysis-channel-block {
   margin-bottom: 16px;
 }
@@ -2390,6 +2483,7 @@ refreshTenantData();
   .channel-health-tag-group,
   .failure-stats-grid,
   .analysis-actions,
+  .recent-filter-bar,
   .form-inline-actions,
   .notification-test-result-bar {
     display: flex;

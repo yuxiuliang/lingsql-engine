@@ -182,7 +182,7 @@ class TenantAdminControllerLifecycleTest {
     void recentNotificationChannelTestsShouldReturnForbiddenWhenNotSysAdmin() {
         bindSession(List.of("TENANT_ADMIN"));
 
-        ApiResponse<List<TenantNotificationChannelRecentTestView>> response = controller.recentNotificationChannelTests(null, 10);
+        ApiResponse<List<TenantNotificationChannelRecentTestView>> response = controller.recentNotificationChannelTests(null, null, null, null, 10);
 
         assertEquals(403, response.getCode());
         assertEquals("无权限访问", response.getMessage());
@@ -194,14 +194,14 @@ class TenantAdminControllerLifecycleTest {
         bindSession(List.of("SYS_ADMIN"));
         TenantNotificationChannelRecentTestView view = new TenantNotificationChannelRecentTestView();
         view.setTenantId("t-001");
-        when(tenantNotificationChannelHistoryService.listRecentTests("t-001", 5)).thenReturn(List.of(view));
+        when(tenantNotificationChannelHistoryService.listRecentTests("t-001", null, null, null, 5)).thenReturn(List.of(view));
 
-        ApiResponse<List<TenantNotificationChannelRecentTestView>> response = controller.recentNotificationChannelTests("t-001", 5);
+        ApiResponse<List<TenantNotificationChannelRecentTestView>> response = controller.recentNotificationChannelTests("t-001", null, null, null, 5);
 
         assertEquals(200, response.getCode());
         assertEquals(1, response.getData().size());
         assertEquals("t-001", response.getData().getFirst().getTenantId());
-        verify(tenantNotificationChannelHistoryService, times(1)).listRecentTests("t-001", 5);
+        verify(tenantNotificationChannelHistoryService, times(1)).listRecentTests("t-001", null, null, null, 5);
     }
 
     @Test

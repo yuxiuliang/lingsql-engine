@@ -125,12 +125,21 @@ public class TenantAdminController {
     @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
     public ApiResponse<List<TenantNotificationChannelRecentTestView>> recentNotificationChannelTests(
             @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) Integer success,
+            @RequestParam(required = false) String channel,
+            @RequestParam(required = false) String operatorKeyword,
             @RequestParam(required = false) Integer limit
     ) {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        return ApiResponse.success(tenantNotificationChannelHistoryService.listRecentTests(tenantId, limit));
+        return ApiResponse.success(tenantNotificationChannelHistoryService.listRecentTests(
+                tenantId,
+                success,
+                channel,
+                operatorKeyword,
+                limit
+        ));
     }
 
     /**
