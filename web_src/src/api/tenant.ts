@@ -15,6 +15,7 @@ export interface TenantView {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
+  notificationChannels?: string[];
   expireTime?: string;
   planName?: string;
   quotaBalance?: number;
@@ -105,6 +106,7 @@ export interface TenantCreateRequest {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
+  notificationChannels?: string[];
   expireTime?: string;
   planName?: string;
   jdbcUrl?: string;
@@ -130,6 +132,7 @@ export interface TenantUpdateRequest {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
+  notificationChannels?: string[];
   expireTime?: string;
   planName?: string;
 }

@@ -15,6 +15,7 @@ import {
 } from '@/api/chat';
 import {fetchChatRuntimeConfig} from '@/api/config';
 import {useChatStore} from '@/store/chat';
+import ResultInsightPanel from '@/views/chat/ResultInsightPanel.vue';
 
 /**
  * 对话消息定义。
@@ -817,6 +818,7 @@ onBeforeUnmount(() => {
 
             <template v-if="message.role === 'assistant' && message.data && message.data.length">
               <div class="table-section">
+                <ResultInsightPanel :rows="message.data"/>
                 <div class="table-title">查询结果</div>
                 <el-table class="result-table" :data="message.data" border :max-height="360">
                   <el-table-column

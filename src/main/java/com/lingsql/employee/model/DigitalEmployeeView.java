@@ -3,6 +3,7 @@ package com.lingsql.employee.model;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 数字员工视图。
@@ -21,11 +22,22 @@ public class DigitalEmployeeView {
     private String scenario;
     private String promptTemplate;
     private String defaultQuestion;
+    private Integer scheduleEnabled;
+    private String scheduleCron;
+    private Integer alertEnabled;
+    private String alertRuleType;
+    private Integer alertThreshold;
+    private Integer pushEnabled;
+    private List<String> pushChannels;
+    private Integer pushMaxRows;
+    private String pushTitleTemplate;
+    private String pushMessageTemplate;
     private Integer status;
     private Long runCount;
     private Long successCount;
     private Integer lastRunStatus;
     private LocalDateTime lastRunTime;
+    private LocalDateTime lastScheduleTime;
     private String lastErrorMessage;
     private String remark;
     private LocalDateTime createTime;

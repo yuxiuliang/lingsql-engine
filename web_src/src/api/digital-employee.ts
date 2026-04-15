@@ -1,5 +1,12 @@
 import {request} from '@/utils/request';
 
+export interface PageResult<T> {
+  list: T[];
+  total: number;
+  page: number;
+  size: number;
+}
+
 /**
  * 数字员工视图。
  *
@@ -15,11 +22,22 @@ export interface DigitalEmployeeView {
   scenario?: string;
   promptTemplate?: string;
   defaultQuestion: string;
+  scheduleEnabled?: number;
+  scheduleCron?: string;
+  alertEnabled?: number;
+  alertRuleType?: string;
+  alertThreshold?: number | null;
+  pushEnabled?: number;
+  pushChannels?: string[];
+  pushMaxRows?: number | null;
+  pushTitleTemplate?: string;
+  pushMessageTemplate?: string;
   status?: number;
   runCount?: number;
   successCount?: number;
   lastRunStatus?: number | null;
   lastRunTime?: string;
+  lastScheduleTime?: string;
   lastErrorMessage?: string;
   remark?: string;
   createTime?: string;
@@ -75,6 +93,16 @@ export interface DigitalEmployeeCreateRequest {
   scenario?: string;
   promptTemplate?: string;
   defaultQuestion: string;
+  scheduleEnabled?: number;
+  scheduleCron?: string;
+  alertEnabled?: number;
+  alertRuleType?: string;
+  alertThreshold?: number | null;
+  pushEnabled?: number;
+  pushChannels?: string[];
+  pushMaxRows?: number | null;
+  pushTitleTemplate?: string;
+  pushMessageTemplate?: string;
   status?: number;
   remark?: string;
 }
@@ -93,6 +121,16 @@ export interface DigitalEmployeeUpdateRequest {
   scenario?: string;
   promptTemplate?: string;
   defaultQuestion?: string;
+  scheduleEnabled?: number;
+  scheduleCron?: string;
+  alertEnabled?: number;
+  alertRuleType?: string;
+  alertThreshold?: number | null;
+  pushEnabled?: number;
+  pushChannels?: string[];
+  pushMaxRows?: number | null;
+  pushTitleTemplate?: string;
+  pushMessageTemplate?: string;
   status?: number;
   remark?: string;
 }
@@ -128,6 +166,31 @@ export interface DigitalEmployeeRunResult {
   errorMessage?: string;
   durationMs?: number;
   executeTime?: string;
+}
+
+/**
+ * 数字员工运行日志视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-14
+ */
+export interface DigitalEmployeeRunLogView {
+  id?: number;
+  employeeId?: number;
+  employeeName?: string;
+  tenantId?: string;
+  triggerSource?: string;
+  question?: string;
+  answer?: string;
+  executedSql?: string;
+  success?: number;
+  errorMessage?: string;
+  resultRows?: number;
+  requestId?: string;
+  durationMs?: number;
+  alertDeliveryStatus?: number | null;
+  pushDeliveryStatus?: number | null;
+  createTime?: string;
 }
 
 /**
@@ -239,4 +302,38 @@ export const runDigitalEmployee = async (id: number, payload: DigitalEmployeeRun
     method: 'POST',
     body: JSON.stringify(payload || {})
   });
+};
+
+/**
+ * 查询数字员工运行日志。
+ *
+ * @param params 查询条件
+ * @return 日志分页
+ * @author 余炘洋
+ * @date 2026-04-14
+ */
+export const fetchDigitalEmployeeRunLogs = async (params: {
+  tenantId?: string;
+  employeeId?: number;
+  success?: number;
+  triggerSource?: string;
+  page?: number;
+  size?: number;
+} = {}): Promise<PageResult<DigitalEmployeeRunLogView>> => {
+  const query = new URLSearchParams();
+  if (params.tenantId) {
+    query.set('tenantId', params.tenantId);
+  }
+  if (params.employeeId != null) {
+    query.set('employeeId', String(params.employeeId));
+  }
+  if (params.success != null) {
+    query.set('success', String(params.success));
+  }
+  if (params.triggerSource) {
+    query.set('triggerSource', params.triggerSource);
+  }
+  query.set('page', String(params.page ?? 1));
+  query.set('size', String(params.size ?? 10));
+  return request<PageResult<DigitalEmployeeRunLogView>>(`/api/v1/admin/digital-employees/runs?${query.toString()}`);
 };

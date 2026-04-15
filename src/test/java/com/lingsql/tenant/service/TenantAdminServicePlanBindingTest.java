@@ -66,12 +66,14 @@ class TenantAdminServicePlanBindingTest {
         TenantUpdateRequest request = new TenantUpdateRequest();
         request.setTenantName("admin");
         request.setPlanName("测试");
+        request.setNotificationChannels(List.of("webhook"));
 
         TenantView view = service.updateTenant(1L, request);
 
         assertEquals(9999999L, view.getQuotaBalance());
         assertEquals("PRO", view.getServiceLevel());
         assertEquals("ENTERPRISE", view.getTenantType());
+        assertEquals(List.of("webhook"), view.getNotificationChannels());
         verify(billingBalanceService).resetBalance("1", 9999999L);
     }
 

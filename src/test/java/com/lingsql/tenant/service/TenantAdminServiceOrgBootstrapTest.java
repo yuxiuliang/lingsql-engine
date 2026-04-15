@@ -93,10 +93,12 @@ class TenantAdminServiceOrgBootstrapTest {
         request.setTenantName("演示租户");
         request.setOrgTemplateCode("CHAIN_STORE_STANDARD");
         request.setOrgRootUnitName("华东品牌总部");
+        request.setNotificationChannels(List.of("dingtalk", "wecom"));
 
         TenantView view = service.createTenant(request);
 
         assertEquals("AUTO001", view.getTenantId());
+        assertEquals(List.of("dingtalk", "wecom"), view.getNotificationChannels());
         verify(billingBalanceService).resetBalance("AUTO001", 0L);
         ArgumentCaptor<OrgTemplateApplyRequest> templateCaptor = ArgumentCaptor.forClass(OrgTemplateApplyRequest.class);
         verify(organizationAdminService).applyTemplate(templateCaptor.capture(), Mockito.eq("AUTO001"), Mockito.eq(false));

@@ -71,6 +71,7 @@ interface TenantForm {
   contactName: string;
   contactPhone: string;
   contactEmail: string;
+  notificationChannels: string[];
   expireTime: string;
   planName: string;
   isolationMode: string;
@@ -91,6 +92,7 @@ const form = reactive<TenantForm>({
   contactName: '',
   contactPhone: '',
   contactEmail: '',
+  notificationChannels: [],
   expireTime: '',
   planName: '',
   isolationMode: 'PHYSICAL',
@@ -108,6 +110,12 @@ const jdbcPreview = computed(() => buildMysqlJdbcUrl(jdbcForm));
 const selectedOrgTemplate = computed(() => {
   return orgTemplateList.value.find((item) => item.templateCode === form.orgTemplateCode) || null;
 });
+
+const notificationChannelOptions = [
+  {label: '通用 Webhook', value: 'webhook'},
+  {label: '钉钉机器人', value: 'dingtalk'},
+  {label: '企业微信机器人', value: 'wecom'}
+];
 
 /**
  * 生命周期续期表单定义。
@@ -153,6 +161,7 @@ const resetForm = () => {
   form.contactName = '';
   form.contactPhone = '';
   form.contactEmail = '';
+  form.notificationChannels = [];
   form.expireTime = '';
   form.planName = '';
   form.isolationMode = 'PHYSICAL';
@@ -366,6 +375,7 @@ const handleEdit = (row: TenantView) => {
   form.contactName = row.contactName || '';
   form.contactPhone = row.contactPhone || '';
   form.contactEmail = row.contactEmail || '';
+  form.notificationChannels = row.notificationChannels || [];
   form.expireTime = row.expireTime || '';
   form.planName = row.planName || '';
   dialogVisible.value = true;
@@ -386,6 +396,7 @@ const buildCreatePayload = (jdbcUrl?: string): TenantCreateRequest => {
     contactName: form.contactName || undefined,
     contactPhone: form.contactPhone || undefined,
     contactEmail: form.contactEmail || undefined,
+    notificationChannels: form.notificationChannels,
     expireTime: form.expireTime || undefined,
     planName: form.planName || undefined
   };
@@ -419,6 +430,7 @@ const buildUpdatePayload = (): TenantUpdateRequest => {
     contactName: form.contactName || undefined,
     contactPhone: form.contactPhone || undefined,
     contactEmail: form.contactEmail || undefined,
+    notificationChannels: form.notificationChannels,
     expireTime: form.expireTime || undefined,
     planName: form.planName || undefined
   };
@@ -962,6 +974,11 @@ refreshTenantData();
           </template>
         </el-table-column>
         <el-table-column prop="contactName" label="联系人" min-width="120"/>
+        <el-table-column label="默认通知通道" min-width="180" show-overflow-tooltip>
+          <template #default="scope">
+            <span>{{ scope.row.notificationChannels?.length ? scope.row.notificationChannels.join(' / ') : '未配置' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="status" label="状态" width="90">
           <template #default="scope">
             <el-tag :type="resolveStatusType(scope.row.status)">
@@ -1007,6 +1024,24 @@ refreshTenantData();
         </el-form-item>
         <el-form-item label="联系邮箱">
           <el-input v-model="form.contactEmail" placeholder="邮箱"/>
+        </el-form-item>
+        <el-form-item label="默认通知通道">
+          <el-select
+            v-model="form.notificationChannels"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="留空则不设置租户默认通道"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in notificationChannelOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+          <div class="form-tip">数字员工未单独选择推送通道时，会优先继承这里的默认通道。</div>
         </el-form-item>
         <el-form-item label="到期时间">
           <el-date-picker

@@ -79,6 +79,32 @@ class OpsAlertServiceTest {
         }
     }
 
+    @Test
+    void shouldSendOnlySpecifiedChannels() throws Exception {
+        try (MockWebhookServer webhook = new MockWebhookServer(200);
+             MockWebhookServer dingTalkWebhook = new MockWebhookServer(200);
+             MockWebhookServer weComWebhook = new MockWebhookServer(200)) {
+            LingSqlProperties properties = new LingSqlProperties();
+            properties.getAlert().setEnabled(true);
+            properties.getAlert().setWebhookUrl(webhook.url());
+            properties.getAlert().setDingTalkWebhookUrl(dingTalkWebhook.url());
+            properties.getAlert().setWeComWebhookUrl(weComWebhook.url());
+            OpsAlertService service = new OpsAlertService(properties, new ObjectMapper());
+
+            boolean success = service.sendAlertToChannels(
+                    "订阅结果",
+                    "测试消息",
+                    Map.of("tenantId", "t-003"),
+                    List.of("dingtalk", "wecom")
+            );
+
+            assertTrue(success);
+            assertEquals(0, webhook.requestCount());
+            assertEquals(1, dingTalkWebhook.requestCount());
+            assertEquals(1, weComWebhook.requestCount());
+        }
+    }
+
     private static final class MockWebhookServer implements AutoCloseable {
 
         private final HttpServer server;
@@ -127,4 +153,3 @@ class OpsAlertServiceTest {
         }
     }
 }
-

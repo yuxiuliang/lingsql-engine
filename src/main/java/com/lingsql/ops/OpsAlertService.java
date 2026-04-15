@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -46,11 +47,33 @@ public class OpsAlertService {
      * @date 2026-02-27
      */
     public boolean sendAlert(String title, String message, Map<String, Object> details) {
+        return sendAlertInternal(title, message, details, null);
+    }
+
+    /**
+     * 按指定通道发送告警。
+     *
+     * @param title    告警标题
+     * @param message  告警内容
+     * @param details  扩展字段
+     * @param channels 指定通道列表；为空时按全量已配置通道发送
+     * @return 是否发送成功
+     * @author 余炘洋
+     * @date 2026-04-14
+     */
+    public boolean sendAlertToChannels(String title, String message, Map<String, Object> details, List<String> channels) {
+        return sendAlertInternal(title, message, details, channels);
+    }
+
+    private boolean sendAlertInternal(String title,
+                                      String message,
+                                      Map<String, Object> details,
+                                      List<String> channels) {
         LingSqlProperties.Alert alert = properties.getAlert();
         if (alert == null || !alert.isEnabled()) {
             return false;
         }
-        List<AlertTarget> targets = resolveTargets(alert);
+        List<AlertTarget> targets = resolveTargets(alert, channels);
         if (targets.isEmpty()) {
             return false;
         }
@@ -102,19 +125,34 @@ public class OpsAlertService {
         }
     }
 
-    private List<AlertTarget> resolveTargets(LingSqlProperties.Alert alert) {
+    private List<AlertTarget> resolveTargets(LingSqlProperties.Alert alert, List<String> channels) {
         List<AlertTarget> targets = new ArrayList<>();
-        addTargetIfPresent(targets, "webhook", alert.getWebhookUrl());
-        addTargetIfPresent(targets, "dingtalk", alert.getDingTalkWebhookUrl());
-        addTargetIfPresent(targets, "wecom", alert.getWeComWebhookUrl());
+        List<String> normalizedChannels = normalizeChannels(channels);
+        addTargetIfPresent(targets, "webhook", alert.getWebhookUrl(), normalizedChannels);
+        addTargetIfPresent(targets, "dingtalk", alert.getDingTalkWebhookUrl(), normalizedChannels);
+        addTargetIfPresent(targets, "wecom", alert.getWeComWebhookUrl(), normalizedChannels);
         return targets;
     }
 
-    private void addTargetIfPresent(List<AlertTarget> targets, String channel, String url) {
+    private void addTargetIfPresent(List<AlertTarget> targets, String channel, String url, List<String> channels) {
         if (!StringUtils.hasText(url)) {
             return;
         }
+        if (channels != null && !channels.isEmpty() && !channels.contains(channel)) {
+            return;
+        }
         targets.add(new AlertTarget(channel, url.trim()));
+    }
+
+    private List<String> normalizeChannels(List<String> channels) {
+        if (channels == null || channels.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return channels.stream()
+                .filter(StringUtils::hasText)
+                .map(value -> value.trim().toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
     }
 
     private Map<String, Object> buildPayloadByChannel(String channel,

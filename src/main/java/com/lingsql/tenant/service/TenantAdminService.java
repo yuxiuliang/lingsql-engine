@@ -71,6 +71,7 @@ public class TenantAdminService {
     private static final String PRIORITY_P0 = "P0";
     private static final String PRIORITY_P1 = "P1";
     private static final String PRIORITY_P2 = "P2";
+    private static final List<String> SUPPORTED_NOTIFICATION_CHANNELS = List.of("webhook", "dingtalk", "wecom");
 
     private static final List<String> BASE_PERMISSION_CODES = List.of(
             "MENU:ADMIN",
@@ -221,6 +222,9 @@ public class TenantAdminService {
         tenant.setContactName(request.getContactName());
         tenant.setContactPhone(request.getContactPhone());
         tenant.setContactEmail(request.getContactEmail());
+        if (request.getNotificationChannels() != null) {
+            tenant.setNotificationChannels(normalizeNotificationChannels(request.getNotificationChannels()));
+        }
         tenant.setExpireTime(parseDateTime(request.getExpireTime()));
         String planName = normalizePlanName(request.getPlanName());
         BillingPlan plan = resolveBillingPlan(planName);
@@ -306,6 +310,7 @@ public class TenantAdminService {
         tenant.setContactName(request.getContactName());
         tenant.setContactPhone(request.getContactPhone());
         tenant.setContactEmail(request.getContactEmail());
+        tenant.setNotificationChannels(normalizeNotificationChannels(request.getNotificationChannels()));
         tenant.setExpireTime(parseDateTime(request.getExpireTime()));
         String previousPlanName = normalizePlanName(tenant.getPlanName());
         String targetPlanName = request.getPlanName() == null ? previousPlanName : normalizePlanName(request.getPlanName());
@@ -656,6 +661,7 @@ public class TenantAdminService {
         view.setContactName(tenant.getContactName());
         view.setContactPhone(tenant.getContactPhone());
         view.setContactEmail(tenant.getContactEmail());
+        view.setNotificationChannels(parseNotificationChannels(tenant.getNotificationChannels()));
         view.setExpireTime(tenant.getExpireTime());
         view.setPlanName(tenant.getPlanName());
         view.setQuotaBalance(tenant.getQuotaBalance());
@@ -1029,6 +1035,34 @@ public class TenantAdminService {
      */
     private String normalizeText(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private String normalizeNotificationChannels(List<String> channels) {
+        if (channels == null || channels.isEmpty()) {
+            return null;
+        }
+        List<String> normalized = channels.stream()
+                .filter(StringUtils::hasText)
+                .map(value -> value.trim().toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
+        for (String channel : normalized) {
+            if (!SUPPORTED_NOTIFICATION_CHANNELS.contains(channel)) {
+                throw new BizException(ErrorCode.INVALID_PARAM, "默认通知通道非法");
+            }
+        }
+        return normalized.isEmpty() ? null : String.join(",", normalized);
+    }
+
+    private List<String> parseNotificationChannels(String value) {
+        if (!StringUtils.hasText(value)) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(value.split(","))
+                .filter(StringUtils::hasText)
+                .map(item -> item.trim().toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
     }
 
     /**
