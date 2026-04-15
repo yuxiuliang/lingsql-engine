@@ -300,6 +300,123 @@ const notificationNextSteps = computed(() => {
   }
   return steps.slice(0, 4);
 });
+
+const notificationHealthEmptyState = computed(() => {
+  if (notificationHealth.value?.alertEnabled === false) {
+    return {
+      description: '系统通知总开关未启用，当前无法形成有效的租户风险面板。',
+      actions: [
+        {label: '查看说明', action: 'review_system_config'}
+      ]
+    };
+  }
+  if ((notificationHealth.value?.configuredChannels?.length ?? 0) <= 0) {
+    return {
+      description: '系统尚未配置任何通知通道，租户默认通知策略还无法真正生效。',
+      actions: [
+        {label: '查看说明', action: 'review_system_config'}
+      ]
+    };
+  }
+  if ((notificationHealth.value?.tenantUsingNotificationChannels ?? 0) <= 0) {
+    return {
+      description: '当前还没有租户设置默认通知通道，建议先为关键租户建立通知基线。',
+      actions: [
+        {label: '配置租户通道', action: 'open_first_tenant_config'}
+      ]
+    };
+  }
+  return {
+    description: '当前没有默认通知通道风险租户，说明现有租户配置与系统通道能力基本匹配。',
+    actions: [
+      {label: '建立测试基线', action: 'test_first_tenant'}
+    ]
+  };
+});
+
+const notificationFailureEmptyState = computed(() => {
+  if ((notificationFailureStats.value?.totalTests ?? 0) <= 0) {
+    return {
+      description: '当前时间窗口内还没有通知测试样本，暂时无法生成失败问题分布。',
+      actions: [
+        {label: '发起一次测试', action: 'test_first_tenant'}
+      ]
+    };
+  }
+  return {
+    description: '当前时间窗口内暂无失败样本，通知通道运行状态较稳定。',
+    actions: [
+      {label: '查看最近记录', action: 'focus_recent_tests'}
+    ]
+  };
+});
+
+const notificationRecentEmptyState = computed(() => {
+  if ((notificationHealth.value?.tenantUsingNotificationChannels ?? 0) <= 0) {
+    return {
+      description: '当前没有租户配置默认通知通道，因此还没有可追踪的通知测试记录。',
+      actions: [
+        {label: '配置租户通道', action: 'open_first_tenant_config'}
+      ]
+    };
+  }
+  if (notificationTimeRange.value.length === 2) {
+    return {
+      description: '当前筛选时间窗口内没有测试记录，可以放宽时间范围或重新发起一次测试。',
+      actions: [
+        {label: '立即测试', action: 'test_first_tenant'}
+      ]
+    };
+  }
+  return {
+    description: '当前暂无通知通道测试记录，建议先建立一次测试基线。',
+    actions: [
+      {label: '立即测试', action: 'test_first_tenant'}
+    ]
+  };
+});
+
+const tenantFailureEmptyState = computed(() => {
+  if (!notificationAnalysisTenant.value?.notificationChannels?.length) {
+    return {
+      description: '该租户尚未配置默认通知通道，因此还没有失败样本可分析。',
+      actions: [
+        {label: '编辑租户通道', action: 'edit_analysis_tenant'}
+      ]
+    };
+  }
+  if ((tenantNotificationFailureStats.value?.totalTests ?? 0) <= 0) {
+    return {
+      description: '该租户在当前时间窗口内还没有测试样本，建议先发起一次通知测试。',
+      actions: [
+        {label: '立即复测', action: 'retest_analysis_tenant'}
+      ]
+    };
+  }
+  return {
+    description: '该租户当前时间窗口内没有失败样本，通知通道表现稳定。',
+    actions: [
+      {label: '查看历史记录', action: 'focus_tenant_recent_tests'}
+    ]
+  };
+});
+
+const tenantRecentEmptyState = computed(() => {
+  if (!notificationAnalysisTenant.value?.notificationChannels?.length) {
+    return {
+      description: '该租户还没有默认通知通道，建议先完成配置再建立测试记录。',
+      actions: [
+        {label: '编辑租户通道', action: 'edit_analysis_tenant'}
+      ]
+    };
+  }
+  return {
+    description: '该租户在当前时间窗口内没有测试记录，建议立即测试以确认当前通道状态。',
+    actions: [
+      {label: '立即测试', action: 'retest_analysis_tenant'}
+    ]
+  };
+});
 const planOptions = computed(() => {
   const options = new Set<string>();
   planList.value.forEach((plan) => {
@@ -1356,6 +1473,23 @@ const handleNotificationSuggestionAction = async (action?: string) => {
       return;
     }
     await handleOpenNotificationAnalysisByRecord(failedRecord);
+    return;
+  }
+  if (action === 'focus_recent_tests') {
+    notificationSectionState.recentTests = true;
+    ElMessage.success('已展开最近通知通道测试记录，请继续查看。');
+    return;
+  }
+  if (action === 'edit_analysis_tenant') {
+    handleEditNotificationAnalysisTenant();
+    return;
+  }
+  if (action === 'retest_analysis_tenant') {
+    await handleRetestNotificationAnalysisTenant();
+    return;
+  }
+  if (action === 'focus_tenant_recent_tests') {
+    ElMessage.success('请继续查看当前租户分析抽屉中的最近测试记录。');
   }
 };
 
@@ -2085,13 +2219,17 @@ refreshTenantData();
           {{ notificationHealth?.summary || '暂未获取到通知通道健康信息。' }}
         </div>
         <div v-if="!notificationHealth?.issues?.length" class="empty-state-block">
-          <el-empty description="当前没有默认通知通道风险租户"/>
+          <el-empty :description="notificationHealthEmptyState.description"/>
           <div class="empty-state-actions">
-            <el-button size="small" @click="handleNotificationSuggestionAction('open_first_tenant_config')">
-              配置租户通道
-            </el-button>
-            <el-button size="small" type="primary" plain @click="handleNotificationSuggestionAction('test_first_tenant')">
-              建立测试基线
+            <el-button
+              v-for="item in notificationHealthEmptyState.actions"
+              :key="`health-empty-${item.action}`"
+              size="small"
+              :type="item.action === 'review_system_config' ? undefined : 'primary'"
+              :plain="item.action !== 'review_system_config'"
+              @click="handleNotificationSuggestionAction(item.action)"
+            >
+              {{ item.label }}
             </el-button>
           </div>
         </div>
@@ -2216,10 +2354,15 @@ refreshTenantData();
           <el-card shadow="never" class="failure-stats-card">
             <template #header>失败通道 Top</template>
             <div v-if="!(notificationFailureStats?.topFailingChannels || []).length" class="empty-state-block">
-              <el-empty description="暂无失败通道统计"/>
+              <el-empty :description="notificationFailureEmptyState.description"/>
               <div class="empty-state-actions">
-                <el-button size="small" @click="handleNotificationSuggestionAction('test_first_tenant')">
-                  发起一次测试
+                <el-button
+                  v-for="item in notificationFailureEmptyState.actions"
+                  :key="`failure-channel-empty-${item.action}`"
+                  size="small"
+                  @click="handleNotificationSuggestionAction(item.action)"
+                >
+                  {{ item.label }}
                 </el-button>
               </div>
             </div>
@@ -2238,10 +2381,15 @@ refreshTenantData();
           <el-card shadow="never" class="failure-stats-card">
             <template #header>失败原因 Top</template>
             <div v-if="!(notificationFailureStats?.topFailureReasons || []).length" class="empty-state-block">
-              <el-empty description="暂无失败原因统计"/>
+              <el-empty :description="notificationFailureEmptyState.description"/>
               <div class="empty-state-actions">
-                <el-button size="small" @click="handleNotificationSuggestionAction('test_first_tenant')">
-                  发起一次测试
+                <el-button
+                  v-for="item in notificationFailureEmptyState.actions"
+                  :key="`failure-reason-empty-${item.action}`"
+                  size="small"
+                  @click="handleNotificationSuggestionAction(item.action)"
+                >
+                  {{ item.label }}
                 </el-button>
               </div>
             </div>
@@ -2335,13 +2483,17 @@ refreshTenantData();
         v-if="!recentNotificationTests.length && !recentNotificationTestsLoading"
         class="empty-state-block"
       >
-        <el-empty description="最近暂无通知通道测试记录"/>
+        <el-empty :description="notificationRecentEmptyState.description"/>
         <div class="empty-state-actions">
-          <el-button size="small" @click="handleNotificationSuggestionAction('open_first_tenant_config')">
-            配置租户通道
-          </el-button>
-          <el-button size="small" type="primary" plain @click="handleNotificationSuggestionAction('test_first_tenant')">
-            立即测试
+          <el-button
+            v-for="item in notificationRecentEmptyState.actions"
+            :key="`recent-empty-${item.action}`"
+            size="small"
+            :type="item.action === 'open_first_tenant_config' ? undefined : 'primary'"
+            :plain="item.action !== 'open_first_tenant_config'"
+            @click="handleNotificationSuggestionAction(item.action)"
+          >
+            {{ item.label }}
           </el-button>
         </div>
       </div>
@@ -2830,10 +2982,15 @@ refreshTenantData();
             <el-card shadow="never" class="failure-stats-card">
               <template #header>失败通道 Top</template>
             <div v-if="!(tenantNotificationFailureStats?.topFailingChannels || []).length" class="empty-state-block">
-              <el-empty description="暂无失败通道统计"/>
+              <el-empty :description="tenantFailureEmptyState.description"/>
               <div class="empty-state-actions">
-                <el-button size="small" @click="handleRetestNotificationAnalysisTenant">
-                  立即复测
+                <el-button
+                  v-for="item in tenantFailureEmptyState.actions"
+                  :key="`tenant-failure-channel-empty-${item.action}`"
+                  size="small"
+                  @click="handleNotificationSuggestionAction(item.action)"
+                >
+                  {{ item.label }}
                 </el-button>
               </div>
             </div>
@@ -2852,10 +3009,15 @@ refreshTenantData();
             <el-card shadow="never" class="failure-stats-card">
               <template #header>失败原因 Top</template>
               <div v-if="!(tenantNotificationFailureStats?.topFailureReasons || []).length" class="empty-state-block">
-                <el-empty description="暂无失败原因统计"/>
+                <el-empty :description="tenantFailureEmptyState.description"/>
                 <div class="empty-state-actions">
-                  <el-button size="small" @click="handleRetestNotificationAnalysisTenant">
-                    立即复测
+                  <el-button
+                    v-for="item in tenantFailureEmptyState.actions"
+                    :key="`tenant-failure-reason-empty-${item.action}`"
+                    size="small"
+                    @click="handleNotificationSuggestionAction(item.action)"
+                  >
+                    {{ item.label }}
                   </el-button>
                 </div>
               </div>
@@ -2874,13 +3036,17 @@ refreshTenantData();
           <div class="analysis-history-section">
             <div class="analysis-section-title">最近测试记录</div>
             <div v-if="!tenantRecentNotificationTests.length" class="empty-state-block">
-              <el-empty description="该租户最近暂无通知通道测试记录"/>
+              <el-empty :description="tenantRecentEmptyState.description"/>
               <div class="empty-state-actions">
-                <el-button size="small" @click="handleEditNotificationAnalysisTenant">
-                  编辑租户通道
-                </el-button>
-                <el-button size="small" type="primary" plain @click="handleRetestNotificationAnalysisTenant">
-                  立即测试
+                <el-button
+                  v-for="item in tenantRecentEmptyState.actions"
+                  :key="`tenant-recent-empty-${item.action}`"
+                  size="small"
+                  :type="item.action === 'retest_analysis_tenant' ? 'primary' : undefined"
+                  :plain="item.action === 'retest_analysis_tenant'"
+                  @click="handleNotificationSuggestionAction(item.action)"
+                >
+                  {{ item.label }}
                 </el-button>
               </div>
             </div>
