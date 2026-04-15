@@ -55,11 +55,16 @@ const orgTemplateList = ref<OrgTemplateView[]>([]);
 const dialogVisible = ref(false);
 const lifecycleDialogVisible = ref(false);
 const notificationTestDialogVisible = ref(false);
+const notificationAnalysisDrawerVisible = ref(false);
 const lifecycleTargetTenant = ref<TenantView | null>(null);
 const editingId = ref<number | null>(null);
 const notificationTestLoading = ref(false);
+const notificationAnalysisLoading = ref(false);
 const notificationTestContext = ref('');
 const notificationTestResult = ref<TenantNotificationChannelTestView | null>(null);
+const notificationAnalysisTenant = ref<TenantView | null>(null);
+const tenantNotificationFailureStats = ref<TenantNotificationChannelFailureStatsView | null>(null);
+const tenantRecentNotificationTests = ref<TenantNotificationChannelRecentTestView[]>([]);
 const initConfig = ref(false);
 const notificationIssueMap = computed(() => {
   const map = new Map<string, TenantNotificationChannelIssueView>();
@@ -69,6 +74,13 @@ const notificationIssueMap = computed(() => {
     }
   });
   return map;
+});
+const notificationAnalysisIssue = computed(() => {
+  const tenantId = notificationAnalysisTenant.value?.tenantId;
+  if (!tenantId) {
+    return null;
+  }
+  return notificationIssueMap.value.get(tenantId) || null;
 });
 const planOptions = computed(() => {
   const options = new Set<string>();
@@ -580,6 +592,14 @@ const handleTestFormNotificationChannels = async () => {
     });
     await loadNotificationFailureStats();
     await loadRecentNotificationTests();
+    if (
+      editingId.value
+      && notificationAnalysisDrawerVisible.value
+      && notificationAnalysisTenant.value?.tenantId
+      && notificationAnalysisTenant.value.tenantId === form.tenantId
+    ) {
+      await loadTenantNotificationAnalysis(notificationAnalysisTenant.value, false);
+    }
     notificationTestContext.value = editingId.value ? '当前租户配置' : '开户表单配置';
     notificationTestDialogVisible.value = true;
     ElMessage.success(notificationTestResult.value.success ? '通知通道测试通过' : '通知通道测试已完成，请查看诊断');
@@ -611,6 +631,9 @@ const handleTestTenantNotificationChannels = async (row: TenantView) => {
     });
     await loadNotificationFailureStats();
     await loadRecentNotificationTests();
+    if (notificationAnalysisDrawerVisible.value && notificationAnalysisTenant.value?.tenantId === row.tenantId) {
+      await loadTenantNotificationAnalysis(row, false);
+    }
     notificationTestContext.value = `租户列表 / ${row.tenantName}`;
     notificationTestDialogVisible.value = true;
     ElMessage.success(notificationTestResult.value.success ? '通知通道测试通过' : '通知通道测试已完成，请查看诊断');
@@ -619,6 +642,49 @@ const handleTestTenantNotificationChannels = async (row: TenantView) => {
   } finally {
     notificationTestLoading.value = false;
   }
+};
+
+/**
+ * 加载指定租户的通知通道分析。
+ *
+ * @param row 租户信息
+ * @param openDrawer 是否打开抽屉
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const loadTenantNotificationAnalysis = async (row: TenantView, openDrawer = true) => {
+  if (!row.tenantId) {
+    ElMessage.warning('当前租户缺少 tenantId，无法查看通知分析');
+    return;
+  }
+  notificationAnalysisTenant.value = row;
+  if (openDrawer) {
+    notificationAnalysisDrawerVisible.value = true;
+  }
+  notificationAnalysisLoading.value = true;
+  try {
+    const [stats, recentTests] = await Promise.all([
+      fetchTenantNotificationChannelFailureStats({tenantId: row.tenantId, limit: 100}),
+      fetchRecentTenantNotificationChannelTests({tenantId: row.tenantId, limit: 10})
+    ]);
+    tenantNotificationFailureStats.value = stats;
+    tenantRecentNotificationTests.value = recentTests;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载租户通知分析失败');
+  } finally {
+    notificationAnalysisLoading.value = false;
+  }
+};
+
+/**
+ * 打开租户通知通道分析抽屉。
+ *
+ * @param row 租户信息
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleOpenNotificationAnalysis = async (row: TenantView) => {
+  await loadTenantNotificationAnalysis(row, true);
 };
 
 /**
@@ -1449,10 +1515,17 @@ refreshTenantData();
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="180"/>
-        <el-table-column label="操作" width="500">
+        <el-table-column label="操作" width="590">
           <template #default="scope">
             <div class="row-actions">
               <el-button size="small" :disabled="!isSysAdmin" @click="handleEdit(scope.row)">编辑</el-button>
+              <el-button
+                size="small"
+                :disabled="!isSysAdmin"
+                @click="handleOpenNotificationAnalysis(scope.row)"
+              >
+                通知分析
+              </el-button>
               <el-button
                 size="small"
                 type="info"
@@ -1724,6 +1797,157 @@ refreshTenantData();
         <el-button type="primary" @click="notificationTestDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <el-drawer
+      v-model="notificationAnalysisDrawerVisible"
+      title="租户通知通道分析"
+      size="760px"
+      :destroy-on-close="false"
+    >
+      <template v-if="notificationAnalysisTenant">
+        <div class="analysis-header">
+          <div class="analysis-title">{{ notificationAnalysisTenant.tenantName || '未命名租户' }}</div>
+          <div class="analysis-subtitle">{{ notificationAnalysisTenant.tenantId || '--' }}</div>
+          <div class="analysis-actions">
+            <el-button size="small" :loading="notificationAnalysisLoading" @click="loadTenantNotificationAnalysis(notificationAnalysisTenant)">
+              刷新分析
+            </el-button>
+            <el-button
+              size="small"
+              type="primary"
+              :disabled="!notificationAnalysisTenant.notificationChannels?.length || notificationTestLoading"
+              @click="handleTestTenantNotificationChannels(notificationAnalysisTenant)"
+            >
+              重新测试
+            </el-button>
+          </div>
+        </div>
+
+        <div class="analysis-channel-block">
+          <div class="summary-label">当前默认通知通道</div>
+          <div v-if="notificationAnalysisTenant.notificationChannels?.length" class="channel-list">
+            <el-tag
+              v-for="channel in notificationAnalysisTenant.notificationChannels"
+              :key="`analysis-${notificationAnalysisTenant.tenantId}-${channel}`"
+              size="small"
+              effect="plain"
+            >
+              {{ resolveNotificationChannelLabel(channel) }}
+            </el-tag>
+          </div>
+          <div v-else class="toolbar-tip">该租户尚未配置默认通知通道。</div>
+          <div v-if="notificationAnalysisIssue" class="analysis-risk-box">
+            <div class="analysis-risk-title">当前风险</div>
+            <div class="analysis-risk-text">{{ notificationAnalysisIssue.reason }}</div>
+            <div class="analysis-risk-text">{{ notificationAnalysisIssue.suggestion }}</div>
+          </div>
+        </div>
+
+        <div v-loading="notificationAnalysisLoading">
+          <div class="analysis-summary-grid">
+            <div class="channel-health-item">
+              <div class="summary-label">样本测试数</div>
+              <div class="summary-value">{{ tenantNotificationFailureStats?.totalTests ?? 0 }}</div>
+            </div>
+            <div class="channel-health-item">
+              <div class="summary-label">失败测试数</div>
+              <div class="summary-value danger">{{ tenantNotificationFailureStats?.failedTests ?? 0 }}</div>
+            </div>
+            <div class="channel-health-item">
+              <div class="summary-label">样本成功率</div>
+              <div class="summary-value success">{{ (tenantNotificationFailureStats?.successRate ?? 0).toFixed(2) }}%</div>
+            </div>
+          </div>
+
+          <div class="channel-health-summary">
+            {{ tenantNotificationFailureStats?.summary || '暂无该租户的通知通道统计样本。' }}
+          </div>
+
+          <div class="failure-stats-grid">
+            <el-card shadow="never" class="failure-stats-card">
+              <template #header>失败通道 Top</template>
+              <el-empty
+                v-if="!(tenantNotificationFailureStats?.topFailingChannels || []).length"
+                description="暂无失败通道统计"
+              />
+              <el-table
+                v-else
+                :data="tenantNotificationFailureStats?.topFailingChannels || []"
+                border
+                size="small"
+              >
+                <el-table-column label="通道" min-width="160">
+                  <template #default="scope">{{ resolveNotificationChannelLabel(scope.row.channel) }}</template>
+                </el-table-column>
+                <el-table-column prop="failureCount" label="失败次数" width="100"/>
+              </el-table>
+            </el-card>
+            <el-card shadow="never" class="failure-stats-card">
+              <template #header>失败原因 Top</template>
+              <el-empty
+                v-if="!(tenantNotificationFailureStats?.topFailureReasons || []).length"
+                description="暂无失败原因统计"
+              />
+              <el-table
+                v-else
+                :data="tenantNotificationFailureStats?.topFailureReasons || []"
+                border
+                size="small"
+              >
+                <el-table-column prop="reason" label="失败原因" min-width="240" show-overflow-tooltip/>
+                <el-table-column prop="count" label="次数" width="80"/>
+              </el-table>
+            </el-card>
+          </div>
+
+          <div class="analysis-history-section">
+            <div class="analysis-section-title">最近测试记录</div>
+            <el-empty
+              v-if="!tenantRecentNotificationTests.length"
+              description="该租户最近暂无通知通道测试记录"
+            />
+            <el-table
+              v-else
+              :data="tenantRecentNotificationTests"
+              border
+              size="small"
+              max-height="360"
+            >
+              <el-table-column label="测试时间" min-width="170">
+                <template #default="scope">{{ formatDateTime(scope.row.createTime) }}</template>
+              </el-table-column>
+              <el-table-column label="操作人" min-width="120">
+                <template #default="scope">{{ scope.row.operatorUsername || '-' }}</template>
+              </el-table-column>
+              <el-table-column label="测试通道" min-width="180">
+                <template #default="scope">
+                  <div class="channel-list">
+                    <el-tag
+                      v-for="channel in scope.row.requestedChannels || []"
+                      :key="`${scope.row.auditLogId}-drawer-${channel}`"
+                      size="small"
+                      effect="plain"
+                    >
+                      {{ resolveNotificationChannelLabel(channel) }}
+                    </el-tag>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="结果" width="100">
+                <template #default="scope">
+                  <el-tag :type="resolveNotificationTestType(scope.row.success)">
+                    {{ scope.row.success ? '成功' : '失败' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="摘要" min-width="260" show-overflow-tooltip>
+                <template #default="scope">{{ scope.row.summary || '-' }}</template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -1802,6 +2026,69 @@ refreshTenantData();
 
 .failure-stats-card {
   border-radius: 12px;
+}
+
+.analysis-header {
+  margin-bottom: 16px;
+}
+
+.analysis-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.analysis-subtitle {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.analysis-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.analysis-channel-block {
+  margin-bottom: 16px;
+}
+
+.analysis-risk-box {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+}
+
+.analysis-risk-title {
+  font-weight: 600;
+  color: #b91c1c;
+  margin-bottom: 6px;
+}
+
+.analysis-risk-text {
+  color: #7f1d1d;
+  line-height: 1.7;
+}
+
+.analysis-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.analysis-history-section {
+  margin-top: 16px;
+}
+
+.analysis-section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 12px;
 }
 
 .workbench-header {
@@ -1996,6 +2283,7 @@ refreshTenantData();
 
   .channel-health-tag-group,
   .failure-stats-grid,
+  .analysis-actions,
   .form-inline-actions,
   .notification-test-result-bar {
     display: flex;
