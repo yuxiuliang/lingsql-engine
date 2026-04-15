@@ -72,6 +72,7 @@ const notificationAnalysisTenant = ref<TenantView | null>(null);
 const tenantNotificationFailureStats = ref<TenantNotificationChannelFailureStatsView | null>(null);
 const tenantRecentNotificationTests = ref<TenantNotificationChannelRecentTestView[]>([]);
 const notificationAnalysisUpdatedAt = ref('');
+const notificationSummaryTone = ref<'internal' | 'customer'>('internal');
 const notificationSectionState = reactive({
   guidance: true,
   health: true,
@@ -135,6 +136,48 @@ const notificationOverviewCards = computed(() => {
       statusText: totalTests <= 0 ? '无样本' : successRate >= 95 ? '健康' : successRate >= 80 ? '关注' : '风险'
     }
   ];
+});
+
+const notificationFilterChips = computed(() => {
+  const chips: Array<{key: string; label: string}> = [];
+  if (notificationTimeRange.value.length === 2) {
+    chips.push({
+      key: 'timeRange',
+      label: `时间：${notificationTimeRange.value[0]} ~ ${notificationTimeRange.value[1]}`
+    });
+  }
+  if (recentNotificationFilter.tenantId) {
+    const tenant = tenants.value.find((item) => item.tenantId === recentNotificationFilter.tenantId);
+    chips.push({
+      key: 'tenantId',
+      label: `租户：${tenant?.tenantName || recentNotificationFilter.tenantId}`
+    });
+  }
+  if (recentNotificationFilter.success === '1' || recentNotificationFilter.success === '0') {
+    chips.push({
+      key: 'success',
+      label: `结果：${recentNotificationFilter.success === '1' ? '成功' : '失败'}`
+    });
+  }
+  if (recentNotificationFilter.channel) {
+    chips.push({
+      key: 'channel',
+      label: `通道：${resolveNotificationChannelLabel(recentNotificationFilter.channel)}`
+    });
+  }
+  if (recentNotificationFilter.operatorKeyword.trim()) {
+    chips.push({
+      key: 'operatorKeyword',
+      label: `操作人：${recentNotificationFilter.operatorKeyword.trim()}`
+    });
+  }
+  if (recentNotificationFilter.limit !== 10) {
+    chips.push({
+      key: 'limit',
+      label: `样本：最近 ${recentNotificationFilter.limit} 条`
+    });
+  }
+  return chips;
 });
 
 const notificationSectionMeta = computed(() => {
@@ -556,6 +599,19 @@ const copyText = async (text: string) => {
  */
 const buildNotificationGlobalSummary = () => {
   const configuredChannels = (notificationHealth.value?.configuredChannels || []).map(resolveNotificationChannelLabel).join('、') || '无';
+  if (notificationSummaryTone.value === 'customer') {
+    return [
+      '【客户通知能力摘要】',
+      `观察窗口：${resolveNotificationTimeRangeText()}`,
+      `通知能力状态：${notificationHealth.value?.alertEnabled ? '已启用' : '待启用'}`,
+      `已接入通道：${configuredChannels}`,
+      `已配置默认通知租户：${notificationHealth.value?.tenantUsingNotificationChannels ?? 0}`,
+      `待关注租户：${notificationHealth.value?.tenantIssueCount ?? 0}`,
+      `样本测试成功率：${(notificationFailureStats.value?.successRate ?? 0).toFixed(2)}%`,
+      `当前说明：${notificationFailureStats.value?.summary || notificationHealth.value?.summary || '暂无说明'}`,
+      `建议：${(notificationHealth.value?.tenantIssueCount ?? 0) > 0 ? '优先处理风险租户并完成复测。' : '保持当前配置并持续巡检。'}`
+    ].join('\n');
+  }
   return [
     '【通知治理全局摘要】',
     `统计时间窗口：${resolveNotificationTimeRangeText()}`,
@@ -583,6 +639,17 @@ const buildTenantNotificationSummary = () => {
     return '';
   }
   const channels = (notificationAnalysisTenant.value.notificationChannels || []).map(resolveNotificationChannelLabel).join('、') || '未配置';
+  if (notificationSummaryTone.value === 'customer') {
+    return [
+      '【租户通知状态摘要】',
+      `租户：${notificationAnalysisTenant.value.tenantName || '未命名租户'}`,
+      `观察窗口：${resolveNotificationTimeRangeText()}`,
+      `默认通知通道：${channels}`,
+      `当前状态：${notificationAnalysisIssue.value?.reason || '当前未发现明显风险'}`,
+      `样本成功率：${(tenantNotificationFailureStats.value?.successRate ?? 0).toFixed(2)}%`,
+      `建议：${notificationAnalysisIssue.value?.suggestion || '保持当前配置并按需持续测试。'}`
+    ].join('\n');
+  }
   return [
     '【租户通知分析摘要】',
     `租户：${notificationAnalysisTenant.value.tenantName || '未命名租户'}（${notificationAnalysisTenant.value.tenantId || '--'}）`,
@@ -1561,6 +1628,34 @@ const handleRetestNotificationAnalysisTenant = async () => {
 };
 
 /**
+ * 清除指定通知筛选条件。
+ *
+ * @param key 筛选键
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const clearNotificationFilterChip = async (key: string) => {
+  if (key === 'timeRange') {
+    notificationTimeRange.value = [];
+  } else if (key === 'tenantId') {
+    recentNotificationFilter.tenantId = '';
+  } else if (key === 'success') {
+    recentNotificationFilter.success = '';
+  } else if (key === 'channel') {
+    recentNotificationFilter.channel = '';
+  } else if (key === 'operatorKeyword') {
+    recentNotificationFilter.operatorKeyword = '';
+  } else if (key === 'limit') {
+    recentNotificationFilter.limit = 10;
+  }
+  await loadNotificationFailureStats();
+  await loadRecentNotificationTests();
+  if (notificationAnalysisDrawerVisible.value && notificationAnalysisTenant.value) {
+    await loadTenantNotificationAnalysis(notificationAnalysisTenant.value, false);
+  }
+};
+
+/**
  * 删除租户。
  *
  * @param row 租户信息
@@ -2049,6 +2144,10 @@ refreshTenantData();
     </div>
 
     <div class="section-actions">
+      <el-radio-group v-model="notificationSummaryTone" size="small">
+        <el-radio-button value="internal">内部运营口径</el-radio-button>
+        <el-radio-button value="customer">客户同步口径</el-radio-button>
+      </el-radio-group>
       <el-button size="small" type="primary" plain @click="handleCopyNotificationGlobalSummary">
         复制全局通知摘要
       </el-button>
@@ -2921,6 +3020,10 @@ refreshTenantData();
           <div class="analysis-subtitle">{{ notificationAnalysisTenant.tenantId || '--' }}</div>
           <div class="workbench-time">分析更新时间：{{ notificationAnalysisUpdatedAt || '--' }}</div>
           <div class="analysis-actions">
+            <el-radio-group v-model="notificationSummaryTone" size="small">
+              <el-radio-button value="internal">内部</el-radio-button>
+              <el-radio-button value="customer">客户</el-radio-button>
+            </el-radio-group>
             <el-button size="small" type="primary" plain @click="handleCopyTenantNotificationSummary">
               复制租户摘要
             </el-button>
