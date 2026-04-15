@@ -85,6 +85,76 @@ const notificationAnalysisIssue = computed(() => {
   }
   return notificationIssueMap.value.get(tenantId) || null;
 });
+
+const notificationNextSteps = computed(() => {
+  const steps: Array<{
+    key: string;
+    level: 'danger' | 'warning' | 'success' | 'info';
+    title: string;
+    description: string;
+    actionLabel?: string;
+    action?: string;
+  }> = [];
+  if (notificationHealth.value?.alertEnabled === false) {
+    steps.push({
+      key: 'alert-disabled',
+      level: 'danger',
+      title: '先启用系统通知总开关',
+      description: '当前 lingsql.alert.enabled 仍为关闭状态，租户默认通知通道与测试分析都无法真正生效。',
+      actionLabel: '查看说明',
+      action: 'review_system_config'
+    });
+  }
+  if ((notificationHealth.value?.tenantIssueCount ?? 0) > 0) {
+    steps.push({
+      key: 'risk-tenant',
+      level: 'danger',
+      title: '优先处理风险租户',
+      description: `当前有 ${notificationHealth.value?.tenantIssueCount ?? 0} 个租户引用了不可用通知通道，建议先逐个下钻核查。`,
+      actionLabel: '打开首个风险租户',
+      action: 'open_first_risk'
+    });
+  }
+  if ((notificationHealth.value?.tenantUsingNotificationChannels ?? 0) <= 0) {
+    steps.push({
+      key: 'no-tenant-config',
+      level: 'warning',
+      title: '为关键租户配置默认通知通道',
+      description: '目前还没有任何租户设置默认通知通道，数字员工只能依赖任务级单独配置，运营统一治理能力不足。',
+      actionLabel: '打开首个租户配置',
+      action: 'open_first_tenant_config'
+    });
+  }
+  if ((recentNotificationTests.value?.length ?? 0) <= 0) {
+    steps.push({
+      key: 'no-test-record',
+      level: 'warning',
+      title: '先做一次基线测试',
+      description: '当前没有最近测试记录，建议至少对一个已配置通道的租户发起一次通知测试，建立可观测基线。',
+      actionLabel: '测试首个已配置租户',
+      action: 'test_first_tenant'
+    });
+  }
+  if ((notificationFailureStats.value?.failedTests ?? 0) > 0) {
+    steps.push({
+      key: 'review-failures',
+      level: 'warning',
+      title: '关注失败通道与失败原因 Top',
+      description: notificationFailureStats.value?.summary || '当前已有失败样本，建议先处理高频失败问题，再扩大通知覆盖面。',
+      actionLabel: '分析最新失败租户',
+      action: 'open_first_failed_record'
+    });
+  }
+  if (!steps.length) {
+    steps.push({
+      key: 'all-good',
+      level: 'success',
+      title: '当前通知治理状态良好',
+      description: '系统通道、租户默认配置、最近测试与失败分布都比较健康，可以继续扩大租户覆盖范围或保持巡检节奏。'
+    });
+  }
+  return steps.slice(0, 4);
+});
 const planOptions = computed(() => {
   const options = new Set<string>();
   planList.value.forEach((plan) => {
@@ -944,6 +1014,58 @@ const handleRetestNotificationIssue = async (issue: TenantNotificationChannelIss
 };
 
 /**
+ * 执行通知分析建议动作。
+ *
+ * @param action 动作编码
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const handleNotificationSuggestionAction = async (action?: string) => {
+  if (!action) {
+    return;
+  }
+  if (action === 'review_system_config') {
+    ElMessage.info('请在部署配置中启用 lingsql.alert.enabled，并补齐缺失的 Webhook 通道后再刷新预检。');
+    return;
+  }
+  if (action === 'open_first_risk') {
+    const issue = notificationHealth.value?.issues?.[0];
+    if (!issue) {
+      ElMessage.info('当前没有可下钻的风险租户。');
+      return;
+    }
+    await handleOpenNotificationAnalysisByIssue(issue);
+    return;
+  }
+  if (action === 'open_first_tenant_config') {
+    const tenant = tenants.value[0];
+    if (!tenant) {
+      ElMessage.info('当前暂无租户可配置。');
+      return;
+    }
+    handleEdit(tenant);
+    return;
+  }
+  if (action === 'test_first_tenant') {
+    const tenant = tenants.value.find((item) => (item.notificationChannels || []).length > 0);
+    if (!tenant) {
+      ElMessage.info('请先在租户列表中为至少一个租户配置默认通知通道。');
+      return;
+    }
+    await handleTestTenantNotificationChannels(tenant);
+    return;
+  }
+  if (action === 'open_first_failed_record') {
+    const failedRecord = recentNotificationTests.value.find((item) => item.success !== true);
+    if (!failedRecord) {
+      ElMessage.info('当前时间窗口内没有失败记录。');
+      return;
+    }
+    await handleOpenNotificationAnalysisByRecord(failedRecord);
+  }
+};
+
+/**
  * 打开通知通道历史测试详情。
  *
  * @param record 历史测试记录
@@ -1479,6 +1601,33 @@ refreshTenantData();
           </template>
         </el-table-column>
       </el-table>
+    </el-card>
+
+    <el-card class="card channel-guidance-card" shadow="never">
+      <template #header>
+        <div class="workbench-header">
+          <span>通知分析下一步建议</span>
+          <span class="toolbar-tip">根据当前配置、测试和失败样本自动生成</span>
+        </div>
+      </template>
+      <div class="guidance-grid">
+        <div
+          v-for="item in notificationNextSteps"
+          :key="item.key"
+          class="guidance-card"
+        >
+          <div class="guidance-header">
+            <el-tag :type="item.level">{{ item.level === 'danger' ? '优先处理' : item.level === 'warning' ? '建议处理' : item.level === 'success' ? '状态良好' : '提示' }}</el-tag>
+            <div class="guidance-title">{{ item.title }}</div>
+          </div>
+          <div class="guidance-description">{{ item.description }}</div>
+          <div v-if="item.actionLabel" class="guidance-actions">
+            <el-button size="small" type="primary" plain @click="handleNotificationSuggestionAction(item.action)">
+              {{ item.actionLabel }}
+            </el-button>
+          </div>
+        </div>
+      </div>
     </el-card>
 
     <el-card class="card channel-health-card" shadow="never">
@@ -2478,8 +2627,48 @@ refreshTenantData();
   margin-bottom: 16px;
 }
 
+.channel-guidance-card {
+  margin-bottom: 16px;
+}
+
 .channel-history-card {
   margin-bottom: 16px;
+}
+
+.guidance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.guidance-card {
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  padding: 16px;
+}
+
+.guidance-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.guidance-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.guidance-description {
+  color: #334155;
+  line-height: 1.8;
+}
+
+.guidance-actions {
+  margin-top: 12px;
 }
 
 .failure-stats-grid {
