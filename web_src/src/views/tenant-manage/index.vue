@@ -46,6 +46,9 @@ const lifecycleWorkbench = ref<TenantLifecycleWorkbenchView | null>(null);
 const notificationFailureStats = ref<TenantNotificationChannelFailureStatsView | null>(null);
 const notificationHealth = ref<TenantNotificationChannelHealthView | null>(null);
 const recentNotificationTests = ref<TenantNotificationChannelRecentTestView[]>([]);
+const notificationHealthUpdatedAt = ref('');
+const notificationFailureStatsUpdatedAt = ref('');
+const recentNotificationTestsUpdatedAt = ref('');
 const loading = ref(false);
 const workbenchLoading = ref(false);
 const notificationFailureStatsLoading = ref(false);
@@ -68,6 +71,7 @@ const notificationHistoryDetailRecord = ref<TenantNotificationChannelRecentTestV
 const notificationAnalysisTenant = ref<TenantView | null>(null);
 const tenantNotificationFailureStats = ref<TenantNotificationChannelFailureStatsView | null>(null);
 const tenantRecentNotificationTests = ref<TenantNotificationChannelRecentTestView[]>([]);
+const notificationAnalysisUpdatedAt = ref('');
 const notificationSectionState = reactive({
   guidance: true,
   health: true,
@@ -417,6 +421,15 @@ const formatDateTimeFilterValue = (value: Date) => {
 };
 
 /**
+ * 生成当前刷新时间文案。
+ *
+ * @return 文案
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const nowText = () => new Date().toLocaleString('zh-CN', {hour12: false});
+
+/**
  * 应用通知时间窗口快捷预设。
  *
  * @param preset 预设
@@ -716,6 +729,7 @@ const loadNotificationHealth = async () => {
   notificationHealthLoading.value = true;
   try {
     notificationHealth.value = await fetchTenantNotificationChannelHealth();
+    notificationHealthUpdatedAt.value = nowText();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载通知通道健康情况失败');
   } finally {
@@ -736,6 +750,7 @@ const loadNotificationFailureStats = async () => {
       ...resolveNotificationTimeRangeParams(),
       limit: 100
     });
+    notificationFailureStatsUpdatedAt.value = nowText();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载通知通道失败统计失败');
   } finally {
@@ -760,6 +775,7 @@ const loadRecentNotificationTests = async () => {
       ...resolveNotificationTimeRangeParams(),
       limit: recentNotificationFilter.limit
     });
+    recentNotificationTestsUpdatedAt.value = nowText();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载最近测试记录失败');
   } finally {
@@ -1085,6 +1101,7 @@ const loadTenantNotificationAnalysis = async (row: TenantView, openDrawer = true
     ]);
     tenantNotificationFailureStats.value = stats;
     tenantRecentNotificationTests.value = recentTests;
+    notificationAnalysisUpdatedAt.value = nowText();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '加载租户通知分析失败');
   } finally {
@@ -1878,6 +1895,7 @@ refreshTenantData();
             <el-tag size="small" :type="notificationSectionMeta.health.type">{{ notificationSectionMeta.health.text }}</el-tag>
           </div>
           <div class="analysis-actions">
+            <span class="workbench-time">更新时间：{{ notificationHealthUpdatedAt || '--' }}</span>
             <el-button link type="primary" :disabled="notificationHealthLoading" @click="loadNotificationHealth">刷新预检</el-button>
             <el-button link type="primary" @click="toggleNotificationSection('health')">
               {{ notificationSectionState.health ? '收起' : '展开' }}
@@ -2022,6 +2040,7 @@ refreshTenantData();
             <el-tag size="small" :type="notificationSectionMeta.failureStats.type">{{ notificationSectionMeta.failureStats.text }}</el-tag>
           </div>
           <div class="analysis-actions">
+            <span class="workbench-time">更新时间：{{ notificationFailureStatsUpdatedAt || '--' }}</span>
             <el-button link type="primary" :disabled="notificationFailureStatsLoading" @click="loadNotificationFailureStats">刷新统计</el-button>
             <el-button link type="primary" @click="toggleNotificationSection('failureStats')">
               {{ notificationSectionState.failureStats ? '收起' : '展开' }}
@@ -2121,6 +2140,7 @@ refreshTenantData();
             <el-tag size="small" :type="notificationSectionMeta.recentTests.type">{{ notificationSectionMeta.recentTests.text }}</el-tag>
           </div>
           <div class="analysis-actions">
+            <span class="workbench-time">更新时间：{{ recentNotificationTestsUpdatedAt || '--' }}</span>
             <el-button link type="primary" :disabled="recentNotificationTestsLoading" @click="loadRecentNotificationTests">刷新记录</el-button>
             <el-button link :disabled="recentNotificationTestsLoading" @click="resetRecentNotificationFilters">重置筛选</el-button>
             <el-button link type="primary" @click="toggleNotificationSection('recentTests')">
@@ -2620,6 +2640,7 @@ refreshTenantData();
         <div class="analysis-header">
           <div class="analysis-title">{{ notificationAnalysisTenant.tenantName || '未命名租户' }}</div>
           <div class="analysis-subtitle">{{ notificationAnalysisTenant.tenantId || '--' }}</div>
+          <div class="workbench-time">分析更新时间：{{ notificationAnalysisUpdatedAt || '--' }}</div>
           <div class="analysis-actions">
             <el-button size="small" :loading="notificationAnalysisLoading" @click="loadTenantNotificationAnalysis(notificationAnalysisTenant)">
               刷新分析
