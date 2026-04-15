@@ -192,6 +192,53 @@ const resolveNotificationTimeRangeParams = () => {
 };
 
 /**
+ * 格式化时间筛选值。
+ *
+ * @param value 日期
+ * @return 字符串
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const formatDateTimeFilterValue = (value: Date) => {
+  const pad = (input: number) => String(input).padStart(2, '0');
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())} ${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`;
+};
+
+/**
+ * 应用通知时间窗口快捷预设。
+ *
+ * @param preset 预设
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+const applyNotificationTimePreset = async (preset: 'today' | '24h' | '7d' | '30d' | 'clear') => {
+  if (preset === 'clear') {
+    notificationTimeRange.value = [];
+  } else {
+    const end = new Date();
+    let start = new Date(end);
+    if (preset === 'today') {
+      start = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 0, 0, 0);
+    } else if (preset === '24h') {
+      start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+    } else if (preset === '7d') {
+      start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (preset === '30d') {
+      start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
+    notificationTimeRange.value = [
+      formatDateTimeFilterValue(start),
+      formatDateTimeFilterValue(end)
+    ];
+  }
+  await loadNotificationFailureStats();
+  await loadRecentNotificationTests();
+  if (notificationAnalysisDrawerVisible.value && notificationAnalysisTenant.value) {
+    await loadTenantNotificationAnalysis(notificationAnalysisTenant.value, false);
+  }
+};
+
+/**
  * 生命周期续期表单定义。
  *
  * @author 余炘洋
@@ -1411,6 +1458,13 @@ refreshTenantData();
         </div>
       </template>
       <div class="recent-filter-bar">
+        <div class="preset-actions">
+          <el-button size="small" @click="applyNotificationTimePreset('today')">今天</el-button>
+          <el-button size="small" @click="applyNotificationTimePreset('24h')">近24小时</el-button>
+          <el-button size="small" @click="applyNotificationTimePreset('7d')">近7天</el-button>
+          <el-button size="small" @click="applyNotificationTimePreset('30d')">近30天</el-button>
+          <el-button size="small" @click="applyNotificationTimePreset('clear')">清空</el-button>
+        </div>
         <el-date-picker
           v-model="notificationTimeRange"
           type="datetimerange"
@@ -2297,6 +2351,12 @@ refreshTenantData();
   margin-bottom: 16px;
 }
 
+.preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .analysis-channel-block {
   margin-bottom: 16px;
 }
@@ -2532,6 +2592,7 @@ refreshTenantData();
   .failure-stats-grid,
   .analysis-actions,
   .recent-filter-bar,
+  .preset-actions,
   .form-inline-actions,
   .notification-test-result-bar {
     display: flex;
