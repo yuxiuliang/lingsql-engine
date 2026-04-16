@@ -82,6 +82,7 @@ const notificationAnalysisSource = ref<null | {
   section: 'health' | 'failureStats' | 'recentTests' | 'tenantList';
 }>(null);
 const notificationSectionState = reactive({
+  attentionQueue: true,
   guidance: true,
   health: true,
   failureStats: true,
@@ -103,6 +104,47 @@ const notificationAnalysisIssue = computed(() => {
     return null;
   }
   return notificationIssueMap.value.get(tenantId) || null;
+});
+const notificationAttentionQueue = computed(() => {
+  const queue: Array<{
+    key: string;
+    priority: 'P0' | 'P1';
+    kind: 'RISK' | 'FAILED_TEST';
+    tenantId?: string;
+    tenantName?: string;
+    title: string;
+    description: string;
+    issue?: TenantNotificationChannelIssueView;
+    record?: TenantNotificationChannelRecentTestView;
+  }> = [];
+  (notificationHealth.value?.issues || []).forEach((issue) => {
+    queue.push({
+      key: `issue-${issue.tenantId}-${(issue.unavailableChannels || []).join('-')}`,
+      priority: notificationHealth.value?.alertEnabled === false ? 'P0' : 'P1',
+      kind: 'RISK',
+      tenantId: issue.tenantId,
+      tenantName: issue.tenantName,
+      title: '默认通知通道存在风险',
+      description: issue.reason || '租户默认通知通道与系统配置不匹配。',
+      issue
+    });
+  });
+  recentNotificationTests.value
+    .filter((item) => item.success !== true)
+    .slice(0, 6)
+    .forEach((record) => {
+      queue.push({
+        key: `record-${record.auditLogId}`,
+        priority: 'P1',
+        kind: 'FAILED_TEST',
+        tenantId: record.tenantId,
+        tenantName: record.tenantName,
+        title: '最近通知测试失败',
+        description: record.summary || '最近一次通知测试返回失败，请及时复核。',
+        record
+      });
+    });
+  return queue.slice(0, 10);
 });
 const notificationOverviewCards = computed(() => {
   const configuredChannels = notificationHealth.value?.configuredChannels?.length ?? 0;
@@ -189,6 +231,11 @@ const notificationFilterChips = computed(() => {
 });
 
 const notificationSectionMeta = computed(() => {
+  const attentionLevel = notificationAttentionQueue.value.some((item) => item.priority === 'P0')
+    ? 'danger'
+    : notificationAttentionQueue.value.length > 0
+      ? 'warning'
+      : 'success';
   const guidanceLevel = notificationNextSteps.value.some((item) => item.level === 'danger')
     ? 'danger'
     : notificationNextSteps.value.some((item) => item.level === 'warning')
@@ -218,6 +265,10 @@ const notificationSectionMeta = computed(() => {
       : 'info';
 
   return {
+    attentionQueue: {
+      type: attentionLevel,
+      text: attentionLevel === 'danger' ? '需优先处理' : attentionLevel === 'warning' ? '待处理' : '清空'
+    },
     guidance: {
       type: guidanceLevel,
       text: guidanceLevel === 'danger' ? '优先处理' : guidanceLevel === 'warning' ? '建议处理' : guidanceLevel === 'success' ? '状态良好' : '提示'
@@ -259,12 +310,14 @@ const resolveSectionCardClass = (type?: string) => {
  */
 const applyNotificationSectionRecommendations = (force = false) => {
   const recommended = {
+    attentionQueue: notificationAttentionQueue.value.length > 0,
     guidance: true,
     health: (notificationHealth.value?.tenantIssueCount ?? 0) > 0 || notificationHealth.value?.alertEnabled === false,
     failureStats: (notificationFailureStats.value?.failedTests ?? 0) > 0,
     recentTests: (recentNotificationTests.value?.length ?? 0) > 0
   };
   if (force) {
+    notificationSectionState.attentionQueue = recommended.attentionQueue;
     notificationSectionState.guidance = recommended.guidance;
     notificationSectionState.health = recommended.health;
     notificationSectionState.failureStats = recommended.failureStats;
@@ -273,6 +326,9 @@ const applyNotificationSectionRecommendations = (force = false) => {
   }
   if (!notificationSectionState.health && recommended.health) {
     notificationSectionState.health = true;
+  }
+  if (!notificationSectionState.attentionQueue && recommended.attentionQueue) {
+    notificationSectionState.attentionQueue = true;
   }
   if (!notificationSectionState.failureStats && recommended.failureStats) {
     notificationSectionState.failureStats = true;
@@ -1532,6 +1588,35 @@ const handleRetestNotificationIssue = async (issue: TenantNotificationChannelIss
   await handleTestTenantNotificationChannels(target);
 };
 
+const handleOpenNotificationAttentionItem = async (item: {
+  kind: 'RISK' | 'FAILED_TEST';
+  issue?: TenantNotificationChannelIssueView;
+  record?: TenantNotificationChannelRecentTestView;
+}) => {
+  if (item.kind === 'RISK' && item.issue) {
+    await handleOpenNotificationAnalysisByIssue(item.issue);
+    return;
+  }
+  if (item.kind === 'FAILED_TEST' && item.record) {
+    await handleOpenNotificationAnalysisByRecord(item.record);
+  }
+};
+
+const handleRetestNotificationAttentionItem = async (item: {
+  kind: 'RISK' | 'FAILED_TEST';
+  issue?: TenantNotificationChannelIssueView;
+  record?: TenantNotificationChannelRecentTestView;
+}) => {
+  if (item.kind === 'RISK' && item.issue) {
+    await handleRetestNotificationIssue(item.issue);
+    return;
+  }
+  if (item.kind === 'FAILED_TEST' && item.record) {
+    const target = buildNotificationTenantContext(item.record.tenantId, item.record.tenantName, item.record.requestedChannels || []);
+    await handleTestTenantNotificationChannels(target);
+  }
+};
+
 /**
  * 执行通知分析建议动作。
  *
@@ -2209,6 +2294,75 @@ refreshTenantData();
       </el-button>
       <span class="toolbar-tip">根据当前风险租户、失败样本和测试记录自动展开关键区块。</span>
     </div>
+
+    <el-card :class="['card', 'channel-queue-card', resolveSectionCardClass(notificationSectionMeta.attentionQueue.type)]" shadow="never">
+      <template #header>
+        <div class="workbench-header">
+          <div class="section-title-with-tag">
+            <span>通知治理关注队列</span>
+            <el-tag size="small" :type="notificationSectionMeta.attentionQueue.type">{{ notificationSectionMeta.attentionQueue.text }}</el-tag>
+          </div>
+          <div class="analysis-actions">
+            <span class="toolbar-tip">按风险租户与最近失败测试自动汇总</span>
+            <el-button link type="primary" @click="toggleNotificationSection('attentionQueue')">
+              {{ notificationSectionState.attentionQueue ? '收起' : '展开' }}
+            </el-button>
+          </div>
+        </div>
+      </template>
+      <div v-show="notificationSectionState.attentionQueue">
+        <div v-if="!notificationAttentionQueue.length" class="empty-state-block">
+          <el-empty description="当前没有需要优先处理的通知治理事项"/>
+          <div class="empty-state-actions">
+            <el-button size="small" @click="handleNotificationSuggestionAction('test_first_tenant')">
+              建立测试基线
+            </el-button>
+          </div>
+        </div>
+        <el-table
+          v-else
+          :data="notificationAttentionQueue"
+          border
+          size="small"
+          max-height="320"
+        >
+          <el-table-column label="优先级" width="90">
+            <template #default="scope">
+              <el-tag :type="resolvePriorityType(scope.row.priority)">
+                {{ scope.row.priority }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="类型" width="110">
+            <template #default="scope">
+              <el-tag :type="scope.row.kind === 'RISK' ? 'warning' : 'danger'">
+                {{ scope.row.kind === 'RISK' ? '风险租户' : '失败测试' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="租户" min-width="180">
+            <template #default="scope">
+              <div>{{ scope.row.tenantName || '未命名租户' }}</div>
+              <div class="toolbar-tip">{{ scope.row.tenantId || '--' }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="title" label="关注点" min-width="160"/>
+          <el-table-column prop="description" label="说明" min-width="280" show-overflow-tooltip/>
+          <el-table-column label="操作" width="180">
+            <template #default="scope">
+              <div class="row-actions">
+                <el-button link type="primary" @click="handleOpenNotificationAttentionItem(scope.row)">
+                  进入分析
+                </el-button>
+                <el-button link type="warning" @click="handleRetestNotificationAttentionItem(scope.row)">
+                  直接复测
+                </el-button>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-card>
 
     <el-card class="card workbench-card" shadow="never">
       <template #header>
@@ -3479,6 +3633,10 @@ refreshTenantData();
 }
 
 .channel-guidance-card {
+  margin-bottom: 16px;
+}
+
+.channel-queue-card {
   margin-bottom: 16px;
 }
 
