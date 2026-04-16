@@ -181,6 +181,22 @@ const notificationAttentionStatusSummary = computed(() => {
     retested: notificationAttentionQueue.value.filter((item) => item.handleStatus === 'RETESTED').length
   };
 });
+
+const buildNotificationAttentionQueueSummary = () => {
+  const currentItems = filteredNotificationAttentionQueue.value;
+  const topRisk = currentItems.find((item) => item.kind === 'RISK');
+  const topFailedRecord = currentItems.find((item) => item.kind === 'FAILED_TEST');
+  return [
+    '【通知治理关注队列摘要】',
+    `当前筛选：优先级=${notificationAttentionPriorityFilter.value}，类型=${notificationAttentionKindFilter.value}，状态=${notificationAttentionStatusFilter.value}`,
+    `待处理：${notificationAttentionStatusSummary.value.todo}`,
+    `已查看：${notificationAttentionStatusSummary.value.viewed}`,
+    `已复测：${notificationAttentionStatusSummary.value.retested}`,
+    `当前显示事项：${currentItems.length}`,
+    `最高优先风险：${topRisk ? `${topRisk.tenantName || topRisk.tenantId} / ${topRisk.description}` : '无'}`,
+    `最近失败测试：${topFailedRecord ? `${topFailedRecord.tenantName || topFailedRecord.tenantId} / ${topFailedRecord.description}` : '无'}`
+  ].join('\n');
+};
 const notificationOverviewCards = computed(() => {
   const configuredChannels = notificationHealth.value?.configuredChannels?.length ?? 0;
   const tenantUsingChannels = notificationHealth.value?.tenantUsingNotificationChannels ?? 0;
@@ -811,6 +827,15 @@ const handleCopyTenantNotificationSummary = async () => {
     ElMessage.success('租户通知摘要已复制');
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '复制租户通知摘要失败');
+  }
+};
+
+const handleCopyAttentionQueueSummary = async () => {
+  try {
+    await copyText(buildNotificationAttentionQueueSummary());
+    ElMessage.success('通知关注队列摘要已复制');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '复制通知关注队列摘要失败');
   }
 };
 
@@ -2448,6 +2473,9 @@ refreshTenantData();
           </div>
           <div class="analysis-actions">
             <span class="toolbar-tip">按风险租户与最近失败测试自动汇总</span>
+            <el-button size="small" type="primary" plain @click="handleCopyAttentionQueueSummary">
+              复制队列摘要
+            </el-button>
             <el-select v-model="notificationAttentionPriorityFilter" size="small" style="width: 120px">
               <el-option label="全部优先级" value="ALL"/>
               <el-option label="P0" value="P0"/>
