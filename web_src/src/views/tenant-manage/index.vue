@@ -40,6 +40,7 @@ import {
 
 const authStore = useAuthStore();
 const NOTIFICATION_FILTER_STORAGE_KEY = 'lingsql:tenant-manage:notification-filters:v1';
+const NOTIFICATION_QUEUE_STATUS_STORAGE_KEY = 'lingsql:tenant-manage:notification-queue-status:v1';
 const tenants = ref<TenantView[]>([]);
 const lifecycleSummary = ref<TenantLifecycleSummaryView | null>(null);
 const lifecycleWorkbench = ref<TenantLifecycleWorkbenchView | null>(null);
@@ -88,6 +89,8 @@ const notificationSectionState = reactive({
   failureStats: true,
   recentTests: true
 });
+const notificationAttentionStatusFilter = ref<'ALL' | 'TODO' | 'VIEWED' | 'RETESTED'>('ALL');
+const notificationAttentionStatusMap = reactive<Record<string, 'TODO' | 'VIEWED' | 'RETESTED'>>({});
 const initConfig = ref(false);
 const notificationIssueMap = computed(() => {
   const map = new Map<string, TenantNotificationChannelIssueView>();
@@ -116,6 +119,7 @@ const notificationAttentionQueue = computed(() => {
     description: string;
     issue?: TenantNotificationChannelIssueView;
     record?: TenantNotificationChannelRecentTestView;
+    handleStatus?: 'TODO' | 'VIEWED' | 'RETESTED';
   }> = [];
   (notificationHealth.value?.issues || []).forEach((issue) => {
     queue.push({
@@ -126,7 +130,8 @@ const notificationAttentionQueue = computed(() => {
       tenantName: issue.tenantName,
       title: '默认通知通道存在风险',
       description: issue.reason || '租户默认通知通道与系统配置不匹配。',
-      issue
+      issue,
+      handleStatus: notificationAttentionStatusMap[`issue-${issue.tenantId}-${(issue.unavailableChannels || []).join('-')}`] || 'TODO'
     });
   });
   recentNotificationTests.value
@@ -141,10 +146,24 @@ const notificationAttentionQueue = computed(() => {
         tenantName: record.tenantName,
         title: '最近通知测试失败',
         description: record.summary || '最近一次通知测试返回失败，请及时复核。',
-        record
+        record,
+        handleStatus: notificationAttentionStatusMap[`record-${record.auditLogId}`] || 'TODO'
       });
     });
   return queue.slice(0, 10);
+});
+const filteredNotificationAttentionQueue = computed(() => {
+  if (notificationAttentionStatusFilter.value === 'ALL') {
+    return notificationAttentionQueue.value;
+  }
+  return notificationAttentionQueue.value.filter((item) => item.handleStatus === notificationAttentionStatusFilter.value);
+});
+const notificationAttentionStatusSummary = computed(() => {
+  return {
+    todo: notificationAttentionQueue.value.filter((item) => item.handleStatus === 'TODO').length,
+    viewed: notificationAttentionQueue.value.filter((item) => item.handleStatus === 'VIEWED').length,
+    retested: notificationAttentionQueue.value.filter((item) => item.handleStatus === 'RETESTED').length
+  };
 });
 const notificationOverviewCards = computed(() => {
   const configuredChannels = notificationHealth.value?.configuredChannels?.length ?? 0;
@@ -927,6 +946,28 @@ const restoreNotificationFilterPreference = () => {
   }
 };
 
+const restoreNotificationQueueStatusPreference = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    const raw = window.localStorage.getItem(NOTIFICATION_QUEUE_STATUS_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+    const parsed = JSON.parse(raw) as Record<string, 'TODO' | 'VIEWED' | 'RETESTED'>;
+    Object.entries(parsed).forEach(([key, value]) => {
+      if (value === 'TODO' || value === 'VIEWED' || value === 'RETESTED') {
+        notificationAttentionStatusMap[key] = value;
+      }
+    });
+  } catch (error) {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(NOTIFICATION_QUEUE_STATUS_STORAGE_KEY);
+    }
+  }
+};
+
 /**
  * 持久化通知分析筛选偏好。
  *
@@ -946,6 +987,13 @@ const persistNotificationFilterPreference = () => {
     notificationTimeRange: notificationTimeRange.value
   };
   window.localStorage.setItem(NOTIFICATION_FILTER_STORAGE_KEY, JSON.stringify(payload));
+};
+
+const persistNotificationQueueStatusPreference = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.localStorage.setItem(NOTIFICATION_QUEUE_STATUS_STORAGE_KEY, JSON.stringify(notificationAttentionStatusMap));
 };
 
 /**
@@ -1214,6 +1262,14 @@ watch(
   }),
   () => {
     persistNotificationFilterPreference();
+  },
+  {deep: true}
+);
+
+watch(
+  () => ({...notificationAttentionStatusMap}),
+  () => {
+    persistNotificationQueueStatusPreference();
   },
   {deep: true}
 );
@@ -1588,11 +1644,20 @@ const handleRetestNotificationIssue = async (issue: TenantNotificationChannelIss
   await handleTestTenantNotificationChannels(target);
 };
 
+const markNotificationAttentionStatus = (key: string | undefined, status: 'TODO' | 'VIEWED' | 'RETESTED') => {
+  if (!key) {
+    return;
+  }
+  notificationAttentionStatusMap[key] = status;
+};
+
 const handleOpenNotificationAttentionItem = async (item: {
+  key?: string;
   kind: 'RISK' | 'FAILED_TEST';
   issue?: TenantNotificationChannelIssueView;
   record?: TenantNotificationChannelRecentTestView;
 }) => {
+  markNotificationAttentionStatus(item.key, 'VIEWED');
   if (item.kind === 'RISK' && item.issue) {
     await handleOpenNotificationAnalysisByIssue(item.issue);
     return;
@@ -1603,10 +1668,12 @@ const handleOpenNotificationAttentionItem = async (item: {
 };
 
 const handleRetestNotificationAttentionItem = async (item: {
+  key?: string;
   kind: 'RISK' | 'FAILED_TEST';
   issue?: TenantNotificationChannelIssueView;
   record?: TenantNotificationChannelRecentTestView;
 }) => {
+  markNotificationAttentionStatus(item.key, 'RETESTED');
   if (item.kind === 'RISK' && item.issue) {
     await handleRetestNotificationIssue(item.issue);
     return;
@@ -1615,6 +1682,31 @@ const handleRetestNotificationAttentionItem = async (item: {
     const target = buildNotificationTenantContext(item.record.tenantId, item.record.tenantName, item.record.requestedChannels || []);
     await handleTestTenantNotificationChannels(target);
   }
+};
+
+const handleMarkAttentionItemViewed = (item: {key?: string}) => {
+  markNotificationAttentionStatus(item.key, 'VIEWED');
+  ElMessage.success('已标记为已查看');
+};
+
+const resolveAttentionStatusText = (status?: 'TODO' | 'VIEWED' | 'RETESTED') => {
+  if (status === 'VIEWED') {
+    return '已查看';
+  }
+  if (status === 'RETESTED') {
+    return '已复测';
+  }
+  return '待处理';
+};
+
+const resolveAttentionStatusType = (status?: 'TODO' | 'VIEWED' | 'RETESTED') => {
+  if (status === 'VIEWED') {
+    return 'info';
+  }
+  if (status === 'RETESTED') {
+    return 'success';
+  }
+  return 'warning';
 };
 
 /**
@@ -2216,6 +2308,7 @@ const isMessageBoxCancel = (error: unknown) => {
 };
 
 restoreNotificationFilterPreference();
+restoreNotificationQueueStatusPreference();
 loadPlans();
 loadOrgTemplates();
 refreshTenantData();
@@ -2304,6 +2397,12 @@ refreshTenantData();
           </div>
           <div class="analysis-actions">
             <span class="toolbar-tip">按风险租户与最近失败测试自动汇总</span>
+            <el-select v-model="notificationAttentionStatusFilter" size="small" style="width: 140px">
+              <el-option label="全部状态" value="ALL"/>
+              <el-option label="待处理" value="TODO"/>
+              <el-option label="已查看" value="VIEWED"/>
+              <el-option label="已复测" value="RETESTED"/>
+            </el-select>
             <el-button link type="primary" @click="toggleNotificationSection('attentionQueue')">
               {{ notificationSectionState.attentionQueue ? '收起' : '展开' }}
             </el-button>
@@ -2311,7 +2410,12 @@ refreshTenantData();
         </div>
       </template>
       <div v-show="notificationSectionState.attentionQueue">
-        <div v-if="!notificationAttentionQueue.length" class="empty-state-block">
+        <div class="queue-metrics">
+          <el-tag type="warning">待处理 {{ notificationAttentionStatusSummary.todo }}</el-tag>
+          <el-tag type="info">已查看 {{ notificationAttentionStatusSummary.viewed }}</el-tag>
+          <el-tag type="success">已复测 {{ notificationAttentionStatusSummary.retested }}</el-tag>
+        </div>
+        <div v-if="!filteredNotificationAttentionQueue.length" class="empty-state-block">
           <el-empty description="当前没有需要优先处理的通知治理事项"/>
           <div class="empty-state-actions">
             <el-button size="small" @click="handleNotificationSuggestionAction('test_first_tenant')">
@@ -2321,7 +2425,7 @@ refreshTenantData();
         </div>
         <el-table
           v-else
-          :data="notificationAttentionQueue"
+          :data="filteredNotificationAttentionQueue"
           border
           size="small"
           max-height="320"
@@ -2348,6 +2452,13 @@ refreshTenantData();
           </el-table-column>
           <el-table-column prop="title" label="关注点" min-width="160"/>
           <el-table-column prop="description" label="说明" min-width="280" show-overflow-tooltip/>
+          <el-table-column label="处理状态" width="110">
+            <template #default="scope">
+              <el-tag :type="resolveAttentionStatusType(scope.row.handleStatus)">
+                {{ resolveAttentionStatusText(scope.row.handleStatus) }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="180">
             <template #default="scope">
               <div class="row-actions">
@@ -2356,6 +2467,14 @@ refreshTenantData();
                 </el-button>
                 <el-button link type="warning" @click="handleRetestNotificationAttentionItem(scope.row)">
                   直接复测
+                </el-button>
+                <el-button
+                  v-if="scope.row.handleStatus === 'TODO'"
+                  link
+                  type="info"
+                  @click="handleMarkAttentionItemViewed(scope.row)"
+                >
+                  标记已看
                 </el-button>
               </div>
             </template>
