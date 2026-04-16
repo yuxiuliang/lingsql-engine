@@ -89,6 +89,8 @@ const notificationSectionState = reactive({
   failureStats: true,
   recentTests: true
 });
+const notificationAttentionPriorityFilter = ref<'ALL' | 'P0' | 'P1'>('ALL');
+const notificationAttentionKindFilter = ref<'ALL' | 'RISK' | 'FAILED_TEST'>('ALL');
 const notificationAttentionStatusFilter = ref<'ALL' | 'TODO' | 'VIEWED' | 'RETESTED'>('ALL');
 const notificationAttentionStatusMap = reactive<Record<string, 'TODO' | 'VIEWED' | 'RETESTED'>>({});
 const initConfig = ref(false);
@@ -153,10 +155,18 @@ const notificationAttentionQueue = computed(() => {
   return queue.slice(0, 10);
 });
 const filteredNotificationAttentionQueue = computed(() => {
-  if (notificationAttentionStatusFilter.value === 'ALL') {
-    return notificationAttentionQueue.value;
-  }
-  return notificationAttentionQueue.value.filter((item) => item.handleStatus === notificationAttentionStatusFilter.value);
+  return notificationAttentionQueue.value.filter((item) => {
+    if (notificationAttentionPriorityFilter.value !== 'ALL' && item.priority !== notificationAttentionPriorityFilter.value) {
+      return false;
+    }
+    if (notificationAttentionKindFilter.value !== 'ALL' && item.kind !== notificationAttentionKindFilter.value) {
+      return false;
+    }
+    if (notificationAttentionStatusFilter.value !== 'ALL' && item.handleStatus !== notificationAttentionStatusFilter.value) {
+      return false;
+    }
+    return true;
+  });
 });
 const notificationAttentionStatusSummary = computed(() => {
   return {
@@ -926,6 +936,9 @@ const restoreNotificationFilterPreference = () => {
       operatorKeyword?: string;
       limit?: number;
       notificationTimeRange?: string[];
+      attentionPriority?: 'ALL' | 'P0' | 'P1';
+      attentionKind?: 'ALL' | 'RISK' | 'FAILED_TEST';
+      attentionStatus?: 'ALL' | 'TODO' | 'VIEWED' | 'RETESTED';
     };
     recentNotificationFilter.tenantId = typeof parsed.tenantId === 'string' ? parsed.tenantId : '';
     recentNotificationFilter.success = parsed.success === '1' || parsed.success === '0' ? parsed.success : '';
@@ -936,6 +949,11 @@ const restoreNotificationFilterPreference = () => {
       : '';
     recentNotificationFilter.operatorKeyword = typeof parsed.operatorKeyword === 'string' ? parsed.operatorKeyword : '';
     recentNotificationFilter.limit = parsed.limit === 20 || parsed.limit === 50 ? parsed.limit : 10;
+    notificationAttentionPriorityFilter.value = parsed.attentionPriority === 'P0' || parsed.attentionPriority === 'P1' ? parsed.attentionPriority : 'ALL';
+    notificationAttentionKindFilter.value = parsed.attentionKind === 'RISK' || parsed.attentionKind === 'FAILED_TEST' ? parsed.attentionKind : 'ALL';
+    notificationAttentionStatusFilter.value = parsed.attentionStatus === 'TODO' || parsed.attentionStatus === 'VIEWED' || parsed.attentionStatus === 'RETESTED'
+      ? parsed.attentionStatus
+      : 'ALL';
     notificationTimeRange.value = Array.isArray(parsed.notificationTimeRange) && parsed.notificationTimeRange.length === 2
       ? parsed.notificationTimeRange.filter((item): item is string => typeof item === 'string')
       : [];
@@ -984,6 +1002,9 @@ const persistNotificationFilterPreference = () => {
     channel: recentNotificationFilter.channel,
     operatorKeyword: recentNotificationFilter.operatorKeyword,
     limit: recentNotificationFilter.limit,
+    attentionPriority: notificationAttentionPriorityFilter.value,
+    attentionKind: notificationAttentionKindFilter.value,
+    attentionStatus: notificationAttentionStatusFilter.value,
     notificationTimeRange: notificationTimeRange.value
   };
   window.localStorage.setItem(NOTIFICATION_FILTER_STORAGE_KEY, JSON.stringify(payload));
@@ -1258,6 +1279,9 @@ watch(
     channel: recentNotificationFilter.channel,
     operatorKeyword: recentNotificationFilter.operatorKeyword,
     limit: recentNotificationFilter.limit,
+    attentionPriority: notificationAttentionPriorityFilter.value,
+    attentionKind: notificationAttentionKindFilter.value,
+    attentionStatus: notificationAttentionStatusFilter.value,
     notificationTimeRange: [...notificationTimeRange.value]
   }),
   () => {
@@ -2397,6 +2421,16 @@ refreshTenantData();
           </div>
           <div class="analysis-actions">
             <span class="toolbar-tip">按风险租户与最近失败测试自动汇总</span>
+            <el-select v-model="notificationAttentionPriorityFilter" size="small" style="width: 120px">
+              <el-option label="全部优先级" value="ALL"/>
+              <el-option label="P0" value="P0"/>
+              <el-option label="P1" value="P1"/>
+            </el-select>
+            <el-select v-model="notificationAttentionKindFilter" size="small" style="width: 130px">
+              <el-option label="全部类型" value="ALL"/>
+              <el-option label="风险租户" value="RISK"/>
+              <el-option label="失败测试" value="FAILED_TEST"/>
+            </el-select>
             <el-select v-model="notificationAttentionStatusFilter" size="small" style="width: 140px">
               <el-option label="全部状态" value="ALL"/>
               <el-option label="待处理" value="TODO"/>
