@@ -93,6 +93,12 @@ const notificationAttentionPriorityFilter = ref<'ALL' | 'P0' | 'P1'>('ALL');
 const notificationAttentionKindFilter = ref<'ALL' | 'RISK' | 'FAILED_TEST'>('ALL');
 const notificationAttentionStatusFilter = ref<'ALL' | 'TODO' | 'VIEWED' | 'RETESTED'>('ALL');
 const notificationAttentionStatusMap = reactive<Record<string, 'TODO' | 'VIEWED' | 'RETESTED'>>({});
+const notificationAttentionSelection = ref<Array<{
+  key?: string;
+  priority?: 'P0' | 'P1';
+  kind?: 'RISK' | 'FAILED_TEST';
+  handleStatus?: 'TODO' | 'VIEWED' | 'RETESTED';
+}>>([]);
 const initConfig = ref(false);
 const notificationIssueMap = computed(() => {
   const map = new Map<string, TenantNotificationChannelIssueView>();
@@ -1675,6 +1681,27 @@ const markNotificationAttentionStatus = (key: string | undefined, status: 'TODO'
   notificationAttentionStatusMap[key] = status;
 };
 
+const handleAttentionQueueSelectionChange = (rows: Array<{
+  key?: string;
+  priority?: 'P0' | 'P1';
+  kind?: 'RISK' | 'FAILED_TEST';
+  handleStatus?: 'TODO' | 'VIEWED' | 'RETESTED';
+}>) => {
+  notificationAttentionSelection.value = rows;
+};
+
+const applyBatchAttentionStatus = (status: 'TODO' | 'VIEWED' | 'RETESTED') => {
+  if (!notificationAttentionSelection.value.length) {
+    ElMessage.info('请先选择至少一条关注事项');
+    return;
+  }
+  notificationAttentionSelection.value.forEach((item) => {
+    markNotificationAttentionStatus(item.key, status);
+  });
+  const label = status === 'VIEWED' ? '已查看' : status === 'RETESTED' ? '已复测' : '待处理';
+  ElMessage.success(`已批量标记为${label}`);
+};
+
 const handleOpenNotificationAttentionItem = async (item: {
   key?: string;
   kind: 'RISK' | 'FAILED_TEST';
@@ -2449,6 +2476,15 @@ refreshTenantData();
           <el-tag type="info">已查看 {{ notificationAttentionStatusSummary.viewed }}</el-tag>
           <el-tag type="success">已复测 {{ notificationAttentionStatusSummary.retested }}</el-tag>
         </div>
+        <div class="section-actions">
+          <el-button size="small" @click="applyBatchAttentionStatus('VIEWED')">
+            批量标记已看
+          </el-button>
+          <el-button size="small" @click="applyBatchAttentionStatus('TODO')">
+            恢复待处理
+          </el-button>
+          <span class="toolbar-tip">先勾选队列项，再执行批量处理。</span>
+        </div>
         <div v-if="!filteredNotificationAttentionQueue.length" class="empty-state-block">
           <el-empty description="当前没有需要优先处理的通知治理事项"/>
           <div class="empty-state-actions">
@@ -2460,10 +2496,12 @@ refreshTenantData();
         <el-table
           v-else
           :data="filteredNotificationAttentionQueue"
+          @selection-change="handleAttentionQueueSelectionChange"
           border
           size="small"
           max-height="320"
         >
+          <el-table-column type="selection" width="48"/>
           <el-table-column label="优先级" width="90">
             <template #default="scope">
               <el-tag :type="resolvePriorityType(scope.row.priority)">
