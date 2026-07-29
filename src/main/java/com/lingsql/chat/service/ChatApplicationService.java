@@ -1,5 +1,6 @@
 package com.lingsql.chat.service;
 
+import com.lingsql.agent.collaboration.AgentRole;
 import com.lingsql.chat.entity.ChatHistory;
 import com.lingsql.chat.model.ChatRequest;
 import com.lingsql.chat.model.ChatResult;
@@ -8,12 +9,14 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.context.TenantContext;
 import com.lingsql.executor.ResultRefiner;
+import com.lingsql.executor.ResultRefinement;
 import com.lingsql.executor.SmartSqlExecutor;
 import com.lingsql.executor.SqlExecutionResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -60,13 +63,14 @@ public class ChatApplicationService {
             executionResult = buildFailureResult(ex);
         }
         executionResult = sanitizeForUser(executionResult);
-        String finalAnswer = resolveFinalAnswer(question, executionResult);
+        ChatAnswer chatAnswer = resolveFinalAnswer(question, executionResult);
+        List<ChatTraceStep> trace = appendAnalystTrace(executionResult, chatAnswer);
         String sqlText = normalizeSqlForView(executionResult);
         if (executionResult.isSuccess()) {
             chatMemoryService.saveSuccessExchange(
                     tenantId,
                     question,
-                    finalAnswer,
+                    chatAnswer.answer(),
                     executionResult.getSql(),
                     executionResult.getData()
             );
@@ -76,17 +80,17 @@ public class ChatApplicationService {
                 userId,
                 conversationId,
                 question,
-                finalAnswer,
+                chatAnswer.answer(),
                 sqlText,
                 executionResult.getData(),
-                executionResult.getTrace()
+                trace
         );
         return new ChatResult(
-                finalAnswer,
+                chatAnswer.answer(),
                 executionResult.getData(),
                 sqlText,
                 history.getId(),
-                executionResult.getTrace(),
+                trace,
                 conversationId
         );
     }
@@ -114,13 +118,45 @@ public class ChatApplicationService {
         return SqlExecutionResult.failure(executionResult.getSql(), EXECUTION_ERROR_MESSAGE, executionResult.getTrace());
     }
 
-    private String resolveFinalAnswer(String question, SqlExecutionResult executionResult) {
-        if (executionResult != null
-                && !executionResult.isSuccess()
-                && TENANT_DB_CONFIG_USER_MESSAGE.equals(executionResult.getErrorMessage())) {
-            return TENANT_DB_CONFIG_USER_MESSAGE;
+    private ChatAnswer resolveFinalAnswer(String question, SqlExecutionResult executionResult) {
+        if (executionResult == null || !executionResult.isSuccess()) {
+            String failureMessage = executionResult != null
+                    && TENANT_DB_CONFIG_USER_MESSAGE.equals(executionResult.getErrorMessage())
+                    ? TENANT_DB_CONFIG_USER_MESSAGE
+                    : EXECUTION_ERROR_MESSAGE;
+            return ChatAnswer.failure(failureMessage);
         }
-        return resultRefiner.refine(question, executionResult);
+        ResultRefinement refinement = resultRefiner.refineWithMetadata(question, executionResult);
+        return ChatAnswer.success(refinement);
+    }
+
+    private List<ChatTraceStep> appendAnalystTrace(SqlExecutionResult executionResult, ChatAnswer chatAnswer) {
+        List<ChatTraceStep> trace = new ArrayList<>();
+        if (executionResult != null && executionResult.getTrace() != null) {
+            trace.addAll(executionResult.getTrace());
+        }
+        if (!chatAnswer.analystExecuted()) {
+            return List.copyOf(trace);
+        }
+        int attempt = resolveLastAttempt(trace);
+        String status = chatAnswer.analystSuccess() ? "SUCCESS" : "FAILURE";
+        String content = chatAnswer.analystSuccess()
+                ? "业务分析师已基于通过审计的查询结果生成面向用户的答复。"
+                : "业务分析师未能完成模型答复，系统已使用稳定降级答复。";
+        trace.add(new ChatTraceStep("FINAL", "业务分析师生成答复", content, status, attempt,
+                AgentRole.ANALYST.name(), chatAnswer.durationMs()));
+        return List.copyOf(trace);
+    }
+
+    private int resolveLastAttempt(List<ChatTraceStep> trace) {
+        if (trace == null || trace.isEmpty()) {
+            return 1;
+        }
+        return trace.stream()
+                .map(ChatTraceStep::getAttempt)
+                .filter(attempt -> attempt != null && attempt > 0)
+                .max(Integer::compareTo)
+                .orElse(1);
     }
 
     private SqlExecutionResult buildFailureResult(Exception ex) {
@@ -158,5 +194,26 @@ public class ChatApplicationService {
             return conversationId.trim();
         }
         return UUID.randomUUID().toString();
+    }
+
+    /**
+     * 问答最终答复与业务分析状态。
+     *
+     * @param answer 面向用户的答复
+     * @param analystExecuted 是否执行过业务分析师
+     * @param analystSuccess 业务分析师是否成功
+     * @param durationMs 业务分析耗时
+     * @author 余炘洋
+     * @date 2026-07-29
+     */
+    private record ChatAnswer(String answer, boolean analystExecuted, boolean analystSuccess, Long durationMs) {
+
+        private static ChatAnswer failure(String answer) {
+            return new ChatAnswer(answer, false, false, null);
+        }
+
+        private static ChatAnswer success(ResultRefinement refinement) {
+            return new ChatAnswer(refinement.answer(), true, refinement.success(), refinement.durationMs());
+        }
     }
 }

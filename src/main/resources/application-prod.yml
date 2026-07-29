@@ -49,6 +49,8 @@ management:
       enabled: true
 
 lingsql:
+  sql-execution:
+    self-healing-max-attempts: ${LINGSQL_SQL_EXECUTION_SELF_HEALING_MAX_ATTEMPTS:3}
   security:
     default-limit: 100
     data-encryption-enabled: ${LINGSQL_DATA_ENCRYPTION_ENABLED:true}

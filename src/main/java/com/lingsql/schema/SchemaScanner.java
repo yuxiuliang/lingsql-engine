@@ -1,5 +1,7 @@
 package com.lingsql.schema;
 
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.llm.LlmClient;
 import com.lingsql.schema.model.TableInfo;
 import lombok.RequiredArgsConstructor;
@@ -87,7 +89,8 @@ public class SchemaScanner {
                 }
             }
         } catch (Exception e) {
-            log.error("元数据扫描失败: ", e);
+            log.error("元数据扫描失败: tenantId={}", tenantId, e);
+            throw new BizException(ErrorCode.SYSTEM_ERROR, "元数据扫描失败，请稍后重试", e);
         }
         return tableInfos;
     }

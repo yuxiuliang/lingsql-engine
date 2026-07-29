@@ -5,6 +5,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +22,29 @@ import java.util.List;
 @Validated
 @ConfigurationProperties(prefix = "lingsql")
 public class LingSqlProperties {
+
+    /**
+     * SQL 执行与自愈配置。
+     *
+     * @author 余炘洋
+     * @date 2026-07-29
+     */
+    @Data
+    public static class SqlExecution {
+        /**
+         * 包含首轮在内的最大执行轮次。
+         * 限制上限可避免异常场景重复消耗模型与数据库资源。
+         *
+         * @author 余炘洋
+         * @date 2026-07-29
+         */
+        @Min(1)
+        @Max(5)
+        private int selfHealingMaxAttempts = 3;
+    }
+
+    @Valid
+    private SqlExecution sqlExecution = new SqlExecution();
 
     /**
      * 安全与 SQL 规则配置。

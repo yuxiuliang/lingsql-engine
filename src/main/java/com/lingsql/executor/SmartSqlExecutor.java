@@ -1,6 +1,8 @@
 package com.lingsql.executor;
 
 import com.lingsql.agent.SqlAgentService;
+import com.lingsql.agent.collaboration.AgentRole;
+import com.lingsql.agent.collaboration.SqlComplianceAuditor;
 import com.lingsql.audit.model.SqlExecuteLogCommand;
 import com.lingsql.audit.service.SqlExecuteLogService;
 import com.lingsql.billing.TenantBillingService;
@@ -14,8 +16,6 @@ import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.llm.LlmTraceContext;
 import com.lingsql.llm.LlmTraceInfo;
-import com.lingsql.security.SqlRewriter;
-import com.lingsql.security.SqlSecurityChecker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -45,8 +45,8 @@ public class SmartSqlExecutor {
     private static final String TRACE_STATUS_FAILURE = "FAILURE";
 
     private final SqlAgentService agentService;
-    private final SqlSecurityChecker securityChecker;
-    private final SqlRewriter rewriter;
+    private final SqlComplianceAuditor complianceAuditor;
+    private final SqlRecoveryPolicy recoveryPolicy;
     private final TenantDbConfigRepository tenantDbConfigRepository;
     private final SqlExecuteLogService sqlExecuteLogService;
     private final SqlTaskTracker sqlTaskTracker;
@@ -88,14 +88,16 @@ public class SmartSqlExecutor {
         logCommand.setRequestSource(requestSource);
         LlmTraceContext.clear();
         sqlTaskTracker.start(tenantId);
-        appendTrace(trace, TRACE_TYPE_THOUGHT, "解析用户问题", "已结合租户上下文、语义字典和历史会话分析本次查询意图。", TRACE_STATUS_SUCCESS, 1);
+        appendTrace(trace, TRACE_TYPE_ACTION, "SQL 架构师接收问题", "已接收查询问题，将基于租户上下文、语义字典和历史会话生成 SQL 方案。",
+                TRACE_STATUS_SUCCESS, 1, AgentRole.ARCHITECT, null);
         try {
             TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId)
                     .orElseThrow(TenantDbConfigErrors::missingConfig);
             return executeWithRetry(config, tenantId, question, logCommand, trace);
         } catch (Exception ex) {
             fillFailureLog(logCommand, null, ex.getMessage());
-            appendTrace(trace, TRACE_TYPE_OBSERVATION, "执行链路中断", "系统在准备执行环境时发生异常，未能进入 SQL 生成流程。", TRACE_STATUS_FAILURE, 1);
+            appendTrace(trace, TRACE_TYPE_OBSERVATION, "执行链路中断", "系统在准备执行环境时发生异常，未能进入 SQL 生成流程。",
+                    TRACE_STATUS_FAILURE, 1, AgentRole.SYSTEM, null);
             throw ex;
         } finally {
             finalizeBillingAndAudit(tenantId, logCommand);
@@ -105,7 +107,7 @@ public class SmartSqlExecutor {
     }
 
     /**
-     * 执行并带一次重试逻辑。
+     * 执行 SQL，并在受控错误类型下执行有限轮次的自愈。
      *
      * @param config     租户配置
      * @param tenantId   租户标识
@@ -114,7 +116,7 @@ public class SmartSqlExecutor {
      * @param trace      执行轨迹
      * @return 执行结果
      * @author 余炘洋
-     * @date 2026-04-07
+     * @date 2026-07-29
      */
     private SqlExecutionResult executeWithRetry(
             TenantDbConfig config,
@@ -123,21 +125,32 @@ public class SmartSqlExecutor {
             SqlExecuteLogCommand logCommand,
             List<ChatTraceStep> trace
     ) {
-        try {
-            return executeOnce(config, tenantId, question, null, logCommand, trace, 1);
-        } catch (SqlExecutionException ex) {
-            log.warn("首次执行失败，准备重试: {}", ex.getMessage());
-            appendTrace(trace, TRACE_TYPE_OBSERVATION, "首轮执行失败", "系统已捕获首轮错误，准备自动执行一次自愈纠错。", TRACE_STATUS_FAILURE, 1);
-            appendTrace(trace, TRACE_TYPE_THOUGHT, "进入自愈纠错", "已回注失败原因，并重新检查元数据与租户隔离规则。", TRACE_STATUS_SUCCESS, 2);
+        String recoveryObservation = null;
+        int maxAttempts = recoveryPolicy.resolveMaxAttempts();
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                return executeOnce(config, tenantId, question, ex.getMessage(), logCommand, trace, 2);
-            } catch (SqlExecutionException retryEx) {
-                log.error("重试失败: {}", retryEx.getMessage());
-                fillFailureLog(logCommand, retryEx.getSql(), retryEx.getMessage());
-                appendTrace(trace, TRACE_TYPE_FINAL, "结束处理", "第二轮执行仍未成功，系统已返回安全失败提示。", TRACE_STATUS_FAILURE, 2);
-                return SqlExecutionResult.failure(retryEx.getSql(), retryEx.getMessage(), trace);
+                return executeOnce(config, tenantId, question, recoveryObservation, logCommand, trace, attempt);
+            } catch (SqlExecutionException exception) {
+                SqlRecoveryDecision decision = recoveryPolicy.assess(exception);
+                if (!decision.recoverable() || attempt >= maxAttempts) {
+                    log.warn("SQL 执行结束: attempt={}, recoverable={}, reason={}", attempt, decision.recoverable(), exception.getMessage());
+                    fillFailureLog(logCommand, exception.getSql(), exception.getMessage());
+                    appendTrace(trace, TRACE_TYPE_FINAL, "结束处理", resolveTerminalFailureContent(attempt, maxAttempts, decision),
+                            TRACE_STATUS_FAILURE, attempt, AgentRole.SYSTEM, null);
+                    return SqlExecutionResult.failure(exception.getSql(), exception.getMessage(), trace);
+                }
+                appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveFailureTitle(attempt), resolveRecoveryContent(decision),
+                        TRACE_STATUS_FAILURE, attempt, AgentRole.SYSTEM, null);
+                if (decision.refreshSchema() && !refreshSchemaForRecovery(tenantId, logCommand, trace, attempt, exception)) {
+                    return SqlExecutionResult.failure(exception.getSql(), exception.getMessage(), trace);
+                }
+                int nextAttempt = attempt + 1;
+                appendTrace(trace, TRACE_TYPE_ACTION, "准备第 " + nextAttempt + " 轮自愈", "已记录受控观察结果，准备重新生成候选 SQL。",
+                        TRACE_STATUS_SUCCESS, nextAttempt, AgentRole.ARCHITECT, null);
+                recoveryObservation = decision.observation();
             }
         }
+        throw new IllegalStateException("SQL 自愈循环未返回结果");
     }
 
     /**
@@ -152,7 +165,7 @@ public class SmartSqlExecutor {
      * @param attempt    执行轮次
      * @return 执行结果
      * @author 余炘洋
-     * @date 2026-04-07
+     * @date 2026-07-29
      */
     private SqlExecutionResult executeOnce(
             TenantDbConfig config,
@@ -164,25 +177,43 @@ public class SmartSqlExecutor {
             int attempt
     ) {
         LlmTraceContext.clear();
-        appendTrace(trace, TRACE_TYPE_ACTION, resolveGenerateTitle(attempt), resolveGenerateContent(attempt), TRACE_STATUS_SUCCESS, attempt);
+        long generationStart = System.currentTimeMillis();
         String rawSql = reason == null
                 ? agentService.generateSql(tenantId, question)
                 : agentService.generateSqlWithRetry(tenantId, question, reason);
+        long generationCostMs = System.currentTimeMillis() - generationStart;
 
         if (rawSql == null || rawSql.isBlank() || rawSql.toUpperCase().startsWith("ERROR")) {
-            fillFailureLog(logCommand, rawSql, "模型未能生成可执行 SQL，请补充查询条件");
-            appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveCandidateTitle(attempt), "模型未返回可执行 SQL，本轮执行已中止。", TRACE_STATUS_FAILURE, attempt);
-            throw new SqlExecutionException("模型未能生成可执行 SQL，请补充查询条件", rawSql);
+            String failureMessage = "ERROR:NO_SCHEMA_MATCH".equalsIgnoreCase(rawSql)
+                    ? "未匹配到可用表结构"
+                    : "模型未能生成可执行 SQL，请补充查询条件";
+            fillFailureLog(logCommand, rawSql, failureMessage);
+            appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveCandidateTitle(attempt), "SQL 架构师未返回可执行 SQL，本轮执行已中止。",
+                    TRACE_STATUS_FAILURE, attempt, AgentRole.ARCHITECT, generationCostMs);
+            throw new SqlExecutionException(failureMessage, rawSql);
         }
         logCommand.setAiSql(rawSql);
         applyModelTrace(logCommand);
         tenantBillingService.reserveCost(tenantId, logCommand);
-        appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveCandidateTitle(attempt), "已生成候选 SQL，准备执行隔离改写与安全审计。", TRACE_STATUS_SUCCESS, attempt);
+        appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveCandidateTitle(attempt), "SQL 架构师已生成候选 SQL，准备交由合规审计员校验。",
+                TRACE_STATUS_SUCCESS, attempt, AgentRole.ARCHITECT, generationCostMs);
 
-        String rewrittenSql = rewriter.rewrite(rawSql, config, tenantId);
+        String rewrittenSql;
         try {
-            securityChecker.check(rewrittenSql, config, tenantId);
-            appendTrace(trace, TRACE_TYPE_ACTION, resolveExecuteTitle(attempt), "已完成租户隔离改写并进入数据库执行。", TRACE_STATUS_SUCCESS, attempt);
+            long auditStart = System.currentTimeMillis();
+            rewrittenSql = complianceAuditor.audit(rawSql, config, tenantId);
+            long auditCostMs = System.currentTimeMillis() - auditStart;
+            appendTrace(trace, TRACE_TYPE_OBSERVATION, "合规审计通过", "合规审计员已完成租户隔离改写与安全校验，允许进入数据库执行。",
+                    TRACE_STATUS_SUCCESS, attempt, AgentRole.AUDITOR, auditCostMs);
+        } catch (Exception exception) {
+            fillFailureLog(logCommand, rawSql, exception.getMessage());
+            appendTrace(trace, TRACE_TYPE_OBSERVATION, "合规审计拒绝", "合规审计员拒绝该候选 SQL，系统不会执行数据库查询。",
+                    TRACE_STATUS_FAILURE, attempt, AgentRole.AUDITOR, null);
+            throw new SqlExecutionException(exception.getMessage(), rawSql);
+        }
+        try {
+            appendTrace(trace, TRACE_TYPE_ACTION, resolveExecuteTitle(attempt), "已通过合规审计，正在执行受控 SQL 查询。",
+                    TRACE_STATUS_SUCCESS, attempt, AgentRole.SYSTEM, null);
             long start = System.currentTimeMillis();
             List<Map<String, Object>> data = jdbcTemplate.queryForList(rewrittenSql);
             long costMs = System.currentTimeMillis() - start;
@@ -191,12 +222,15 @@ public class SmartSqlExecutor {
             logCommand.setResultRows(data == null ? 0 : data.size());
             logCommand.setSuccess(true);
             logCommand.setErrorMessage(null);
-            appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveResultTitle(attempt), "查询成功，返回 " + resolveRowCount(data) + " 行数据。", TRACE_STATUS_SUCCESS, attempt);
-            appendTrace(trace, TRACE_TYPE_FINAL, "完成答复", resolveFinalContent(attempt, data), TRACE_STATUS_SUCCESS, attempt);
+            appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveResultTitle(attempt), "查询成功，返回 " + resolveRowCount(data) + " 行数据。",
+                    TRACE_STATUS_SUCCESS, attempt, AgentRole.SYSTEM, costMs);
+            appendTrace(trace, TRACE_TYPE_FINAL, "SQL 执行完成", resolveFinalContent(attempt, data),
+                    TRACE_STATUS_SUCCESS, attempt, AgentRole.SYSTEM, null);
             return SqlExecutionResult.success(rewrittenSql, data, trace);
         } catch (Exception ex) {
             fillFailureLog(logCommand, rewrittenSql, ex.getMessage());
-            appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveResultTitle(attempt), resolveFailureContent(attempt), TRACE_STATUS_FAILURE, attempt);
+            appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveResultTitle(attempt), resolveFailureContent(attempt),
+                    TRACE_STATUS_FAILURE, attempt, AgentRole.SYSTEM, null);
             throw new SqlExecutionException(ex.getMessage(), rewrittenSql);
         }
     }
@@ -288,8 +322,10 @@ public class SmartSqlExecutor {
      * @param content 内容
      * @param status  状态
      * @param attempt 轮次
+     * @param role 角色
+     * @param durationMs 处理耗时
      * @author 余炘洋
-     * @date 2026-04-07
+     * @date 2026-07-29
      */
     private void appendTrace(
             List<ChatTraceStep> trace,
@@ -297,38 +333,63 @@ public class SmartSqlExecutor {
             String title,
             String content,
             String status,
-            int attempt
+            int attempt,
+            AgentRole role,
+            Long durationMs
     ) {
         if (trace == null) {
             return;
         }
-        trace.add(new ChatTraceStep(type, title, content, status, attempt));
+        trace.add(new ChatTraceStep(type, title, content, status, attempt,
+                role == null ? null : role.name(), durationMs));
     }
 
     /**
-     * 获取生成阶段标题。
+     * 刷新元数据并记录恢复结果。
+     *
+     * @param tenantId 租户标识
+     * @param logCommand 审计日志命令
+     * @param trace 轨迹
+     * @param attempt 轮次
+     * @param originalException 原始异常
+     * @return 是否刷新成功
+     * @author 余炘洋
+     * @date 2026-07-29
+     */
+    private boolean refreshSchemaForRecovery(
+            String tenantId,
+            SqlExecuteLogCommand logCommand,
+            List<ChatTraceStep> trace,
+            int attempt,
+            SqlExecutionException originalException
+    ) {
+        long refreshStart = System.currentTimeMillis();
+        try {
+            agentService.refreshSchema(tenantId);
+            appendTrace(trace, TRACE_TYPE_OBSERVATION, "元数据刷新完成", "已重新读取允许访问的表结构，下一轮将使用最新元数据生成 SQL。",
+                    TRACE_STATUS_SUCCESS, attempt, AgentRole.ARCHITECT, System.currentTimeMillis() - refreshStart);
+            return true;
+        } catch (Exception exception) {
+            log.warn("SQL 自愈元数据刷新失败: tenantId={}, attempt={}", tenantId, attempt, exception);
+            fillFailureLog(logCommand, originalException.getSql(), exception.getMessage());
+            appendTrace(trace, TRACE_TYPE_OBSERVATION, "元数据刷新失败", "无法安全刷新当前租户元数据，系统已停止自动纠错。",
+                    TRACE_STATUS_FAILURE, attempt, AgentRole.ARCHITECT, System.currentTimeMillis() - refreshStart);
+            appendTrace(trace, TRACE_TYPE_FINAL, "结束处理", "元数据刷新未完成，系统已返回安全失败提示。",
+                    TRACE_STATUS_FAILURE, attempt, AgentRole.SYSTEM, null);
+            return false;
+        }
+    }
+
+    /**
+     * 构建可公开显示的恢复阶段标题。
      *
      * @param attempt 轮次
      * @return 标题
      * @author 余炘洋
-     * @date 2026-04-07
+     * @date 2026-07-29
      */
-    private String resolveGenerateTitle(int attempt) {
-        return attempt == 1 ? "生成 SQL 方案" : "重新生成 SQL 方案";
-    }
-
-    /**
-     * 获取生成阶段说明。
-     *
-     * @param attempt 轮次
-     * @return 说明
-     * @author 余炘洋
-     * @date 2026-04-07
-     */
-    private String resolveGenerateContent(int attempt) {
-        return attempt == 1
-                ? "正在基于真实元数据、语义字典与 Join 规则生成首轮 SQL。"
-                : "正在携带失败原因重新检查元数据，并生成新的 SQL 方案。";
+    private String resolveFailureTitle(int attempt) {
+        return "第 " + attempt + " 轮执行失败";
     }
 
     /**
@@ -337,10 +398,10 @@ public class SmartSqlExecutor {
      * @param attempt 轮次
      * @return 标题
      * @author 余炘洋
-     * @date 2026-04-07
+     * @date 2026-07-29
      */
     private String resolveCandidateTitle(int attempt) {
-        return attempt == 1 ? "首轮候选 SQL" : "纠错候选 SQL";
+        return attempt == 1 ? "首轮候选 SQL" : "第 " + attempt + " 轮候选 SQL";
     }
 
     /**
@@ -349,10 +410,10 @@ public class SmartSqlExecutor {
      * @param attempt 轮次
      * @return 标题
      * @author 余炘洋
-     * @date 2026-04-07
+     * @date 2026-07-29
      */
     private String resolveExecuteTitle(int attempt) {
-        return attempt == 1 ? "执行首轮 SQL" : "执行纠错 SQL";
+        return attempt == 1 ? "执行首轮 SQL" : "执行第 " + attempt + " 轮 SQL";
     }
 
     /**
@@ -361,24 +422,54 @@ public class SmartSqlExecutor {
      * @param attempt 轮次
      * @return 标题
      * @author 余炘洋
-     * @date 2026-04-07
+     * @date 2026-07-29
      */
     private String resolveResultTitle(int attempt) {
-        return attempt == 1 ? "首轮执行结果" : "纠错执行结果";
+        return attempt == 1 ? "首轮执行结果" : "第 " + attempt + " 轮执行结果";
     }
 
     /**
-     * 获取失败说明。
+     * 构建下一轮恢复提示。
+     *
+     * @param decision 恢复决策
+     * @return 说明
+     * @author 余炘洋
+     * @date 2026-07-29
+     */
+    private String resolveRecoveryContent(SqlRecoveryDecision decision) {
+        if (decision.refreshSchema()) {
+            return "已识别到表结构失配，将先刷新元数据后进行下一轮 SQL 生成。";
+        }
+        return "已识别到可恢复的 SQL 语法问题，将使用受控观察结果重新生成 SQL。";
+    }
+
+    /**
+     * 获取当前轮次失败的公开说明。
      *
      * @param attempt 轮次
      * @return 说明
      * @author 余炘洋
-     * @date 2026-04-07
+     * @date 2026-07-29
      */
     private String resolveFailureContent(int attempt) {
-        return attempt == 1
-                ? "首轮 SQL 未通过执行校验，系统将自动尝试一次自愈纠错。"
-                : "纠错 SQL 仍未成功执行，系统将返回安全失败提示。";
+        return "第 " + attempt + " 轮 SQL 未成功执行，系统将根据恢复策略决定是否继续处理。";
+    }
+
+    /**
+     * 构建终止处理说明。
+     *
+     * @param attempt 当前轮次
+     * @param maxAttempts 最大轮次
+     * @param decision 恢复决策
+     * @return 说明
+     * @author 余炘洋
+     * @date 2026-07-29
+     */
+    private String resolveTerminalFailureContent(int attempt, int maxAttempts, SqlRecoveryDecision decision) {
+        if (!decision.recoverable()) {
+            return "当前失败类型不允许自动重试，系统已返回安全失败提示。";
+        }
+        return "已达到最多 " + maxAttempts + " 轮执行上限，第 " + attempt + " 轮仍未成功，系统已返回安全失败提示。";
     }
 
     /**
@@ -388,12 +479,12 @@ public class SmartSqlExecutor {
      * @param data    数据结果
      * @return 说明
      * @author 余炘洋
-     * @date 2026-04-07
+     * @date 2026-07-29
      */
     private String resolveFinalContent(int attempt, List<Map<String, Object>> data) {
         String resultSummary = "本次查询共返回 " + resolveRowCount(data) + " 行结果。";
         if (attempt > 1) {
-            return "系统已完成一次自愈纠错并返回结果。" + resultSummary;
+            return "系统已完成第 " + attempt + " 轮自愈并返回结果。" + resultSummary;
         }
         return "查询链路执行完成，已返回最终结果。" + resultSummary;
     }
