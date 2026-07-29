@@ -557,16 +557,12 @@ const handleSend = async () => {
  */
 const handleRename = async (item: ChatHistoryItem) => {
   try {
-    const promptResult = await ElMessageBox.prompt('请输入新的标题', '重命名历史记录', {
+    const {value} = await ElMessageBox.prompt('请输入新的标题', '重命名历史记录', {
       confirmButtonText: '保存',
       cancelButtonText: '取消',
       inputValue: item.question || '',
       inputPlaceholder: '输入新标题'
-    });
-    if (typeof promptResult === 'string') {
-      return;
-    }
-    const value = promptResult.value;
+    }) as { value: string };
     if (!value || !value.trim()) {
       ElMessage.warning('标题不能为空');
       return;

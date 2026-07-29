@@ -2,11 +2,7 @@ spring:
   application:
     name: lingsql-engine
 
-  # 1. 开启 Java 21 虚拟线程（高并发核心）
-  threads:
-    virtual:
-      enabled: true
-  # 2. 管理库配置 (存放租户连接信息的表)
+  # 1. 管理库配置 (存放租户连接信息的表)
   datasource:
     url: jdbc:mysql://localhost:3306/lingsql_engine_db?useSSL=false&allowPublicKeyRetrieval=true
     username: root
@@ -18,7 +14,7 @@ spring:
       idle-timeout: 600000
       connection-timeout: 30000
 
-  # 3. JPA 配置
+  # 2. JPA 配置
   jpa:
     hibernate:
       ddl-auto: update # 自动建表/更新表结构
