@@ -1,0 +1,25 @@
+services:
+  model-stub:
+    image: node:24-alpine
+    container_name: lingsql-model-stub
+    restart: "no"
+    command: ["node", "/opt/lingsql/openai_protocol_stub.mjs"]
+    environment:
+      STUB_PORT: "18080"
+    volumes:
+      - ./scripts/ops/integration/openai_protocol_stub.mjs:/opt/lingsql/openai_protocol_stub.mjs:ro
+    expose:
+      - "18080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18080/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: node

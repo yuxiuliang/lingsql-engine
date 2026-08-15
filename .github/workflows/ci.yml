@@ -87,6 +87,16 @@ jobs:
           LINGSQL_ADMIN_PASSWORD: ci-admin-password
         run: docker compose config --quiet
 
+      - name: Validate Integration Compose Configuration
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          MYSQL_APP_PASSWORD: ci-app-password
+          REDIS_PASSWORD: ci-redis-password
+          LINGSQL_JWT_SECRET: ci-jwt-secret-at-least-32-characters
+          LINGSQL_DATA_ENCRYPTION_KEY: ci-data-encryption-key-at-least-48-characters-long
+          LINGSQL_ADMIN_PASSWORD: ci-admin-password
+        run: docker compose -f docker-compose.yml -f docker-compose.integration.yml config --quiet
+
       - name: Build Production Image
         run: docker build --tag lingsql-engine:ci .
 

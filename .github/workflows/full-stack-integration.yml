@@ -1,0 +1,150 @@
+name: LingSQL Deterministic Full Stack Integration
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+concurrency:
+  group: lingsql-full-stack-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic-full-stack:
+    name: MySQL Redis App Audit Billing Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      MYSQL_DATABASE: lingsql_engine_db
+      MYSQL_APP_USERNAME: lingsql_app
+      LINGSQL_ADMIN_ENABLED: "true"
+      LINGSQL_ADMIN_TENANT_ID: sys_tenant
+      LINGSQL_ADMIN_TENANT_NAME: 系统租户
+      LINGSQL_ADMIN_USERNAME: admin
+      LINGSQL_ADMIN_NICKNAME: 系统管理员
+      LINGSQL_DEMO_ENABLED: "true"
+      LINGSQL_DEMO_DATABASE: lingsql_demo_sales
+      LINGSQL_DEMO_USERNAME: lingsql_demo_reader
+      LINGSQL_DEMO_TENANT_ID: demo_sales
+      LINGSQL_DEMO_TENANT_NAME: 销售库存集成租户
+      LINGSQL_DEMO_PLAN_NAME: 标准版
+      LINGSQL_DEMO_ADMIN_USERNAME: demo_admin
+      LINGSQL_DEMO_ADMIN_NICKNAME: 集成管理员
+      LINGSQL_DEMO_MODEL_PROVIDER: CI_PROTOCOL_STUB
+      LINGSQL_DEMO_MODEL_NAME: QWEN-PLUS
+      LINGSQL_DEMO_MODEL_VERSION: deterministic-1
+      LINGSQL_DEMO_MODEL_BASE_URL: http://model-stub:18080
+      LINGSQL_DEMO_MODEL_API_KEY: NO_AUTH
+      LINGSQL_RUNTIME_DATA_SNAPSHOT_ID: demo-sales-20260815-v1
+      APP_BIND_ADDRESS: 127.0.0.1
+      APP_PORT: "8000"
+      LINGSQL_ALERT_ENABLED: "false"
+      LINGSQL_CORS_ENABLED: "false"
+      LINGSQL_RETENTION_ENABLED: "true"
+      LINGSQL_RETENTION_DRY_RUN: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Prepare Integration Environment
+        run: |
+          chmod +x scripts/ops/*.sh
+          MYSQL_ROOT_PASSWORD="CiRoot$(openssl rand -hex 16)"
+          MYSQL_APP_PASSWORD="CiApp$(openssl rand -hex 16)"
+          REDIS_PASSWORD="CiRedis$(openssl rand -hex 16)"
+          LINGSQL_JWT_SECRET="$(openssl rand -hex 32)"
+          LINGSQL_DATA_ENCRYPTION_KEY="$(openssl rand -hex 32)"
+          LINGSQL_ADMIN_PASSWORD="CiAdmin$(openssl rand -hex 12)"
+          LINGSQL_DEMO_PASSWORD="CiReader$(openssl rand -hex 12)"
+          LINGSQL_DEMO_ADMIN_PASSWORD="CiDemo$(openssl rand -hex 12)"
+          for secret in "${MYSQL_ROOT_PASSWORD}" "${MYSQL_APP_PASSWORD}" "${REDIS_PASSWORD}" \
+            "${LINGSQL_JWT_SECRET}" "${LINGSQL_DATA_ENCRYPTION_KEY}" "${LINGSQL_ADMIN_PASSWORD}" \
+            "${LINGSQL_DEMO_PASSWORD}" "${LINGSQL_DEMO_ADMIN_PASSWORD}"; do
+            echo "::add-mask::${secret}"
+          done
+          cat > .env <<EOF
+          MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+          MYSQL_DATABASE=${MYSQL_DATABASE}
+          MYSQL_APP_USERNAME=${MYSQL_APP_USERNAME}
+          MYSQL_APP_PASSWORD=${MYSQL_APP_PASSWORD}
+          MYSQL_BIND_ADDRESS=127.0.0.1
+          MYSQL_PORT=3306
+          REDIS_PASSWORD=${REDIS_PASSWORD}
+          REDIS_BIND_ADDRESS=127.0.0.1
+          REDIS_PORT=6379
+          APP_BIND_ADDRESS=${APP_BIND_ADDRESS}
+          APP_PORT=${APP_PORT}
+          LINGSQL_JWT_SECRET=${LINGSQL_JWT_SECRET}
+          LINGSQL_DATA_ENCRYPTION_KEY=${LINGSQL_DATA_ENCRYPTION_KEY}
+          LINGSQL_ADMIN_ENABLED=${LINGSQL_ADMIN_ENABLED}
+          LINGSQL_ADMIN_TENANT_ID=${LINGSQL_ADMIN_TENANT_ID}
+          LINGSQL_ADMIN_TENANT_NAME=${LINGSQL_ADMIN_TENANT_NAME}
+          LINGSQL_ADMIN_USERNAME=${LINGSQL_ADMIN_USERNAME}
+          LINGSQL_ADMIN_PASSWORD=${LINGSQL_ADMIN_PASSWORD}
+          LINGSQL_ADMIN_NICKNAME=${LINGSQL_ADMIN_NICKNAME}
+          LINGSQL_DEMO_ENABLED=${LINGSQL_DEMO_ENABLED}
+          LINGSQL_DEMO_DATABASE=${LINGSQL_DEMO_DATABASE}
+          LINGSQL_DEMO_USERNAME=${LINGSQL_DEMO_USERNAME}
+          LINGSQL_DEMO_PASSWORD=${LINGSQL_DEMO_PASSWORD}
+          LINGSQL_DEMO_TENANT_ID=${LINGSQL_DEMO_TENANT_ID}
+          LINGSQL_DEMO_TENANT_NAME=${LINGSQL_DEMO_TENANT_NAME}
+          LINGSQL_DEMO_PLAN_NAME=${LINGSQL_DEMO_PLAN_NAME}
+          LINGSQL_DEMO_ADMIN_USERNAME=${LINGSQL_DEMO_ADMIN_USERNAME}
+          LINGSQL_DEMO_ADMIN_PASSWORD=${LINGSQL_DEMO_ADMIN_PASSWORD}
+          LINGSQL_DEMO_ADMIN_NICKNAME=${LINGSQL_DEMO_ADMIN_NICKNAME}
+          LINGSQL_DEMO_MODEL_PROVIDER=${LINGSQL_DEMO_MODEL_PROVIDER}
+          LINGSQL_DEMO_MODEL_NAME=${LINGSQL_DEMO_MODEL_NAME}
+          LINGSQL_DEMO_MODEL_VERSION=${LINGSQL_DEMO_MODEL_VERSION}
+          LINGSQL_DEMO_MODEL_BASE_URL=${LINGSQL_DEMO_MODEL_BASE_URL}
+          LINGSQL_DEMO_MODEL_API_KEY=${LINGSQL_DEMO_MODEL_API_KEY}
+          LINGSQL_RUNTIME_DATA_SNAPSHOT_ID=${LINGSQL_RUNTIME_DATA_SNAPSHOT_ID}
+          LINGSQL_ALERT_ENABLED=${LINGSQL_ALERT_ENABLED}
+          LINGSQL_CORS_ENABLED=${LINGSQL_CORS_ENABLED}
+          LINGSQL_RETENTION_ENABLED=${LINGSQL_RETENTION_ENABLED}
+          LINGSQL_RETENTION_DRY_RUN=${LINGSQL_RETENTION_DRY_RUN}
+          EOF
+
+      - name: Start Deterministic Model Protocol Stub
+        run: docker compose -f docker-compose.yml -f docker-compose.integration.yml up -d --wait model-stub
+
+      - name: Bootstrap And Verify Full Stack
+        env:
+          PILOT_REPORT_FILE: ${{ github.workspace }}/reports/deterministic_full_stack_acceptance.md
+        run: ./scripts/ops/bootstrap_demo_pilot.sh
+
+      - name: Assert Integration Report Boundary
+        run: |
+          test -s reports/deterministic_full_stack_acceptance.md
+          grep -q '验收结论: PASS' reports/deterministic_full_stack_acceptance.md
+          {
+            printf '%s\n' \
+              '# 确定性全栈集成证据（非商业验收）' \
+              '' \
+              '> 本次模型供应商为确定性 OpenAI 协议桩，只验证平台全栈集成、只读 SQL、安全审计和计费守恒。该结果不得作为真实模型准确率、性能、客户 UAT 或 40 题商业验收证据。' \
+              ''
+            cat reports/deterministic_full_stack_acceptance.md
+          } > reports/deterministic_full_stack_acceptance.tmp
+          mv reports/deterministic_full_stack_acceptance.tmp reports/deterministic_full_stack_acceptance.md
+
+      - name: Capture Failure Diagnostics
+        if: failure()
+        run: |
+          mkdir -p reports
+          docker compose -f docker-compose.yml -f docker-compose.integration.yml logs --no-color app model-stub mysql redis \
+            > reports/deterministic_full_stack_failure.log 2>&1 || true
+
+      - name: Upload Integration Evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deterministic-full-stack-evidence
+          path: reports/deterministic_full_stack_*
+          if-no-files-found: ignore
+
+      - name: Stop Integration Stack
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.integration.yml down --volumes --remove-orphans
