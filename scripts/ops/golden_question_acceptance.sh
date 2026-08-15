@@ -4,10 +4,16 @@
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ops/lib/acceptance_auth.sh
+source "${SCRIPT_DIR}/lib/acceptance_auth.sh"
 PILOT_TENANT_ID="${PILOT_TENANT_ID:-}"
 PILOT_USERNAME="${PILOT_USERNAME:-}"
 PILOT_PASSWORD="${PILOT_PASSWORD:-}"
 PILOT_CONTROL_TOKEN="${PILOT_CONTROL_TOKEN:-}"
+PILOT_CONTROL_TENANT_ID="${PILOT_CONTROL_TENANT_ID:-}"
+PILOT_CONTROL_USERNAME="${PILOT_CONTROL_USERNAME:-}"
+PILOT_CONTROL_PASSWORD="${PILOT_CONTROL_PASSWORD:-}"
 GQ_SUITE_FILE="${GQ_SUITE_FILE:-}"
 GQ_PHASE="${GQ_PHASE:-FIRST}"
 GQ_PARENT_EVIDENCE="${GQ_PARENT_EVIDENCE:-}"
@@ -296,7 +302,9 @@ main() {
   for command_name in curl jq sha256sum awk sort sed date mktemp chmod basename; do require_cmd "${command_name}"; done
   require_value "GQ_SUITE_FILE" "${GQ_SUITE_FILE}"; require_value "PILOT_TENANT_ID" "${PILOT_TENANT_ID}"
   require_value "PILOT_USERNAME" "${PILOT_USERNAME}"; require_value "PILOT_PASSWORD" "${PILOT_PASSWORD}"
-  require_value "PILOT_CONTROL_TOKEN" "${PILOT_CONTROL_TOKEN}"
+  PILOT_CONTROL_TOKEN="$(acceptance_resolve_control_token \
+    "${BASE_URL}" "${PILOT_CONTROL_TOKEN}" "${PILOT_CONTROL_TENANT_ID}" \
+    "${PILOT_CONTROL_USERNAME}" "${PILOT_CONTROL_PASSWORD}")"
   [[ -f "${GQ_SUITE_FILE}" ]] || { log_error "黄金问题 JSON 不存在"; exit 1; }
   [[ "${GQ_PHASE}" == "FIRST" || "${GQ_PHASE}" == "RETEST" ]] || { log_error "GQ_PHASE 仅允许 FIRST 或 RETEST"; exit 1; }
   validate_suite

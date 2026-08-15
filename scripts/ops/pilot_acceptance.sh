@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
 # LingSQL 付费试点真实业务验收。脚本不会创建客户、模型或数据源，必须在完成书面接入确认后运行。
 # 必填：PILOT_TENANT_ID、PILOT_USERNAME、PILOT_PASSWORD
-# 可选：BASE_URL、PILOT_QUESTION_1..3、PILOT_CONTROL_TOKEN、PILOT_REPORT_FILE
+# 控制身份：提供 PILOT_CONTROL_TOKEN，或同时提供 PILOT_CONTROL_TENANT_ID、PILOT_CONTROL_USERNAME、PILOT_CONTROL_PASSWORD
+# 可选：BASE_URL、PILOT_QUESTION_1..3、PILOT_REPORT_FILE
 
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ops/lib/acceptance_auth.sh
+source "${SCRIPT_DIR}/lib/acceptance_auth.sh"
 PILOT_TENANT_ID="${PILOT_TENANT_ID:-}"
 PILOT_USERNAME="${PILOT_USERNAME:-}"
 PILOT_PASSWORD="${PILOT_PASSWORD:-}"
 PILOT_CONTROL_TOKEN="${PILOT_CONTROL_TOKEN:-}"
+PILOT_CONTROL_TENANT_ID="${PILOT_CONTROL_TENANT_ID:-}"
+PILOT_CONTROL_USERNAME="${PILOT_CONTROL_USERNAME:-}"
+PILOT_CONTROL_PASSWORD="${PILOT_CONTROL_PASSWORD:-}"
 PILOT_QUESTION_1="${PILOT_QUESTION_1:-2026年8月已完成订单的销售额是多少？}"
 PILOT_QUESTION_2="${PILOT_QUESTION_2:-哪些商品当前库存低于安全库存？}"
 PILOT_QUESTION_3="${PILOT_QUESTION_3:-按商品统计已完成订单销售额，从高到低排列。}"
@@ -121,7 +128,9 @@ main() {
   user_id="$(jq -r '.data.userId // empty' <<< "${login_response}")"
   require_value "登录 Token" "${token}"
   require_value "登录用户 ID" "${user_id}"
-  control_token="${PILOT_CONTROL_TOKEN:-${token}}"
+  control_token="$(acceptance_resolve_control_token \
+    "${BASE_URL}" "${PILOT_CONTROL_TOKEN}" "${PILOT_CONTROL_TENANT_ID}" \
+    "${PILOT_CONTROL_USERNAME}" "${PILOT_CONTROL_PASSWORD}")"
 
   local baseline_audit_total baseline_billing_snapshot baseline_ledger_total
   baseline_audit_total="$(load_audit_total "${control_token}" "${PILOT_TENANT_ID}" "${user_id}")"
@@ -177,8 +186,9 @@ main() {
   shopt -u nocasematch
 
   local audit_total audit_increment billing_snapshot ledger_total ledger_increment billing_ready
-  local request_ids_csv ledger_evidence matched_request_count evidence_event_count reserve_count close_count
+  local request_ids_csv ledger_evidence matched_request_count reserve_count close_count
   local invocation_count matched_workflow_count settled_invocation_count unknown_invocation_count pending_invocation_count
+  local cancelled_invocation_count complete_request_count unbalanced_invocation_count conserved strict_request_count
   audit_total="$(load_audit_total "${control_token}" "${PILOT_TENANT_ID}" "${user_id}")"
   audit_increment=$((audit_total - baseline_audit_total))
   if [[ "${audit_increment}" -lt 3 ]]; then
@@ -199,7 +209,6 @@ main() {
   request_ids_csv="$(IFS=,; echo "${request_ids[*]}")"
   ledger_evidence="$(load_ledger_evidence "${control_token}" "${PILOT_TENANT_ID}" "${request_ids_csv}")"
   matched_request_count="$(jq -r '.matchedRequestCount // 0' <<< "${ledger_evidence}")"
-  evidence_event_count="$(jq -r '.eventCount // 0' <<< "${ledger_evidence}")"
   reserve_count="$(jq -r '.reserveCount // 0' <<< "${ledger_evidence}")"
   close_count="$(jq -r '.closeCount // 0' <<< "${ledger_evidence}")"
   invocation_count="$(jq -r '.invocationCount // 0' <<< "${ledger_evidence}")"
@@ -207,18 +216,36 @@ main() {
   settled_invocation_count="$(jq -r '.settledInvocationCount // 0' <<< "${ledger_evidence}")"
   unknown_invocation_count="$(jq -r '.unknownInvocationCount // 0' <<< "${ledger_evidence}")"
   pending_invocation_count="$(jq -r '.pendingInvocationCount // 0' <<< "${ledger_evidence}")"
-  if [[ "${ledger_increment}" -lt 6
-      || "${matched_request_count}" -ne 3
-      || "${evidence_event_count}" -lt 6
-      || "${reserve_count}" -lt 3
-      || "${close_count}" -lt 3
+  cancelled_invocation_count="$(jq -r '.cancelledInvocationCount // 0' <<< "${ledger_evidence}")"
+  complete_request_count="$(jq -r '.completeRequestCount // 0' <<< "${ledger_evidence}")"
+  unbalanced_invocation_count="$(jq -r '.unbalancedInvocationCount // 0' <<< "${ledger_evidence}")"
+  conserved="$(jq -r '.conserved // false' <<< "${ledger_evidence}")"
+  strict_request_count="$(jq '[.requests[]? | select(
+    .complete == true and
+    .sqlAuditCount == 1 and .successfulSqlAuditCount == 1 and
+    .invocationCount >= 2 and .ledgerInvocationCount == .invocationCount and
+    .architectSettledCount >= 1 and .analystSettledCount >= 1 and
+    .settledInvocationCount == .invocationCount and
+    .unknownInvocationCount == 0 and .pendingInvocationCount == 0 and .cancelledInvocationCount == 0 and
+    .reserveCount == .invocationCount and .closeCount == .invocationCount and
+    .unbalancedInvocationCount == 0 and (.failureReasons | length) == 0
+  )] | length' <<< "${ledger_evidence}")"
+  if [[ "${matched_request_count}" -ne 3
       || "${invocation_count}" -lt 6
       || "${matched_workflow_count}" -ne 3
       || "${settled_invocation_count}" -ne "${invocation_count}"
       || "${unknown_invocation_count}" -ne 0
       || "${pending_invocation_count}" -ne 0
+      || "${cancelled_invocation_count}" -ne 0
+      || "${complete_request_count}" -ne 3
+      || "${unbalanced_invocation_count}" -ne 0
+      || "${conserved}" != "true"
+      || "${reserve_count}" -ne "${invocation_count}"
+      || "${close_count}" -ne "${invocation_count}"
+      || "${strict_request_count}" -ne 3
       || "${billing_ready}" != "true" ]]; then
-    log_error "本次三个请求未形成逐物理调用可关联、全部结算的计费闭环。"
+    log_error "本次三个请求未逐项形成 SQL 审计、双角色调用、账本事件和资金守恒闭环。"
+    jq -c '.requests[]? | select(.complete != true) | {requestId,failureReasons}' <<< "${ledger_evidence}" >&2 || true
     exit 2
   fi
 
@@ -235,7 +262,8 @@ main() {
 - 本次新增计费账本事件: ${ledger_increment}
 - 关联请求数: ${matched_request_count}/3
 - 关联 RESERVE/CLOSE: ${reserve_count}/${close_count}
-- 物理模型调用: ${invocation_count}（已结算 ${settled_invocation_count}，UNKNOWN ${unknown_invocation_count}，未终态 ${pending_invocation_count}）
+- 完整逐请求证据: ${complete_request_count}/3（严格复核 ${strict_request_count}/3，资金守恒 ${conserved}）
+- 物理模型调用: ${invocation_count}（已结算 ${settled_invocation_count}，UNKNOWN ${unknown_invocation_count}，未终态 ${pending_invocation_count}，取消 ${cancelled_invocation_count}）
 - 计费就绪: ${billing_ready}
 - 验收结论: PASS
 
