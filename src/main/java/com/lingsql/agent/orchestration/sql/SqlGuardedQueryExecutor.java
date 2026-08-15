@@ -3,7 +3,6 @@ package com.lingsql.agent.orchestration.sql;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.security.SqlRewriter;
 import com.lingsql.security.SqlSecurityChecker;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -20,14 +19,31 @@ import java.util.Map;
  * @date 2026-08-15
  */
 @Service
-@RequiredArgsConstructor
 public class SqlGuardedQueryExecutor {
 
     private final SqlRewriter sqlRewriter;
     private final SqlSecurityChecker sqlSecurityChecker;
 
-    @Qualifier("businessJdbcTemplate")
     private final JdbcTemplate jdbcTemplate;
+
+    /**
+     * 创建不可绕过的 SQL 安全查询模块，并显式绑定租户业务数据源。
+     *
+     * @param sqlRewriter SQL 改写器
+     * @param sqlSecurityChecker SQL 安全检查器
+     * @param jdbcTemplate 租户业务库 JDBC 模板
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    public SqlGuardedQueryExecutor(
+            SqlRewriter sqlRewriter,
+            SqlSecurityChecker sqlSecurityChecker,
+            @Qualifier("businessJdbcTemplate") JdbcTemplate jdbcTemplate
+    ) {
+        this.sqlRewriter = sqlRewriter;
+        this.sqlSecurityChecker = sqlSecurityChecker;
+        this.jdbcTemplate = jdbcTemplate;
+    }
 
     /**
      * 执行安全查询。
