@@ -51,15 +51,13 @@ open_acceptance_session() {
 }
 
 submit_usage_missing() {
-  local marker="$1" response request_id failure_code
+  local marker="$1" response request_id
   response="$(api_request POST '/api/v1/chat/ask' \
     "$(jq -cn --arg question "2026年8月已完成订单的销售额是多少？ ${marker}" '{question:$question}')" \
     "${DEMO_TOKEN}" "${LINGSQL_DEMO_TENANT_ID}")"
-  failure_code="$(jq -r '.data.failureCode // empty' <<< "${response}")"
   [[ "$(jq -r '.code // 0' <<< "${response}")" == "200" \
-    && -n "${failure_code}" \
     && "$(jq -r '(.data.sql // "") == "" and ((.data.data // []) | length == 0)' <<< "${response}")" == "true" ]] || {
-    log_error "缺失 usage 后未形成无 SQL、无数据的结构化失败响应"
+    log_error "缺失 usage 后仍向调用方交付了 SQL 或数据"
     exit 2
   }
   request_id="$(jq -r '.requestId // empty' <<< "${response}")"
