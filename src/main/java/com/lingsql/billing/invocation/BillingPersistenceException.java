@@ -1,5 +1,7 @@
 package com.lingsql.billing.invocation;
 
+import com.lingsql.common.exception.ErrorCode;
+
 /**
  * 计费资金状态持久化异常。
  *
@@ -9,6 +11,6 @@ package com.lingsql.billing.invocation;
 public class BillingPersistenceException extends PhysicalBillingException {
 
     public BillingPersistenceException(String message, Throwable cause) {
-        super(message, cause);
+        super(ErrorCode.SYSTEM_ERROR, message, cause);
     }
 }

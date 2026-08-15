@@ -1,5 +1,7 @@
 package com.lingsql.billing.invocation;
 
+import com.lingsql.common.exception.ErrorCode;
+
 /**
  * 物理调用幂等冲突或状态冲突。
  *
@@ -9,6 +11,6 @@ package com.lingsql.billing.invocation;
 public class BillingInvocationConflictException extends PhysicalBillingException {
 
     public BillingInvocationConflictException(String message) {
-        super(message);
+        super(ErrorCode.CONFLICT, message);
     }
 }

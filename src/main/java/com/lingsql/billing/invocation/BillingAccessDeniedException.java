@@ -1,5 +1,7 @@
 package com.lingsql.billing.invocation;
 
+import com.lingsql.common.exception.ErrorCode;
+
 /**
  * 余额不足导致的模型调用拒绝。
  *
@@ -9,6 +11,6 @@ package com.lingsql.billing.invocation;
 public class BillingAccessDeniedException extends PhysicalBillingException {
 
     public BillingAccessDeniedException(String message) {
-        super(message);
+        super(ErrorCode.BILLING_BALANCE_INSUFFICIENT, message);
     }
 }
