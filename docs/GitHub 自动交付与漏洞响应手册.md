@@ -92,6 +92,7 @@
 
 - `RELEASE_GATE_BILLING_TOKEN`：只用于计费就绪门禁的短期 Token。
 - `RELEASE_GATE_CONTROL_TOKEN`：独立系统租户验收账号的短期 Token。当前 SQL 日志、计费就绪与账本证据组合验收需要 `ADMIN:SQLLOG:READ`、`ADMIN:BILLING:READ` 和系统管理员身份；不得复用普通试点账号或 billing Token。
+- `RELEASE_GATE_CONTROL_TENANT_ID`：上述控制 Token 所属的系统租户 ID，用于运行指纹请求头；不得填写试点租户。
 - `RELEASE_GATE_PILOT_TENANT_ID`、`RELEASE_GATE_PILOT_USERNAME`、`RELEASE_GATE_PILOT_PASSWORD`：专用验证租户与普通问数账号，不得使用真实客户个人账号或授予系统管理员身份。
 - `RELEASE_GATE_MYSQL_HOST`、`RELEASE_GATE_MYSQL_PORT`、`RELEASE_GATE_BACKUP_SOURCE_DB`、`RELEASE_GATE_BACKUP_DIR`、`RELEASE_GATE_BACKUP_USER`、`RELEASE_GATE_RESTORE_USER`：隔离 UAT 的连接与受保护绝对路径 Variables。
 - `RELEASE_GATE_BACKUP_PASSWORD`、`RELEASE_GATE_RESTORE_PASSWORD`、`RELEASE_GATE_BACKUP_SAMPLE_QUERY`：Environment Secrets。样例查询必须是一条只读聚合 `SELECT`；恢复账号只能管理独立 UAT 的 `lingsql_restore_verify_` 前缀验证库。
@@ -100,7 +101,9 @@
 
 即使 `release-deploy.yml` 的目标 Environment 是 production，上述 `RELEASE_GATE_MYSQL_*` 和备份恢复 Secrets 也必须指向独立 UAT MySQL，不能指向生产控制库；生产迁移前备份仍由 `LINGSQL_MIGRATION_HOOK` 单独负责。商用门禁验证“备份可恢复”，迁移 Hook 保护“本次生产变更”，两者不能互相替代。
 
-发布制品先执行前端依赖审计与生产构建，把管理后台写入 Spring Boot 静态资源，再执行 Schema 漂移检查及 Maven 测试；工作流会检查最终 JAR 确实包含后台首页。门禁会完成登录、三条真实问数、SQL 审计增量、计费账本增量、运行时审计、真实备份的 SHA-256 与隔离恢复双指纹、最少 100 个非 Actuator 请求的 SLO 证据和 P1 演练校验；任何 `FAIL` 或 `SKIP` 都阻断发布。验收账号、模型、数据源、UAT 备份恢复配置或 Prometheus 尚未准备好时，应先完成配置，不能临时关闭门禁。
+发布制品先执行前端依赖审计与生产构建，把管理后台写入 Spring Boot 静态资源，并把工作流 `GITHUB_SHA` 写入 `build-info.properties`；随后执行 Schema 漂移检查及 Maven 测试。部署流程先把候选 JAR 启动在非活跃蓝绿槽位，不切换生产流量；门禁直接访问候选本机端口，并通过 `/api/v1/admin/runtime/fingerprint` 精确核对 Git SHA、Flyway Schema、数据快照和激活模型路由摘要。候选通过后才执行切流；门禁失败会停止未切流候选，切流后冒烟失败则回滚上一槽位。
+
+严格门禁还会完成登录、三条真实问数、逐请求 SQL 审计与资金守恒、运行时审计、真实备份的 SHA-256 与隔离恢复双指纹、最少 100 个非 Actuator 请求的 SLO 证据和 P1 演练校验；任何 `FAIL` 或 `SKIP` 都阻断发布。验收账号、模型、数据源、数据快照 ID、UAT 备份恢复配置或 Prometheus 尚未准备好时，应先完成配置，不能临时关闭门禁。
 
 流程包含：
 
@@ -110,7 +113,7 @@
 4. Compose 配置校验、生产镜像构建与非 root 运行用户断言
 5. MySQL 8.4 空库迁移、重复迁移 no-op 与当前旧库完整指纹接管
 
-正式部署在蓝绿切换前强制运行 `LINGSQL_MIGRATION_HOOK`。应用冒烟失败时会回滚应用槽位，但不会自动执行反向数据库 DDL；因此所有生产迁移必须向前兼容上一稳定应用版本，并在执行前完成可验证备份。详细协议见[数据库版本迁移与旧库接管手册](数据库版本迁移与旧库接管手册.md)。
+正式部署在隔离候选启动前强制运行 `LINGSQL_MIGRATION_HOOK`。应用冒烟失败时会回滚应用槽位，但不会自动执行反向数据库 DDL；因此所有生产迁移必须向前兼容上一稳定应用版本，并在执行前完成可验证备份。详细协议见[数据库版本迁移与旧库接管手册](数据库版本迁移与旧库接管手册.md)。
 
 ## 4. 漏洞处理策略
 

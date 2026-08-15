@@ -1591,6 +1591,8 @@ async function callApi<T>(request: () => Promise<T>): Promise<T> {
 | POST | `/api/v1/admin/metadata/field` | 更新字段注释 | ADMIN:METADATA:WRITE |
 | PUT | `/api/v1/admin/metadata/isolated` | 更新隔离字段 | ADMIN:METADATA:WRITE |
 | POST | `/api/v1/admin/metadata/ai-suggest` | AI 语义解析 | ADMIN:METADATA:AI |
+| **发布与验收** |
+| GET | `/api/v1/admin/runtime/fingerprint` | 当前 Git SHA、Flyway、数据快照与激活模型路由指纹 | ADMIN:TENANT:READ + 系统管理员 |
 
 ---
 

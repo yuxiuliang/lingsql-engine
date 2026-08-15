@@ -59,7 +59,10 @@ validate_suite() {
     (.suiteVersion | type == "string" and length > 0) and
     (.sowId | type == "string" and length > 0) and
     (.environment.concurrency == 1) and
-    ([.environment.environmentId,.environment.dataSnapshotId,.environment.modelProvider,
+    (.environment.releaseCommit | test("^[0-9a-f]{40}$")) and
+    (.environment.modelRouteFingerprint | test("^[0-9a-f]{64}$")) and
+    ([.environment.environmentId,.environment.releaseCommit,.environment.flywaySchemaVersion,
+      .environment.dataSnapshotId,.environment.modelRouteFingerprint,.environment.modelProvider,
       .environment.modelName,.environment.modelVersion,.environment.networkProfile]
       | all(type == "string" and length > 0)) and
     (.businessCases | length == 40) and
@@ -89,6 +92,36 @@ validate_suite() {
       (.expected.allowedApiCodes | type == "array" and length > 0) and
       (.expected.allowSafeRefusal200 | type == "boolean"))
   ' "${GQ_SUITE_FILE}" >/dev/null || { log_error "黄金问题 JSON 结构或 40题/20-20 约束不合法"; exit 2; }
+}
+
+validate_runtime_fingerprint() {
+  local response expected_commit expected_schema expected_snapshot expected_route
+  local actual_commit actual_schema actual_snapshot actual_route expected_provider expected_model expected_version model_match
+  response="$(api_get '/api/v1/admin/runtime/fingerprint' "${PILOT_CONTROL_TOKEN}")"
+  [[ "$(jq -r '.code // 0' <<< "${response}")" == "200" ]] || { log_error "无法读取运行候选指纹"; exit 2; }
+  expected_commit="$(jq -r '.environment.releaseCommit' "${GQ_SUITE_FILE}")"
+  expected_schema="$(jq -r '.environment.flywaySchemaVersion' "${GQ_SUITE_FILE}")"
+  expected_snapshot="$(jq -r '.environment.dataSnapshotId' "${GQ_SUITE_FILE}")"
+  expected_route="$(jq -r '.environment.modelRouteFingerprint' "${GQ_SUITE_FILE}")"
+  expected_provider="$(jq -r '.environment.modelProvider' "${GQ_SUITE_FILE}")"
+  expected_model="$(jq -r '.environment.modelName' "${GQ_SUITE_FILE}")"
+  expected_version="$(jq -r '.environment.modelVersion' "${GQ_SUITE_FILE}")"
+  actual_commit="$(jq -r '.data.commit // empty' <<< "${response}")"
+  actual_schema="$(jq -r '.data.schemaVersion // empty' <<< "${response}")"
+  actual_snapshot="$(jq -r '.data.dataSnapshotId // empty' <<< "${response}")"
+  actual_route="$(jq -r '.data.modelRouteFingerprint // empty' <<< "${response}")"
+  model_match="$(jq --arg provider "${expected_provider}" --arg model "${expected_model}" --arg version "${expected_version}" \
+    '[.data.activeModels[]? | select(.providerName == $provider and .modelName == $model and .modelVersion == $version)] | length' \
+    <<< "${response}")"
+  [[ "${actual_commit}" == "${expected_commit}" ]] || { log_error "运行提交与冻结 Suite 不一致"; exit 2; }
+  [[ "${actual_schema}" == "${expected_schema}" ]] || { log_error "Flyway Schema 与冻结 Suite 不一致"; exit 2; }
+  [[ "${actual_snapshot}" == "${expected_snapshot}" && "${actual_snapshot}" != "UNSET" ]] || { log_error "数据快照与冻结 Suite 不一致或未设置"; exit 2; }
+  [[ "${actual_route}" == "${expected_route}" ]] || { log_error "模型路由指纹与冻结 Suite 不一致"; exit 2; }
+  [[ "${model_match}" -gt 0 ]] || { log_error "冻结模型不在当前激活路由中"; exit 2; }
+  jq -cn --arg commit "${actual_commit}" --arg schemaVersion "${actual_schema}" \
+    --arg dataSnapshotId "${actual_snapshot}" --arg modelRouteFingerprint "${actual_route}" \
+    '{type:"runtimeFingerprint",commit:$commit,schemaVersion:$schemaVersion,dataSnapshotId:$dataSnapshotId,modelRouteFingerprint:$modelRouteFingerprint,matched:true}' \
+    >> "${EVIDENCE_FILE}"
 }
 
 compare_scalar() {
@@ -324,6 +357,7 @@ main() {
   REQUEST_IDS_FILE="${TMP_DIR}/request-ids.txt"; : > "${EVIDENCE_FILE}"; : > "${REQUEST_IDS_FILE}"; chmod 600 "${EVIDENCE_FILE}" "${REQUEST_IDS_FILE}"
   jq -cn --arg runId "${RUN_ID}" --arg phase "${GQ_PHASE}" --arg suiteSha256 "${SUITE_SHA256}" --arg createdAt "$(date -Iseconds)" \
     '{type:"run",runId:$runId,phase:$phase,suiteSha256:$suiteSha256,createdAt:$createdAt,automaticExclusion:false}' >> "${EVIDENCE_FILE}"
+  validate_runtime_fingerprint
   login_body="$(jq -cn --arg tenantId "${PILOT_TENANT_ID}" --arg username "${PILOT_USERNAME}" --arg password "${PILOT_PASSWORD}" '{tenantId:$tenantId,username:$username,password:$password}')"
   login_response="$(printf '%s' "${login_body}" | curl -fsS --connect-timeout 5 --max-time 30 -H 'Content-Type: application/json; charset=UTF-8' -X POST "${BASE_URL%/}/api/v1/auth/login" --data-binary @-)"
   TOKEN="$(jq -r '.data.token // empty' <<< "${login_response}")"

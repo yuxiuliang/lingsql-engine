@@ -19,6 +19,7 @@
 #   LINGSQL_KEEP_RELEASES=10
 #   LINGSQL_SWITCH_HOOK=""           # 可选：流量切换 hook，入参 <slot> <port>
 #   LINGSQL_STOP_OLD_SLOT=false      # 可选：发布成功后是否停止旧槽位
+#   LINGSQL_TRAFFIC_SWITCH_ENABLED=true # false 时只准备隔离候选，不切流
 #   LINGSQL_START_CMD_TEMPLATE=""    # 可选：无 systemd 时启用，支持变量 {slot} {port} {artifact} {slot_dir}
 
 set -euo pipefail
@@ -183,6 +184,7 @@ main() {
   require_cmd find
   require_cmd cp
   require_cmd date
+  require_cmd sha256sum
 
   local deploy_base="${LINGSQL_DEPLOY_BASE:-/opt/lingsql}"
   local run_dir="${deploy_base}/run"
@@ -202,6 +204,14 @@ main() {
   local keep_releases="${LINGSQL_KEEP_RELEASES:-10}"
 
   mkdir -p "${run_dir}" "${releases_dir}" "${blue_dir}" "${green_dir}"
+  if [[ "${LINGSQL_TRAFFIC_SWITCH_ENABLED:-true}" != "true" ]]; then
+    for file in candidate_slot candidate_port candidate_service candidate_release_id candidate_artifact_sha256; do
+      if [[ -e "${run_dir}/${file}" ]]; then
+        log_error "检测到未处理的候选元数据，请先提升或中止旧候选: ${run_dir}/${file}"
+        exit 1
+      fi
+    done
+  fi
 
   local active_slot="blue"
   if [[ -f "${slot_file}" ]]; then
@@ -250,8 +260,20 @@ main() {
   start_slot_service "${target_slot}" "${target_service}" "${target_port}" "${slot_artifact}" "${target_dir}"
   wait_for_health "${target_slot}" "${target_port}" "${health_path}" "${health_retries}" "${health_interval}"
 
+  if [[ "${LINGSQL_TRAFFIC_SWITCH_ENABLED:-true}" != "true" ]]; then
+    printf '%s' "${target_slot}" > "${run_dir}/candidate_slot"
+    printf '%s' "${target_port}" > "${run_dir}/candidate_port"
+    printf '%s' "${target_service}" > "${run_dir}/candidate_service"
+    printf '%s' "${release_id}" > "${run_dir}/candidate_release_id"
+    sha256sum "${slot_artifact}" | awk '{print $1}' > "${run_dir}/candidate_artifact_sha256"
+    printf "%s|%s|%s|%s|PREPARED\n" "$(date -Iseconds)" "${release_id}" "${target_slot}" "${artifact_name}" >> "${history_file}"
+    log_info "隔离候选已准备，尚未切流: slot=${target_slot}, baseUrl=http://127.0.0.1:${target_port}"
+    return 0
+  fi
+
   run_switch_hook "${target_slot}" "${target_port}"
   echo "${target_slot}" > "${slot_file}"
+  echo "${target_port}" > "${run_dir}/active_port"
   stop_slot_service_if_needed "${old_service}"
 
   local operator="${SUDO_USER:-${USER:-unknown}}"

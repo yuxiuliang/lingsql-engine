@@ -74,6 +74,7 @@ jobs:
           BACKUP_RESTORE_BACKUP_DIR: ${{ vars.RELEASE_GATE_BACKUP_DIR }}
           BACKUP_RESTORE_BACKUP_USER: ${{ vars.RELEASE_GATE_BACKUP_USER }}
           BACKUP_RESTORE_RESTORE_USER: ${{ vars.RELEASE_GATE_RESTORE_USER }}
+          RELEASE_GATE_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
         run: |
           BASE_URL_TRIMMED="$(printf '%s' "${BASE_URL}" | xargs)"
           BILLING_URL_TRIMMED="$(printf '%s' "${BILLING_READINESS_URL}" | xargs)"
@@ -81,7 +82,7 @@ jobs:
             echo "::error::billing_readiness_url 与 base_url 不能同时为空。"
             exit 1
           fi
-          for name in PROMETHEUS_URL DRILL_ID DETECTED_AT ACKED_AT MITIGATED_AT \
+          for name in PROMETHEUS_URL DRILL_ID DETECTED_AT ACKED_AT MITIGATED_AT RELEASE_GATE_CONTROL_TENANT_ID \
             BACKUP_RESTORE_MYSQL_HOST BACKUP_RESTORE_MYSQL_PORT BACKUP_RESTORE_SOURCE_DB \
             BACKUP_RESTORE_BACKUP_DIR BACKUP_RESTORE_BACKUP_USER BACKUP_RESTORE_RESTORE_USER; do
             if [ -z "$(printf '%s' "${!name}" | xargs)" ]; then
@@ -108,6 +109,15 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Verify Runtime Fingerprint
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
+          PILOT_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
+          EXPECTED_RELEASE_COMMIT: ${{ github.sha }}
+          RUNTIME_FINGERPRINT_REPORT_FILE: ./reports/runtime_fingerprint.md
+        run: ./scripts/ops/runtime_fingerprint_guard.sh
 
       - name: Run Release Gate
         env:

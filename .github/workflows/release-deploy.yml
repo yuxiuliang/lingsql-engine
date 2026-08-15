@@ -89,7 +89,7 @@ jobs:
         run: bash scripts/ops/schema_drift_guard.sh
 
       - name: Build And Test Backend Package
-        run: mvn -B -ntp clean package -DskipITs
+        run: mvn -B -ntp clean package -DskipITs -Dlingsql.build.commit="${GITHUB_SHA}"
 
       - name: Verify Admin UI In Release Package
         run: |
@@ -140,6 +140,9 @@ jobs:
           ACKED_AT: ${{ inputs.p1_acked_at }}
           MITIGATED_AT: ${{ inputs.p1_mitigated_at }}
           LINGSQL_MIGRATION_HOOK: ${{ vars.LINGSQL_MIGRATION_HOOK }}
+          LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
+          LINGSQL_SWITCH_HOOK: ${{ vars.LINGSQL_SWITCH_HOOK }}
+          RELEASE_GATE_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
           BACKUP_RESTORE_MYSQL_HOST: ${{ vars.RELEASE_GATE_MYSQL_HOST }}
           BACKUP_RESTORE_MYSQL_PORT: ${{ vars.RELEASE_GATE_MYSQL_PORT }}
           BACKUP_RESTORE_SOURCE_DB: ${{ vars.RELEASE_GATE_BACKUP_SOURCE_DB }}
@@ -154,6 +157,7 @@ jobs:
             exit 1
           fi
           for name in PROMETHEUS_URL DRILL_ID DETECTED_AT ACKED_AT MITIGATED_AT LINGSQL_MIGRATION_HOOK \
+            LINGSQL_DEPLOY_BASE LINGSQL_SWITCH_HOOK RELEASE_GATE_CONTROL_TENANT_ID \
             BACKUP_RESTORE_MYSQL_HOST BACKUP_RESTORE_MYSQL_PORT BACKUP_RESTORE_SOURCE_DB \
             BACKUP_RESTORE_BACKUP_DIR BACKUP_RESTORE_BACKUP_USER BACKUP_RESTORE_RESTORE_USER; do
             if [ -z "$(printf '%s' "${!name}" | xargs)" ]; then
@@ -181,9 +185,30 @@ jobs:
             fi
           done
 
-      - name: Pre Release Gate
+      - name: Run Required Database Migration Hook
         env:
-          BASE_URL: ${{ inputs.base_url }}
+          LINGSQL_MIGRATION_HOOK: ${{ vars.LINGSQL_MIGRATION_HOOK }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [ ! -x "${LINGSQL_MIGRATION_HOOK}" ]; then
+            echo "::error::数据库迁移 Hook 不存在或不可执行: ${LINGSQL_MIGRATION_HOOK}"
+            exit 1
+          fi
+          "${LINGSQL_MIGRATION_HOOK}" "${GITHUB_SHA}" "${RELEASE_TAG}"
+
+      - name: Prepare Isolated Candidate
+        id: prepare_candidate
+        env:
+          LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
+          LINGSQL_TRAFFIC_SWITCH_ENABLED: "false"
+        run: |
+          ./scripts/ops/release_blue_green.sh ./dist/lingsql-engine.jar "${{ inputs.release_tag }}"
+          EXPECTED_SHA="$(sha256sum ./dist/lingsql-engine.jar | awk '{print $1}')"
+          ACTUAL_SHA="$(tr -d '[:space:]' < "${LINGSQL_DEPLOY_BASE}/run/candidate_artifact_sha256")"
+          test "${EXPECTED_SHA}" = "${ACTUAL_SHA}"
+
+      - name: Candidate Release Gate
+        env:
           PROMETHEUS_URL: ${{ inputs.prometheus_url }}
           RELEASE_GATE_ENABLE_SMOKE: "true"
           RELEASE_GATE_ENABLE_SLO: "true"
@@ -191,7 +216,6 @@ jobs:
           RELEASE_GATE_BLOCK_ON_SLO_BREACH: "true"
           RELEASE_GATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
           RELEASE_GATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
-          BILLING_READINESS_URL: ${{ inputs.billing_readiness_url }}
           BILLING_ALLOW_SKIP: "false"
           BILLING_AUTH_TOKEN: ${{ secrets.RELEASE_GATE_BILLING_TOKEN }}
           COMMERCIAL_REQUIRE_SLO: "true"
@@ -203,7 +227,11 @@ jobs:
           PILOT_USERNAME: ${{ secrets.RELEASE_GATE_PILOT_USERNAME }}
           PILOT_PASSWORD: ${{ secrets.RELEASE_GATE_PILOT_PASSWORD }}
           PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
+          PILOT_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
           PILOT_REPORT_FILE: ./reports/pilot_acceptance.md
+          EXPECTED_RELEASE_COMMIT: ${{ github.sha }}
+          RUNTIME_FINGERPRINT_REPORT_FILE: ./reports/runtime_fingerprint.md
+          LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
           BACKUP_RESTORE_MYSQL_HOST: ${{ vars.RELEASE_GATE_MYSQL_HOST }}
           BACKUP_RESTORE_MYSQL_PORT: ${{ vars.RELEASE_GATE_MYSQL_PORT }}
           BACKUP_RESTORE_SOURCE_DB: ${{ vars.RELEASE_GATE_BACKUP_SOURCE_DB }}
@@ -220,33 +248,39 @@ jobs:
           DETECTED_AT: ${{ inputs.p1_detected_at }}
           ACKED_AT: ${{ inputs.p1_acked_at }}
           MITIGATED_AT: ${{ inputs.p1_mitigated_at }}
-        run: ./scripts/ops/release_gate.sh
-
-      - name: Run Required Database Migration Hook
-        env:
-          LINGSQL_MIGRATION_HOOK: ${{ vars.LINGSQL_MIGRATION_HOOK }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          if [ ! -x "${LINGSQL_MIGRATION_HOOK}" ]; then
-            echo "::error::数据库迁移 Hook 不存在或不可执行: ${LINGSQL_MIGRATION_HOOK}"
-            exit 1
-          fi
-          "${LINGSQL_MIGRATION_HOOK}" "${GITHUB_SHA}" "${RELEASE_TAG}"
+          CANDIDATE_PORT="$(tr -d '[:space:]' < "${LINGSQL_DEPLOY_BASE}/run/candidate_port")"
+          export BASE_URL="http://127.0.0.1:${CANDIDATE_PORT}"
+          export BILLING_READINESS_URL="${BASE_URL}/api/v1/admin/billing/readiness/snapshot"
+          ./scripts/ops/runtime_fingerprint_guard.sh
+          ./scripts/ops/release_gate.sh
 
-      - name: Deploy And Auto Rollback
+      - name: Promote Candidate
+        id: promote_candidate
         env:
-          BASE_URL: ${{ inputs.base_url }}
-          RELEASE_POST_SMOKE_ENABLED: "true"
-          RELEASE_AUTO_ROLLBACK_ON_SMOKE_FAIL: "true"
-          RELEASE_NOTIFY_ENABLED: "true"
-          RELEASE_NOTIFY_SCRIPT: ./scripts/ops/notify_release_event.sh
-          RELEASE_NOTIFY_WEBHOOK_URL: ${{ secrets.RELEASE_NOTIFY_WEBHOOK_URL }}
-          RELEASE_NOTIFY_DINGTALK_WEBHOOK_URL: ${{ secrets.RELEASE_NOTIFY_DINGTALK_WEBHOOK_URL }}
-          RELEASE_NOTIFY_WECOM_WEBHOOK_URL: ${{ secrets.RELEASE_NOTIFY_WECOM_WEBHOOK_URL }}
-          RELEASE_NOTIFY_REQUIRE_ALL_CHANNELS: "false"
           LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
           LINGSQL_SWITCH_HOOK: ${{ vars.LINGSQL_SWITCH_HOOK }}
-        run: ./scripts/ops/release_with_auto_rollback.sh ./dist/lingsql-engine.jar "${{ inputs.release_tag }}"
+        run: ./scripts/ops/release_candidate_promote.sh
+
+      - name: Post Promote Smoke And Auto Rollback
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
+          LINGSQL_SWITCH_HOOK: ${{ vars.LINGSQL_SWITCH_HOOK }}
+        run: |
+          if ./scripts/ops/release_smoke_test.sh; then
+            exit 0
+          fi
+          echo "::warning::切流后冒烟失败，开始自动回滚。"
+          ./scripts/ops/release_rollback.sh
+          exit 1
+
+      - name: Abort Unpromoted Candidate
+        if: failure() && steps.prepare_candidate.outcome == 'success' && steps.promote_candidate.outcome != 'success'
+        env:
+          LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
+          LINGSQL_CANDIDATE_ABORT_HOOK: ${{ vars.LINGSQL_CANDIDATE_ABORT_HOOK }}
+        run: ./scripts/ops/release_candidate_abort.sh
 
       - name: Upload Gate Report
         if: always()

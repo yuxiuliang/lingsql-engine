@@ -14,10 +14,13 @@
     "environment": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["environmentId", "dataSnapshotId", "modelProvider", "modelName", "modelVersion", "networkProfile", "concurrency"],
+      "required": ["environmentId", "releaseCommit", "flywaySchemaVersion", "dataSnapshotId", "modelRouteFingerprint", "modelProvider", "modelName", "modelVersion", "networkProfile", "concurrency"],
       "properties": {
         "environmentId": {"type": "string", "minLength": 1},
+        "releaseCommit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "flywaySchemaVersion": {"type": "string", "minLength": 1},
         "dataSnapshotId": {"type": "string", "minLength": 1},
+        "modelRouteFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "modelProvider": {"type": "string", "minLength": 1},
         "modelName": {"type": "string", "minLength": 1},
         "modelVersion": {"type": "string", "minLength": 1},

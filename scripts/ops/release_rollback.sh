@@ -213,6 +213,7 @@ main() {
 
   run_switch_hook "${rollback_slot}" "${rollback_port}"
   echo "${rollback_slot}" > "${slot_file}"
+  echo "${rollback_port}" > "${run_dir}/active_port"
   stop_service_if_needed "${failed_service}"
 
   local operator="${SUDO_USER:-${USER:-unknown}}"

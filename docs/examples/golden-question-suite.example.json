@@ -6,7 +6,10 @@
   "frozenAt": "2026-08-15T10:00:00+08:00",
   "environment": {
     "environmentId": "customer-uat",
+    "releaseCommit": "0000000000000000000000000000000000000000",
+    "flywaySchemaVersion": "20260815.06",
     "dataSnapshotId": "sales-snapshot-20260815",
+    "modelRouteFingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
     "modelProvider": "approved-provider",
     "modelName": "approved-model",
     "modelVersion": "frozen-version",

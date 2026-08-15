@@ -26,6 +26,7 @@
         <jackson-bom.version>3.1.5</jackson-bom.version>
         <jackson-2-bom.version>2.21.5</jackson-2-bom.version>
         <log4j2.version>2.25.5</log4j2.version>
+        <lingsql.build.commit>local</lingsql.build.commit>
     </properties>
 
     <dependencyManagement>
@@ -157,6 +158,18 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                        <configuration>
+                            <additionalProperties>
+                                <commit>${lingsql.build.commit}</commit>
+                            </additionalProperties>
+                        </configuration>
+                    </execution>
+                </executions>
                 <configuration>
                     <excludes>
                         <exclude>
