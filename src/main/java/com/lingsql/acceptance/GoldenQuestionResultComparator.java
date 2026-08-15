@@ -1,17 +1,16 @@
 package com.lingsql.acceptance;
 
+import com.lingsql.release.BuildCommitResolver;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
 
 /**
  * 黄金问题结果离线比较器，避免 Shell 浮点数和 JSON 重序列化造成财务数据误判。
@@ -60,19 +59,9 @@ public final class GoldenQuestionResultComparator {
     }
 
     private static void printBuildCommit() {
-        try (InputStream input = GoldenQuestionResultComparator.class.getClassLoader()
-                .getResourceAsStream("META-INF/build-info.properties")) {
-            if (input == null) {
-                throw new IllegalArgumentException("比较器制品缺少构建信息");
-            }
-            Properties properties = new Properties();
-            properties.load(input);
-            String commit = properties.getProperty("build.commit", "").trim();
-            if (!commit.matches("[0-9a-f]{40}")) {
-                throw new IllegalArgumentException("比较器制品未绑定有效 Git 提交");
-            }
-            System.out.println(commit);
-        } catch (IOException | IllegalArgumentException ex) {
+        try {
+            System.out.println(BuildCommitResolver.requireBuildCommit());
+        } catch (IllegalArgumentException ex) {
             System.err.println("读取比较器构建信息失败: " + ex.getMessage());
             System.exit(EXIT_INVALID_INPUT);
         }

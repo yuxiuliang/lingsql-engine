@@ -137,7 +137,8 @@ compare_business_result() {
 }
 
 run_result_comparator() {
-  java -Dloader.main=com.lingsql.acceptance.GoldenQuestionResultComparator \
+  java -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 \
+    -Dloader.main=com.lingsql.acceptance.GoldenQuestionResultComparator \
     -cp "${GQ_COMPARATOR_JAR}" org.springframework.boot.loader.launch.PropertiesLauncher "$@"
 }
 
