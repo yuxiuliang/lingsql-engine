@@ -117,11 +117,11 @@ function completionResponse(model, content) {
 }
 
 function deterministicFault(messages) {
-  const userPrompt = messageContent(messages, "user");
-  if (userPrompt.includes("[CI_UNKNOWN_USAGE_SETTLE]")) {
+  const serializedMessages = JSON.stringify(messages ?? []);
+  if (serializedMessages.includes("[CI_UNKNOWN_USAGE_SETTLE]")) {
     return {omitUsage: true, responseId: "chatcmpl-ci-unknown-settle"};
   }
-  if (userPrompt.includes("[CI_UNKNOWN_USAGE_CANCEL]")) {
+  if (serializedMessages.includes("[CI_UNKNOWN_USAGE_CANCEL]")) {
     return {omitUsage: true, responseId: "chatcmpl-ci-unknown-cancel"};
   }
   return {omitUsage: false, responseId: "chatcmpl-lingsql-ci-stub"};
