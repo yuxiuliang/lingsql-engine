@@ -70,11 +70,13 @@ ensure_demo_tenant() {
       --arg tenantId "${LINGSQL_DEMO_TENANT_ID}" --arg tenantName "${LINGSQL_DEMO_TENANT_NAME}" \
       --arg planName "${LINGSQL_DEMO_PLAN_NAME}" --arg jdbcUrl "${LINGSQL_DEMO_JDBC_URL}" \
       --arg username "${LINGSQL_DEMO_USERNAME}" --arg password "${LINGSQL_DEMO_PASSWORD}" \
+      --arg tables "${LINGSQL_DEMO_WHITE_LIST_TABLES}" --arg columns "${LINGSQL_DEMO_WHITE_LIST_COLUMNS}" \
       --arg adminUsername "${LINGSQL_DEMO_ADMIN_USERNAME}" --arg adminPassword "${LINGSQL_DEMO_ADMIN_PASSWORD}" \
       --arg adminNickname "${LINGSQL_DEMO_ADMIN_NICKNAME}" \
-      '{tenantId:$tenantId,tenantName:$tenantName,status:1,planName:$planName,
-        jdbcUrl:$jdbcUrl,username:$username,password:$password,driverClass:"com.mysql.cj.jdbc.Driver",
-        isolationMode:"PHYSICAL",logicColumn:"tenant_id",
+      '{tenantId:$tenantId,tenantName:$tenantName,planName:$planName,
+        dataSource:{jdbcUrl:$jdbcUrl,username:$username,password:$password,driverClass:"com.mysql.cj.jdbc.Driver",
+        isolationMode:"PHYSICAL",logicColumn:"tenant_id",whiteListTables:$tables,
+        whiteListColumns:$columns,sensitiveColumns:""},
         adminAccount:{username:$adminUsername,password:$adminPassword,nickname:$adminNickname}}')"
     create_response="$(api_post '/api/v1/admin/tenants' "${create_body}" "${CONTROL_TOKEN}" "${LINGSQL_ADMIN_TENANT_ID}")"
     require_api_success "创建演示租户" "${create_response}"
@@ -98,10 +100,10 @@ reconcile_demo_datasource() {
   update_body="$(jq -cn \
     --arg tenantId "${LINGSQL_DEMO_TENANT_ID}" --arg jdbcUrl "${LINGSQL_DEMO_JDBC_URL}" \
     --arg username "${LINGSQL_DEMO_USERNAME}" --arg password "${LINGSQL_DEMO_PASSWORD}" \
-    --arg tables "${LINGSQL_DEMO_WHITE_LIST_TABLES}" \
+    --arg tables "${LINGSQL_DEMO_WHITE_LIST_TABLES}" --arg columns "${LINGSQL_DEMO_WHITE_LIST_COLUMNS}" \
     '{tenantId:$tenantId,jdbcUrl:$jdbcUrl,username:$username,password:$password,
       driverClass:"com.mysql.cj.jdbc.Driver",isolationMode:"PHYSICAL",logicColumn:"tenant_id",
-      whiteListTables:$tables,whiteListColumns:"",sensitiveColumns:"",status:1}')"
+      whiteListTables:$tables,whiteListColumns:$columns,sensitiveColumns:"",status:1}')"
   update_response="$(api_put "/api/v1/admin/config/tenant/${config_id}" "${update_body}" "${CONTROL_TOKEN}" "${LINGSQL_ADMIN_TENANT_ID}")"
   require_api_success "收敛演示数据源配置" "${update_response}"
   probe_body="${update_body}"
@@ -166,6 +168,7 @@ main() {
   LINGSQL_DEMO_ADMIN_NICKNAME="${LINGSQL_DEMO_ADMIN_NICKNAME:-演示管理员}"
   LINGSQL_DEMO_JDBC_URL="${LINGSQL_DEMO_JDBC_URL:-jdbc:mysql://mysql:3306/${LINGSQL_DEMO_DATABASE:-}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}"
   LINGSQL_DEMO_WHITE_LIST_TABLES="${LINGSQL_DEMO_WHITE_LIST_TABLES:-demo_customer,demo_product,demo_sales_order,demo_sales_order_item,demo_inventory_snapshot}"
+  LINGSQL_DEMO_WHITE_LIST_COLUMNS="${LINGSQL_DEMO_WHITE_LIST_COLUMNS:-customer_id,customer_name,customer_level,region_name,product_id,product_name,category_name,unit_price,unit_cost,order_id,order_no,order_date,order_status,sales_channel,item_id,quantity,sale_price,snapshot_date,warehouse_name,available_quantity,safety_quantity}"
   LINGSQL_DEMO_MODEL_PROVIDER="${LINGSQL_DEMO_MODEL_PROVIDER:-}"
   LINGSQL_DEMO_MODEL_NAME="${LINGSQL_DEMO_MODEL_NAME:-}"
   LINGSQL_DEMO_MODEL_VERSION="${LINGSQL_DEMO_MODEL_VERSION:-}"

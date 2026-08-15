@@ -5,6 +5,7 @@ import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.model.TenantCreateRequest;
+import com.lingsql.tenant.model.TenantProvisioningReceipt;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
 import com.lingsql.tenant.model.TenantNotificationChannelFailureStatsView;
@@ -32,7 +33,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 租户管理接口。
@@ -233,17 +236,28 @@ public class TenantAdminController {
      */
     @PostMapping
     @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
-    public ApiResponse<TenantView> createTenant(@RequestBody TenantCreateRequest request, HttpServletRequest http) {
+    public ApiResponse<TenantProvisioningReceipt> createTenant(@RequestBody TenantCreateRequest request,
+                                                               HttpServletRequest http) {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        return auditOperationExecutor.execute(
+        return auditOperationExecutor.executeCommittedResult(
                 "TENANT_CREATE",
                 "TENANT",
-                request,
+                provisioningAuditSummary(request),
                 http,
-                () -> tenantAdminService.createTenant(request)
+                () -> tenantAdminService.createTenant(request),
+                receipt -> receipt
         );
+    }
+
+    private Map<String, Object> provisioningAuditSummary(TenantCreateRequest request) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("tenantId", request == null ? null : request.getTenantId());
+        summary.put("tenantName", request == null ? null : request.getTenantName());
+        summary.put("planName", request == null ? null : request.getPlanName());
+        summary.put("operation", "READY_PROVISION");
+        return summary;
     }
 
     /**

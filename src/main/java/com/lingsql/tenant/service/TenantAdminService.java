@@ -6,6 +6,7 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
+import com.lingsql.datasource.TenantDataSourceConfigService;
 import com.lingsql.executor.SqlTaskTracker;
 import com.lingsql.billing.BillingBalanceService;
 import com.lingsql.ops.OpsAlertService;
@@ -25,11 +26,13 @@ import com.lingsql.rbac.repository.RbacRolePermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
 import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
+import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import com.lingsql.rbac.model.UserCreateRequest;
 import com.lingsql.rbac.service.UserAdminService;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantCreateRequest;
 import com.lingsql.tenant.model.TenantAdminAccountRequest;
+import com.lingsql.tenant.model.TenantDataSourceProvisionRequest;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleOpsTaskView;
 import com.lingsql.tenant.model.TenantLifecycleSnapshot;
@@ -43,12 +46,15 @@ import com.lingsql.tenant.model.TenantNotificationChannelTestRequest;
 import com.lingsql.tenant.model.TenantNotificationChannelTestView;
 import com.lingsql.tenant.model.TenantRiskLevel;
 import com.lingsql.tenant.model.TenantRiskSnapshot;
+import com.lingsql.tenant.model.TenantProvisioningReceipt;
 import com.lingsql.tenant.model.TenantUpdateRequest;
 import com.lingsql.tenant.model.TenantView;
 import com.lingsql.tenant.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -79,6 +85,10 @@ public class TenantAdminService {
     private static final Integer ACTIVE_STATUS = 1;
     private static final Integer INACTIVE_STATUS = 0;
     private static final String TENANT_ADMIN_ROLE_CODE = "TENANT_ADMIN";
+    private static final String READY_STATUS = "READY";
+    private static final String MYSQL_DRIVER_CLASS = "com.mysql.cj.jdbc.Driver";
+    private static final String PHYSICAL_ISOLATION = "PHYSICAL";
+    private static final String LOGICAL_ISOLATION = "LOGICAL";
     private static final int DEFAULT_WORKBENCH_LIMIT = 50;
     private static final int MAX_WORKBENCH_LIMIT = 200;
     private static final String PRIORITY_P0 = "P0";
@@ -115,6 +125,8 @@ public class TenantAdminService {
     private final OrganizationAdminService organizationAdminService;
     private final OpsAlertService opsAlertService;
     private final UserAdminService userAdminService;
+    private final RbacUserRoleRepository userRoleRepository;
+    private final TenantDataSourceConfigService tenantDataSourceConfigService;
 
     /**
      * 查询租户列表。
@@ -295,12 +307,12 @@ public class TenantAdminService {
      * 创建租户。
      *
      * @param request 创建请求
-     * @return 租户视图
+     * @return READY 开户回执
      * @author 余炘洋
      * @date 2026-01-26
      */
     @Transactional
-    public TenantView createTenant(TenantCreateRequest request) {
+    public TenantProvisioningReceipt createTenant(TenantCreateRequest request) {
         if (request == null) {
             throw new BizException(ErrorCode.INVALID_PARAM, "租户信息不能为空");
         }
@@ -308,11 +320,16 @@ public class TenantAdminService {
         if (!StringUtils.hasText(request.getTenantName())) {
             throw new BizException(ErrorCode.INVALID_PARAM, "租户名称不能为空");
         }
+        validateAdminAccount(request.getAdminAccount());
+        BillingPlan plan = requireReadyBillingPlan(request.getPlanName());
+        TenantDbConfig dataSource = buildReadyDataSource(request.getDataSource());
+        List<RbacPermission> basePermissions = resolveBasePermissions();
+        tenantDataSourceConfigService.verifyReadOnlyConnection(dataSource);
         tenantId = resolveTenantIdForCreate(tenantId);
         TenantInfo tenant = new TenantInfo();
         tenant.setTenantId(tenantId);
         tenant.setTenantName(request.getTenantName().trim());
-        tenant.setStatus(resolveStatus(request.getStatus()));
+        tenant.setStatus(ACTIVE_STATUS);
         tenant.setRemark(request.getRemark());
         tenant.setContactName(request.getContactName());
         tenant.setContactPhone(request.getContactPhone());
@@ -321,20 +338,133 @@ public class TenantAdminService {
             tenant.setNotificationChannels(normalizeNotificationChannels(request.getNotificationChannels()));
         }
         tenant.setExpireTime(parseDateTime(request.getExpireTime()));
-        String planName = normalizePlanName(request.getPlanName());
-        BillingPlan plan = resolveBillingPlan(planName);
-        tenant.setPlanName(planName);
-        tenant.setQuotaBalance(resolveQuotaBalance(resolveQuotaBalanceForCreate(request.getQuotaBalance(), plan)));
-        tenant.setServiceLevel(resolveServiceLevel(resolveServiceLevelForTenant(request.getServiceLevel(), plan)));
-        tenant.setTenantType(resolveTenantType(resolveTenantTypeForTenant(request.getTenantType(), plan)));
+        tenant.setPlanName(plan.getPlanName());
+        tenant.setQuotaBalance(plan.getDefaultQuotaBalance());
+        tenant.setServiceLevel(resolveServiceLevel(plan.getServiceLevel()));
+        tenant.setTenantType(resolveTenantType(plan.getTenantType()));
         tenantLifecycleService.applyDefaultExpireTimeForTrial(tenant);
         tenant.setIsDeleted(NOT_DELETED);
         tenant.setCreateTime(LocalDateTime.now());
         tenant.setUpdateTime(LocalDateTime.now());
         TenantInfo saved = tenantRepository.save(tenant);
-        initializeTenant(saved, request);
-        billingBalanceService.resetBalance(saved.getTenantId(), saved.getQuotaBalance());
-        return toView(saved);
+        dataSource.setTenantId(saved.getTenantId());
+        initializeTenant(saved, request, basePermissions, dataSource);
+        refreshBalanceProjectionAfterCommit(saved.getTenantId(), saved.getQuotaBalance());
+        return toProvisioningReceipt(saved, request.getAdminAccount(), dataSource);
+    }
+
+    private void validateAdminAccount(TenantAdminAccountRequest account) {
+        if (account == null) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "必须配置租户管理员账号");
+        }
+        if (!StringUtils.hasText(account.getUsername())) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户管理员用户名不能为空");
+        }
+        if (!StringUtils.hasText(account.getPassword())) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户管理员初始密码不能为空");
+        }
+    }
+
+    private BillingPlan requireReadyBillingPlan(String requestedPlanName) {
+        String planName = normalizePlanName(requestedPlanName);
+        if (!StringUtils.hasText(planName)) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "READY 开户必须选择套餐");
+        }
+        BillingPlan plan = resolveBillingPlan(planName);
+        if (!ACTIVE_STATUS.equals(plan.getStatus())) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "READY 开户只能使用已启用套餐");
+        }
+        if (plan.getDefaultQuotaBalance() == null || plan.getDefaultQuotaBalance() <= 0) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "READY 开户套餐必须配置正数初始余额");
+        }
+        return plan;
+    }
+
+    private TenantDbConfig buildReadyDataSource(TenantDataSourceProvisionRequest request) {
+        if (request == null) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "READY 开户必须配置数据源");
+        }
+        String jdbcUrl = normalizeText(request.getJdbcUrl());
+        if (!StringUtils.hasText(jdbcUrl) || !jdbcUrl.toLowerCase(Locale.ROOT).startsWith("jdbc:mysql://")) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "当前 READY 开户仅支持 MySQL JDBC 地址");
+        }
+        String username = normalizeText(request.getUsername());
+        if (!StringUtils.hasText(username) || !StringUtils.hasText(request.getPassword())) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "READY 开户必须配置数据库只读账号和密码");
+        }
+        String driverClass = normalizeText(request.getDriverClass());
+        if (!StringUtils.hasText(driverClass)) {
+            driverClass = MYSQL_DRIVER_CLASS;
+        }
+        if (!MYSQL_DRIVER_CLASS.equals(driverClass)) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "当前 READY 开户仅支持 MySQL 驱动");
+        }
+        String isolationMode = normalizeText(request.getIsolationMode());
+        if (!StringUtils.hasText(isolationMode)) {
+            isolationMode = PHYSICAL_ISOLATION;
+        } else {
+            isolationMode = isolationMode.toUpperCase(Locale.ROOT);
+        }
+        if (!PHYSICAL_ISOLATION.equals(isolationMode) && !LOGICAL_ISOLATION.equals(isolationMode)) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "数据隔离模式仅支持 PHYSICAL 或 LOGICAL");
+        }
+        String logicColumn = normalizeText(request.getLogicColumn());
+        if (!StringUtils.hasText(logicColumn)) {
+            logicColumn = "tenant_id";
+        }
+        if (LOGICAL_ISOLATION.equals(isolationMode) && !logicColumn.matches("[A-Za-z_][A-Za-z0-9_]{0,63}")) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "逻辑隔离字段格式非法");
+        }
+        if (!StringUtils.hasText(request.getWhiteListTables())
+                || !StringUtils.hasText(request.getWhiteListColumns())) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "READY 开户必须配置表白名单和字段白名单");
+        }
+        TenantDbConfig config = new TenantDbConfig();
+        config.setJdbcUrl(jdbcUrl);
+        config.setUsername(username);
+        config.setPassword(request.getPassword());
+        config.setDriverClass(driverClass);
+        config.setIsolationMode(isolationMode);
+        config.setLogicColumn(logicColumn);
+        config.setWhiteListTables(request.getWhiteListTables().trim());
+        config.setWhiteListColumns(request.getWhiteListColumns().trim());
+        config.setSensitiveColumns(normalizeText(request.getSensitiveColumns()));
+        config.setStatus(ACTIVE_STATUS);
+        return config;
+    }
+
+    private TenantProvisioningReceipt toProvisioningReceipt(TenantInfo tenant,
+                                                             TenantAdminAccountRequest account,
+                                                             TenantDbConfig dataSource) {
+        return new TenantProvisioningReceipt(
+                tenant.getId(),
+                tenant.getTenantId(),
+                tenant.getTenantName(),
+                READY_STATUS,
+                account.getUsername().trim(),
+                tenant.getPlanName(),
+                tenant.getQuotaBalance(),
+                dataSource.getIsolationMode(),
+                true,
+                true,
+                true,
+                true,
+                true
+        );
+    }
+
+    private void refreshBalanceProjectionAfterCommit(String tenantId, Long balance) {
+        Runnable refresh = () -> billingBalanceService.resetBalance(tenantId, balance);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            refresh.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                refresh.run();
+            }
+        });
     }
 
     /**
@@ -395,6 +525,8 @@ public class TenantAdminService {
         }
         TenantInfo tenant = tenantRepository.findByIdAndIsDeleted(id, NOT_DELETED)
                 .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
+        boolean activating = INACTIVE_STATUS.equals(tenant.getStatus())
+                && ACTIVE_STATUS.equals(request.getStatus());
         if (StringUtils.hasText(request.getTenantName())) {
             tenant.setTenantName(request.getTenantName().trim());
         }
@@ -418,10 +550,17 @@ public class TenantAdminService {
         }
         tenant.setServiceLevel(resolveServiceLevel(resolveServiceLevelForUpdate(request.getServiceLevel(), tenant.getServiceLevel(), plan)));
         tenant.setTenantType(resolveTenantType(resolveTenantTypeForUpdate(request.getTenantType(), tenant.getTenantType(), plan)));
+        if (ACTIVE_STATUS.equals(tenant.getStatus())
+                && (activating || planChanged || request.getQuotaBalance() != null)) {
+            validateTenantReadyForActivation(tenant);
+        }
         tenant.setUpdateTime(LocalDateTime.now());
         TenantInfo saved = tenantRepository.save(tenant);
+        if (activating) {
+            activateTenantConfig(saved.getTenantId());
+        }
         if (request.getQuotaBalance() != null || resolvedQuotaBalance != null) {
-            billingBalanceService.resetBalance(saved.getTenantId(), saved.getQuotaBalance());
+            refreshBalanceProjectionAfterCommit(saved.getTenantId(), saved.getQuotaBalance());
         }
         return toView(saved);
     }
@@ -457,6 +596,7 @@ public class TenantAdminService {
         }
         tenant.setExpireTime(targetExpire);
         if (resolveActivate(request)) {
+            validateTenantReadyForActivation(tenant);
             tenant.setStatus(ACTIVE_STATUS);
             activateTenantConfig(tenant.getTenantId());
         }
@@ -483,6 +623,7 @@ public class TenantAdminService {
         if (expireTime == null || expireTime.isBefore(now)) {
             tenant.setExpireTime(now.plusDays(30));
         }
+        validateTenantReadyForActivation(tenant);
         tenant.setStatus(ACTIVE_STATUS);
         tenant.setUpdateTime(now);
         activateTenantConfig(tenant.getTenantId());
@@ -524,14 +665,16 @@ public class TenantAdminService {
      * @author 余炘洋
      * @date 2026-01-26
      */
-    private void initializeTenant(TenantInfo tenant, TenantCreateRequest request) {
+    private void initializeTenant(TenantInfo tenant,
+                                  TenantCreateRequest request,
+                                  List<RbacPermission> basePermissions,
+                                  TenantDbConfig dataSource) {
         RbacRole role = ensureTenantAdminRole(tenant.getTenantId());
         ensureTenantDataScope(role.getId());
-        List<RbacPermission> basePermissions = resolveBasePermissions();
         initTenantPermissionPool(tenant.getTenantId(), basePermissions);
         initRolePermissions(role.getId(), basePermissions);
         createTenantAdminAccount(tenant.getTenantId(), role.getId(), request.getAdminAccount());
-        initTenantDbConfig(tenant.getTenantId(), request);
+        tenantDbConfigRepository.save(dataSource);
         initTenantOrganizationTemplate(tenant.getTenantId(), request);
     }
 
@@ -660,41 +803,6 @@ public class TenantAdminService {
     }
 
     /**
-     * 初始化租户数据源配置。
-     *
-     * @param tenantId 租户ID
-     * @param request  创建请求
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private void initTenantDbConfig(String tenantId, TenantCreateRequest request) {
-        if (request == null) {
-            return;
-        }
-        String isolationMode = normalizeText(request.getIsolationMode());
-        String jdbcUrl = normalizeText(request.getJdbcUrl());
-        if (!StringUtils.hasText(jdbcUrl) && !"LOGICAL".equalsIgnoreCase(isolationMode)) {
-            return;
-        }
-        if ("LOGICAL".equalsIgnoreCase(isolationMode) && !StringUtils.hasText(jdbcUrl)) {
-            throw new BizException(ErrorCode.CONFIG_INVALID, "逻辑隔离模式需配置 JDBC 地址");
-        }
-        if (tenantDbConfigRepository.findByTenantId(tenantId).isPresent()) {
-            return;
-        }
-        TenantDbConfig config = new TenantDbConfig();
-        config.setTenantId(tenantId);
-        config.setJdbcUrl(jdbcUrl);
-        config.setUsername(request.getUsername());
-        config.setPassword(request.getPassword());
-        config.setDriverClass(StringUtils.hasText(request.getDriverClass()) ? request.getDriverClass() : "com.mysql.cj.jdbc.Driver");
-        config.setIsolationMode(StringUtils.hasText(isolationMode) ? isolationMode : "PHYSICAL");
-        config.setLogicColumn(StringUtils.hasText(request.getLogicColumn()) ? request.getLogicColumn() : "tenant_id");
-        config.setStatus(ACTIVE_STATUS);
-        tenantDbConfigRepository.save(config);
-    }
-
-    /**
      * 初始化租户组织模板。
      *
      * <p>将“创建租户”和“初始化组织树”合并到同一条开户链路里，避免管理员
@@ -753,14 +861,53 @@ public class TenantAdminService {
      */
     private List<RbacPermission> resolveBasePermissions() {
         List<RbacPermission> permissions = permissionRepository.findByPermCodeIn(BASE_PERMISSION_CODES);
-        if (permissions != null && !permissions.isEmpty()) {
-            return permissions;
+        Map<String, RbacPermission> permissionByCode = new LinkedHashMap<>();
+        if (permissions != null) {
+            for (RbacPermission permission : permissions) {
+                if (permission != null
+                        && StringUtils.hasText(permission.getPermCode())
+                        && ACTIVE_STATUS.equals(permission.getStatus())) {
+                    permissionByCode.put(permission.getPermCode(), permission);
+                }
+            }
         }
-        return permissionRepository.findAll().stream()
-                .filter(item -> item.getPermCode() != null)
-                .filter(item -> !item.getPermCode().startsWith("MENU:ADMIN"))
-                .filter(item -> !item.getPermCode().startsWith("ADMIN:"))
+        List<String> missingCodes = BASE_PERMISSION_CODES.stream()
+                .filter(code -> !permissionByCode.containsKey(code))
                 .toList();
+        if (!missingCodes.isEmpty()) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "租户基础权限未完整初始化，请先执行权限基线迁移");
+        }
+        return BASE_PERMISSION_CODES.stream().map(permissionByCode::get).toList();
+    }
+
+    private void validateTenantReadyForActivation(TenantInfo tenant) {
+        BillingPlan plan = requireReadyBillingPlan(tenant.getPlanName());
+        if (tenant.getQuotaBalance() == null || tenant.getQuotaBalance() <= 0) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户余额不足，不能启用");
+        }
+        List<RbacPermission> basePermissions = resolveBasePermissions();
+        List<Long> basePermissionIds = basePermissions.stream().map(RbacPermission::getId).toList();
+        RbacRole adminRole = roleRepository.findByTenantIdAndRoleCode(tenant.getTenantId(), TENANT_ADMIN_ROLE_CODE)
+                .filter(role -> ACTIVE_STATUS.equals(role.getStatus()))
+                .orElseThrow(() -> new BizException(ErrorCode.CONFIG_INVALID, "租户管理员角色未就绪，不能启用"));
+        List<Long> adminUserIds = userRoleRepository.findUserIdsByRoleId(adminRole.getId());
+        boolean activeAdminExists = userRepository.findAllById(adminUserIds).stream()
+                .anyMatch(user -> tenant.getTenantId().equals(user.getTenantId())
+                        && ACTIVE_STATUS.equals(user.getStatus()));
+        if (!activeAdminExists) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "租户没有可登录管理员，不能启用");
+        }
+        if (!tenantPermissionRepository.findPermIdsByTenantId(tenant.getTenantId()).containsAll(basePermissionIds)
+                || !rolePermissionRepository.findPermIdsByRoleIds(List.of(adminRole.getId()))
+                .containsAll(basePermissionIds)) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "租户基础权限未完整绑定，不能启用");
+        }
+        TenantDbConfig dataSource = tenantDbConfigRepository.findByTenantId(tenant.getTenantId())
+                .orElseThrow(() -> new BizException(ErrorCode.CONFIG_INVALID, "租户数据源未配置，不能启用"));
+        tenantDataSourceConfigService.verifyReadOnlyConnection(dataSource);
+        if (!ACTIVE_STATUS.equals(plan.getStatus()) || plan.getDefaultQuotaBalance() == null) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "租户套餐未就绪，不能启用");
+        }
     }
 
     /**
@@ -1011,25 +1158,6 @@ public class TenantAdminService {
     }
 
     /**
-     * 创建租户时解析余额。
-     *
-     * @param quotaBalance 显式余额
-     * @param plan         套餐配置
-     * @return 最终余额
-     * @author 余炘洋
-     * @date 2026-04-10
-     */
-    private Long resolveQuotaBalanceForCreate(Long quotaBalance, BillingPlan plan) {
-        if (quotaBalance != null) {
-            return quotaBalance;
-        }
-        if (plan != null) {
-            return plan.getDefaultQuotaBalance();
-        }
-        return null;
-    }
-
-    /**
      * 更新租户时解析余额。
      *
      * @param requestQuotaBalance 显式余额
@@ -1057,25 +1185,6 @@ public class TenantAdminService {
     }
 
     /**
-     * 创建租户时解析服务等级。
-     *
-     * @param requestServiceLevel 显式服务等级
-     * @param plan                套餐配置
-     * @return 最终服务等级
-     * @author 余炘洋
-     * @date 2026-04-10
-     */
-    private String resolveServiceLevelForTenant(String requestServiceLevel, BillingPlan plan) {
-        if (StringUtils.hasText(requestServiceLevel)) {
-            return requestServiceLevel;
-        }
-        if (plan != null) {
-            return plan.getServiceLevel();
-        }
-        return null;
-    }
-
-    /**
      * 更新租户时解析服务等级。
      *
      * @param requestServiceLevel 显式服务等级
@@ -1095,25 +1204,6 @@ public class TenantAdminService {
             return plan.getServiceLevel();
         }
         return currentServiceLevel;
-    }
-
-    /**
-     * 创建租户时解析租户类型。
-     *
-     * @param requestTenantType 显式租户类型
-     * @param plan              套餐配置
-     * @return 最终租户类型
-     * @author 余炘洋
-     * @date 2026-04-10
-     */
-    private String resolveTenantTypeForTenant(String requestTenantType, BillingPlan plan) {
-        if (StringUtils.hasText(requestTenantType)) {
-            return requestTenantType;
-        }
-        if (plan != null) {
-            return plan.getTenantType();
-        }
-        return null;
     }
 
     /**
@@ -1257,18 +1347,6 @@ public class TenantAdminService {
                 .map(item -> item.trim().toLowerCase(Locale.ROOT))
                 .distinct()
                 .toList();
-    }
-
-    /**
-     * 解析状态。
-     *
-     * @param status 状态值
-     * @return 状态
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private Integer resolveStatus(Integer status) {
-        return status == null ? ACTIVE_STATUS : status;
     }
 
     private int resolveExtendDays(TenantLifecycleExtendRequest request) {

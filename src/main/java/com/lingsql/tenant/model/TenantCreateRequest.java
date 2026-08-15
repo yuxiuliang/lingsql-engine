@@ -22,6 +22,14 @@ public class TenantCreateRequest {
     private TenantAdminAccountRequest adminAccount;
 
     /**
+     * 首问使用的数据源。READY 开户必须完成连接与只读权限验证。
+     *
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    private TenantDataSourceProvisionRequest dataSource;
+
+    /**
      * 租户ID（由系统自动生成）。
      *
      * @author 余炘洋
@@ -36,14 +44,6 @@ public class TenantCreateRequest {
      * @date 2026-01-26
      */
     private String tenantName;
-
-    /**
-     * 状态: 1-启用, 0-停用。
-     *
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private Integer status;
 
     /**
      * 备注。
@@ -100,78 +100,6 @@ public class TenantCreateRequest {
      * @date 2026-01-26
      */
     private String planName;
-
-    /**
-     * 余额。
-     *
-     * @author 余炘洋
-     * @date 2026-01-27
-     */
-    private Long quotaBalance;
-
-    /**
-     * 服务等级。
-     *
-     * @author 余炘洋
-     * @date 2026-01-27
-     */
-    private String serviceLevel;
-
-    /**
-     * 租户类型。
-     *
-     * @author 余炘洋
-     * @date 2026-01-27
-     */
-    private String tenantType;
-
-    /**
-     * JDBC 地址。
-     *
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private String jdbcUrl;
-
-    /**
-     * 数据库用户名。
-     *
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private String username;
-
-    /**
-     * 数据库密码。
-     *
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private String password;
-
-    /**
-     * 驱动类。
-     *
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private String driverClass;
-
-    /**
-     * 隔离模式: PHYSICAL / LOGICAL。
-     *
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private String isolationMode;
-
-    /**
-     * 逻辑隔离字段。
-     *
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private String logicColumn;
 
     /**
      * 组织模板编码。

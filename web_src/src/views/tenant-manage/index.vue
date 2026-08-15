@@ -609,6 +609,11 @@ const planOptions = computed(() => {
   });
   return Array.from(options);
 });
+const readyPlanOptions = computed(() => planList.value
+  .filter((plan) => plan.status === 1 && (plan.defaultQuotaBalance || 0) > 0)
+  .map((plan) => plan.planName.trim())
+  .filter(Boolean));
+const selectablePlanOptions = computed(() => editingId.value ? planOptions.value : readyPlanOptions.value);
 
 /**
  * 租户表单定义。
@@ -633,6 +638,9 @@ interface TenantForm {
   password: string;
   driverClass: string;
   logicColumn: string;
+  whiteListTables: string;
+  whiteListColumns: string;
+  sensitiveColumns: string;
   orgTemplateCode: string;
   orgRootUnitName: string;
   adminUsername: string;
@@ -657,6 +665,9 @@ const form = reactive<TenantForm>({
   password: '',
   driverClass: DEFAULT_MYSQL_DRIVER_CLASS,
   logicColumn: 'tenant_id',
+  whiteListTables: '',
+  whiteListColumns: '',
+  sensitiveColumns: '',
   orgTemplateCode: '',
   orgRootUnitName: '',
   adminUsername: '',
@@ -1087,6 +1098,9 @@ const resetForm = () => {
   form.password = '';
   form.driverClass = DEFAULT_MYSQL_DRIVER_CLASS;
   form.logicColumn = 'tenant_id';
+  form.whiteListTables = '';
+  form.whiteListColumns = '';
+  form.sensitiveColumns = '';
   form.orgTemplateCode = '';
   form.orgRootUnitName = '';
   form.adminUsername = '';
@@ -1395,8 +1409,8 @@ const refreshTenantData = async () => {
  */
 const handleCreate = () => {
   editingId.value = null;
-  initConfig.value = false;
   resetForm();
+  initConfig.value = true;
   dialogVisible.value = true;
 };
 
@@ -1438,23 +1452,25 @@ const buildCreatePayload = (jdbcUrl?: string): TenantCreateRequest => {
       password: form.adminPassword,
       nickname: form.adminNickname.trim() || undefined
     },
-    status: form.status,
+    dataSource: {
+      isolationMode: form.isolationMode as 'PHYSICAL' | 'LOGICAL',
+      jdbcUrl: jdbcUrl || '',
+      username: form.username.trim(),
+      password: form.password,
+      driverClass: form.driverClass.trim() || DEFAULT_MYSQL_DRIVER_CLASS,
+      logicColumn: form.logicColumn.trim() || undefined,
+      whiteListTables: form.whiteListTables.trim(),
+      whiteListColumns: form.whiteListColumns.trim(),
+      sensitiveColumns: form.sensitiveColumns.trim() || undefined
+    },
     remark: form.remark || undefined,
     contactName: form.contactName || undefined,
     contactPhone: form.contactPhone || undefined,
     contactEmail: form.contactEmail || undefined,
     notificationChannels: form.notificationChannels,
     expireTime: form.expireTime || undefined,
-    planName: form.planName || undefined
+    planName: form.planName.trim()
   };
-  if (initConfig.value) {
-    payload.isolationMode = form.isolationMode;
-    payload.jdbcUrl = jdbcUrl || undefined;
-    payload.username = form.username.trim() || undefined;
-    payload.password = form.password || undefined;
-    payload.driverClass = form.driverClass.trim() || DEFAULT_MYSQL_DRIVER_CLASS;
-    payload.logicColumn = form.logicColumn.trim() || undefined;
-  }
   payload.orgTemplateCode = form.orgTemplateCode || undefined;
   payload.orgRootUnitName = form.orgTemplateCode
     ? (form.orgRootUnitName.trim() || form.tenantName.trim() || undefined)
@@ -1498,8 +1514,20 @@ const handleSave = async () => {
     ElMessage.warning('请填写租户管理员账号和初始密码');
     return;
   }
-  const jdbcUrl = !editingId.value && initConfig.value ? validateInitJdbcUrl() : null;
-  if (!editingId.value && initConfig.value && !jdbcUrl) {
+  if (!editingId.value && !form.planName.trim()) {
+    ElMessage.warning('请选择已启用且余额为正的套餐');
+    return;
+  }
+  if (!editingId.value && (!form.username.trim() || !form.password)) {
+    ElMessage.warning('请填写数据库只读账号和密码');
+    return;
+  }
+  if (!editingId.value && (!form.whiteListTables.trim() || !form.whiteListColumns.trim())) {
+    ElMessage.warning('请填写表白名单和字段白名单');
+    return;
+  }
+  const jdbcUrl = !editingId.value ? validateInitJdbcUrl() : null;
+  if (!editingId.value && !jdbcUrl) {
     return;
   }
   try {
@@ -1507,8 +1535,8 @@ const handleSave = async () => {
       await updateTenant(editingId.value, buildUpdatePayload());
       ElMessage.success('租户已更新');
     } else {
-      await createTenant(buildCreatePayload(jdbcUrl || undefined));
-      ElMessage.success('租户已创建');
+      const receipt = await createTenant(buildCreatePayload(jdbcUrl || undefined));
+      ElMessage.success(`租户 ${receipt.tenantId} 已完成 READY 开户`);
     }
     dialogVisible.value = false;
     await refreshTenantData();
@@ -3272,14 +3300,15 @@ refreshTenantData();
             value-format="YYYY-MM-DDTHH:mm:ss"
           />
         </el-form-item>
-        <el-form-item label="套餐">
+        <el-form-item label="套餐" :required="!editingId">
           <el-select v-model="form.planName" placeholder="请选择套餐" filterable clearable style="width: 100%">
-            <el-option v-for="plan in planOptions" :key="plan" :label="plan" :value="plan"/>
+            <el-option v-for="plan in selectablePlanOptions" :key="plan" :label="plan" :value="plan"/>
           </el-select>
-          <div class="form-tip">套餐来源于“套餐管理”页现有租户配置。</div>
+          <div v-if="!editingId" class="form-tip">READY 开户仅允许选择已启用且初始余额为正的套餐。</div>
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="form.status" style="width: 100%">
+          <el-tag v-if="!editingId" type="success">启用（READY）</el-tag>
+          <el-select v-else v-model="form.status" style="width: 100%">
             <el-option :value="1" label="启用"/>
             <el-option :value="0" label="停用"/>
           </el-select>
@@ -3336,8 +3365,8 @@ refreshTenantData();
             />
             <div class="form-tip">用于覆盖模板中的默认主体名称，避免直接落出“集团总部 / 第一学校 / 政务中心”等固定名称。</div>
           </el-form-item>
-          <el-form-item label="初始化数据源">
-            <el-switch v-model="initConfig"/>
+          <el-form-item label="数据源">
+            <el-tag type="success">READY 必填</el-tag>
           </el-form-item>
           <template v-if="initConfig">
             <el-form-item label="隔离模式">
@@ -3386,6 +3415,15 @@ refreshTenantData();
             </el-form-item>
             <el-form-item label="逻辑字段">
               <el-input v-model="form.logicColumn" placeholder="tenant_id"/>
+            </el-form-item>
+            <el-form-item label="表白名单" required>
+              <el-input v-model="form.whiteListTables" placeholder="orders,customers"/>
+            </el-form-item>
+            <el-form-item label="字段白名单" required>
+              <el-input v-model="form.whiteListColumns" type="textarea" :rows="2" placeholder="id,amount,customer_id"/>
+            </el-form-item>
+            <el-form-item label="敏感字段">
+              <el-input v-model="form.sensitiveColumns" placeholder="customers.phone,customers.email"/>
             </el-form-item>
           </template>
         </template>

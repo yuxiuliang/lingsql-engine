@@ -35,7 +35,7 @@ public class AuditOperationExecutor {
     private final AuditDeliveryPublisher auditDeliveryPublisher;
 
     public <T> ApiResponse<T> execute(String action, String resource, Object request, HttpServletRequest http, Supplier<T> supplier) {
-        return executeInternal(action, resource, request, http, supplier, result -> request);
+        return executeInternal(action, resource, request, http, supplier, result -> request, false);
     }
 
     public <T> ApiResponse<T> execute(String action,
@@ -45,14 +45,38 @@ public class AuditOperationExecutor {
                                       Supplier<T> supplier,
                                       Function<T, Object> successAuditDetailMapper) {
         Function<T, Object> mapper = successAuditDetailMapper == null ? result -> request : successAuditDetailMapper;
-        return executeInternal(action, resource, request, http, supplier, mapper);
+        return executeInternal(action, resource, request, http, supplier, mapper, false);
+    }
+
+    /**
+     * 执行独立事务提交的创建操作。业务提交后即使审计结果暂时无法收口，也返回稳定回执，
+     * 已持久化的 PREPARED 事件由审计补偿任务转为 UNKNOWN 并触发人工核对。
+     *
+     * @param action 操作类型
+     * @param resource 资源类型
+     * @param request 请求对象
+     * @param http HTTP 请求
+     * @param supplier 业务操作
+     * @param successAuditDetailMapper 成功审计详情映射
+     * @return 业务回执
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    public <T> ApiResponse<T> executeCommittedResult(String action,
+                                                     String resource,
+                                                     Object request,
+                                                     HttpServletRequest http,
+                                                     Supplier<T> supplier,
+                                                     Function<T, Object> successAuditDetailMapper) {
+        Function<T, Object> mapper = successAuditDetailMapper == null ? result -> request : successAuditDetailMapper;
+        return executeInternal(action, resource, request, http, supplier, mapper, true);
     }
 
     public ApiResponse<String> executeVoid(String action, String resource, Object request, HttpServletRequest http, Runnable runnable, String successMessage) {
         return executeInternal(action, resource, request, http, () -> {
             runnable.run();
             return successMessage;
-        }, result -> request);
+        }, result -> request, false);
     }
 
     private <T> ApiResponse<T> executeInternal(String action,
@@ -60,7 +84,8 @@ public class AuditOperationExecutor {
                                                Object request,
                                                HttpServletRequest http,
                                                Supplier<T> supplier,
-                                               Function<T, Object> successAuditDetailMapper) {
+                                               Function<T, Object> successAuditDetailMapper,
+                                               boolean committedResultWins) {
         AuditLogCommand command = buildCommand(action, resource, request, http);
         String eventId = auditDeliveryService.prepare(command);
         T result;
@@ -79,8 +104,18 @@ public class AuditOperationExecutor {
         try {
             finalizeSuccess(eventId, auditDetail);
         } catch (AuditPersistenceException ex) {
+            if (committedResultWins) {
+                log.error("业务已提交但审计结果暂未持久化: eventId={}, action={}, resource={}",
+                        eventId, action, resource, ex);
+                return ApiResponse.success(result);
+            }
             throw ex;
         } catch (Exception ex) {
+            if (committedResultWins) {
+                log.error("业务已提交但审计结果暂未持久化: eventId={}, action={}, resource={}",
+                        eventId, action, resource, ex);
+                return ApiResponse.success(result);
+            }
             throw new AuditPersistenceException("成功操作的审计结果无法持久化，需要人工核对", ex);
         }
         return ApiResponse.success(result);

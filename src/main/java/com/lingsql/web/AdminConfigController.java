@@ -33,7 +33,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 配置管理接口，提供租户、模型、语义字典与 Join 规则的管理能力。
@@ -87,7 +89,7 @@ public class AdminConfigController {
         return auditOperationExecutor.execute(
                 "TENANT_CREATE",
                 "TENANT",
-                request,
+                dataSourceAuditSummary(null, request, "CREATE"),
                 http,
                 () -> tenantDataSourceConfigService.create(request)
         );
@@ -130,10 +132,20 @@ public class AdminConfigController {
         return auditOperationExecutor.execute(
                 "TENANT_UPDATE",
                 "TENANT",
-                request,
+                dataSourceAuditSummary(id, request, "UPDATE"),
                 http,
                 () -> tenantDataSourceConfigService.update(id, request)
         );
+    }
+
+    private Map<String, Object> dataSourceAuditSummary(Long id,
+                                                       TenantDbConfig request,
+                                                       String operation) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("configId", id);
+        summary.put("tenantId", request == null ? null : request.getTenantId());
+        summary.put("operation", operation);
+        return summary;
     }
 
     /**

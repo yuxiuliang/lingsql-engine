@@ -458,10 +458,15 @@ public class SqlSecurityChecker {
         }
 
         for (String column : collector.getColumns()) {
-            if (!whiteColumns.isEmpty() && !whiteColumns.contains(column)) {
+            String simpleColumn = column.contains(".")
+                    ? column.substring(column.lastIndexOf('.') + 1)
+                    : column;
+            if (!whiteColumns.isEmpty()
+                    && !whiteColumns.contains(column)
+                    && !whiteColumns.contains(simpleColumn)) {
                 throw new BizException(ErrorCode.SECURITY_ALLOWLIST_BLOCKED, "安全警告：字段未在白名单内 " + column);
             }
-            if (sensitiveColumns.contains(column)) {
+            if (sensitiveColumns.contains(column) || sensitiveColumns.contains(simpleColumn)) {
                 throw new BizException(ErrorCode.SECURITY_ALLOWLIST_BLOCKED, "安全警告：访问敏感字段 " + column);
             }
         }

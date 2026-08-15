@@ -512,15 +512,24 @@ Content-Type: application/json
     "password": "ChangeMe2026",
     "nickname": "租户管理员"
   },
-  "serviceLevel": "BASIC",
-  "tenantType": "STANDARD",
-  "quotaBalance": 100000,
+  "planName": "标准版",
+  "dataSource": {
+    "jdbcUrl": "jdbc:mysql://db.example.com:3306/sales",
+    "username": "lingsql_readonly",
+    "password": "ChangeMe2026",
+    "driverClass": "com.mysql.cj.jdbc.Driver",
+    "isolationMode": "PHYSICAL",
+    "logicColumn": "tenant_id",
+    "whiteListTables": "orders,customers",
+    "whiteListColumns": "id,amount,customer_id",
+    "sensitiveColumns": "phone,email"
+  },
   "contactName": "李四",
   "contactEmail": "lisi@example.com"
 }
 ```
 
-`adminAccount` 为必填对象。租户、`TENANT_ADMIN` 角色、首个登录账号和角色绑定在同一事务内创建；任一步失败都会回滚，不会留下无法登录的空租户。密码只用于写入，响应和审计详情均不得回显。
+该接口只执行 READY 开户。`adminAccount`、已启用且初始余额为正的 `planName`、MySQL 只读 `dataSource`、表白名单和字段白名单均为必填；服务端在控制库写入前验证连接与 `SHOW GRANTS`，再在同一事务内创建租户、基础权限、首个管理员、套餐余额事实和数据源配置。任一步失败都会回滚，不会留下无法登录或无法计费的空租户。密码只用于写入，响应和成功审计详情仅保存脱敏开户回执，不回显密码、JDBC 地址或数据库账号。
 
 #### 4.1.3 更新租户
 

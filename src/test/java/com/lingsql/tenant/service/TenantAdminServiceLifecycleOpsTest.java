@@ -1,18 +1,24 @@
 package com.lingsql.tenant.service;
 
 import com.lingsql.billing.BillingBalanceService;
+import com.lingsql.billing.entity.BillingPlan;
 import com.lingsql.billing.repository.BillingPlanRepository;
+import com.lingsql.datasource.TenantDataSourceConfigService;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.executor.SqlTaskTracker;
 import com.lingsql.ops.OpsAlertService;
 import com.lingsql.organization.service.OrganizationAdminService;
+import com.lingsql.rbac.entity.RbacPermission;
+import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.repository.RbacPermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleDataScopeRepository;
 import com.lingsql.rbac.repository.RbacRolePermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
 import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
+import com.lingsql.rbac.repository.RbacUserRoleRepository;
+import com.lingsql.rbac.entity.RbacUser;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleOpsTaskView;
@@ -34,6 +40,8 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -51,6 +59,8 @@ class TenantAdminServiceLifecycleOpsTest {
         tenant.setTenantId("t-001");
         tenant.setTenantName("租户A");
         tenant.setStatus(0);
+        tenant.setPlanName("标准版");
+        tenant.setQuotaBalance(1000L);
         tenant.setExpireTime(LocalDateTime.now().minusDays(1));
         TenantDbConfig config = new TenantDbConfig();
         config.setTenantId("t-001");
@@ -83,9 +93,15 @@ class TenantAdminServiceLifecycleOpsTest {
         tenant.setTenantId("t-002");
         tenant.setTenantName("租户B");
         tenant.setStatus(0);
+        tenant.setPlanName("标准版");
+        tenant.setQuotaBalance(1000L);
         tenant.setExpireTime(LocalDateTime.now().minusDays(5));
+        TenantDbConfig config = new TenantDbConfig();
+        config.setTenantId("t-002");
+        config.setStatus(0);
 
         when(tenantRepository.findByIdAndIsDeleted(2L, 0)).thenReturn(Optional.of(tenant));
+        when(configRepository.findByTenantId("t-002")).thenReturn(Optional.of(config));
         when(tenantRepository.save(any(TenantInfo.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(lifecycleService.evaluate(any(TenantInfo.class)))
                 .thenReturn(new TenantLifecycleSnapshot(TenantLifecycleState.ACTIVE, 30, 0));
@@ -176,22 +192,73 @@ class TenantAdminServiceLifecycleOpsTest {
     private TenantAdminService buildService(TenantRepository tenantRepository,
                                             TenantDbConfigRepository configRepository,
                                             TenantLifecycleService lifecycleService) {
+        RbacPermissionRepository permissionRepository = Mockito.mock(RbacPermissionRepository.class);
+        RbacTenantPermissionRepository tenantPermissionRepository = Mockito.mock(RbacTenantPermissionRepository.class);
+        RbacRoleRepository roleRepository = Mockito.mock(RbacRoleRepository.class);
+        RbacRolePermissionRepository rolePermissionRepository = Mockito.mock(RbacRolePermissionRepository.class);
+        RbacUserRepository userRepository = Mockito.mock(RbacUserRepository.class);
+        RbacUserRoleRepository userRoleRepository = Mockito.mock(RbacUserRoleRepository.class);
+        BillingPlanRepository planRepository = Mockito.mock(BillingPlanRepository.class);
+        List<RbacPermission> permissions = buildBasePermissions();
+        List<Long> permissionIds = permissions.stream().map(RbacPermission::getId).toList();
+        RbacRole adminRole = new RbacRole();
+        adminRole.setId(1L);
+        adminRole.setStatus(1);
+        BillingPlan plan = new BillingPlan();
+        plan.setPlanName("标准版");
+        plan.setStatus(1);
+        plan.setDefaultQuotaBalance(1000L);
+        when(permissionRepository.findByPermCodeIn(anyList())).thenReturn(permissions);
+        when(tenantPermissionRepository.findPermIdsByTenantId(anyString())).thenReturn(permissionIds);
+        when(roleRepository.findByTenantIdAndRoleCode(anyString(), anyString())).thenReturn(Optional.of(adminRole));
+        when(rolePermissionRepository.findPermIdsByRoleIds(anyList())).thenReturn(permissionIds);
+        when(userRepository.countByTenantIdAndStatus(anyString(), any(Integer.class))).thenReturn(1L);
+        RbacUser adminUser = new RbacUser();
+        adminUser.setId(1L);
+        adminUser.setTenantId("t-001");
+        adminUser.setStatus(1);
+        when(userRoleRepository.findUserIdsByRoleId(1L)).thenReturn(List.of(1L));
+        when(userRepository.findAllById(List.of(1L))).thenAnswer(invocation -> {
+            adminUser.setTenantId(tenantRepository.findByIdAndIsDeleted(2L, 0).isPresent() ? "t-002" : "t-001");
+            return List.of(adminUser);
+        });
+        when(planRepository.findByPlanNameAndIsDeleted("标准版", 0)).thenReturn(Optional.of(plan));
         return new TenantAdminService(
                 tenantRepository,
                 configRepository,
-                Mockito.mock(RbacPermissionRepository.class),
-                Mockito.mock(RbacTenantPermissionRepository.class),
-                Mockito.mock(RbacRoleRepository.class),
-                Mockito.mock(RbacRolePermissionRepository.class),
+                permissionRepository,
+                tenantPermissionRepository,
+                roleRepository,
+                rolePermissionRepository,
                 Mockito.mock(RbacRoleDataScopeRepository.class),
-                Mockito.mock(RbacUserRepository.class),
+                userRepository,
                 Mockito.mock(SqlTaskTracker.class),
                 Mockito.mock(BillingBalanceService.class),
-                Mockito.mock(BillingPlanRepository.class),
+                planRepository,
                 lifecycleService,
                 Mockito.mock(OrganizationAdminService.class),
                 Mockito.mock(OpsAlertService.class),
-                Mockito.mock(com.lingsql.rbac.service.UserAdminService.class)
+                Mockito.mock(com.lingsql.rbac.service.UserAdminService.class),
+                userRoleRepository,
+                Mockito.mock(TenantDataSourceConfigService.class)
         );
+    }
+
+    private List<RbacPermission> buildBasePermissions() {
+        List<String> codes = List.of(
+                "MENU:ADMIN", "MENU:ADMIN:ORG", "ADMIN:ORG:READ", "ADMIN:ORG:WRITE",
+                "ADMIN:ORG:DELETE", "MENU:CHAT", "MENU:CHAT:HISTORY", "API:CHAT:ASK",
+                "API:CHAT:HISTORY:READ", "API:CHAT:HISTORY:WRITE", "CONFIG:CHAT:READ"
+        );
+        long id = 1L;
+        java.util.ArrayList<RbacPermission> permissions = new java.util.ArrayList<>();
+        for (String code : codes) {
+            RbacPermission permission = new RbacPermission();
+            permission.setId(id++);
+            permission.setPermCode(code);
+            permission.setStatus(1);
+            permissions.add(permission);
+        }
+        return permissions;
     }
 }

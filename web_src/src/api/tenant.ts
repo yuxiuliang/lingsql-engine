@@ -105,23 +105,45 @@ export interface TenantCreateRequest {
     password: string;
     nickname?: string;
   };
+  dataSource: TenantDataSourceProvisionRequest;
   tenantName: string;
-  status?: number;
   remark?: string;
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
   notificationChannels?: string[];
   expireTime?: string;
-  planName?: string;
-  jdbcUrl?: string;
-  username?: string;
-  password?: string;
-  driverClass?: string;
-  isolationMode?: string;
-  logicColumn?: string;
+  planName: string;
   orgTemplateCode?: string;
   orgRootUnitName?: string;
+}
+
+export interface TenantDataSourceProvisionRequest {
+  jdbcUrl: string;
+  username: string;
+  password: string;
+  driverClass: string;
+  isolationMode: 'PHYSICAL' | 'LOGICAL';
+  logicColumn?: string;
+  whiteListTables: string;
+  whiteListColumns: string;
+  sensitiveColumns?: string;
+}
+
+export interface TenantProvisioningReceipt {
+  tenantRecordId: number;
+  tenantId: string;
+  tenantName: string;
+  status: 'READY';
+  adminUsername: string;
+  planName: string;
+  openingBalance: number;
+  isolationMode: 'PHYSICAL' | 'LOGICAL';
+  loginReady: boolean;
+  billingReady: boolean;
+  dataSourceReady: boolean;
+  dataSourceConnectionVerified: boolean;
+  dataSourceReadOnlyVerified: boolean;
 }
 
 /**
@@ -301,8 +323,8 @@ export const fetchTenants = async (): Promise<TenantView[]> => {
  * @author 余炘洋
  * @date 2026-01-26
  */
-export const createTenant = async (payload: TenantCreateRequest): Promise<TenantView> => {
-  return request<TenantView>('/api/v1/admin/tenants', {
+export const createTenant = async (payload: TenantCreateRequest): Promise<TenantProvisioningReceipt> => {
+  return request<TenantProvisioningReceipt>('/api/v1/admin/tenants', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
