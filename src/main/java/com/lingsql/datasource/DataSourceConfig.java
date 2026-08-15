@@ -3,12 +3,14 @@ package com.lingsql.datasource;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.jdbc.autoconfigure.DataSourceProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 import javax.sql.DataSource;
 
@@ -71,6 +73,21 @@ public class DataSourceConfig {
             adminHikariConfig.setDriverClassName(properties.determineDriverClassName());
         }
         return new HikariDataSource(adminHikariConfig);
+    }
+
+    /**
+     * 控制库专用命名参数模板，防止账本等控制面写入被路由到租户业务库。
+     *
+     * @param adminDataSource 主配置库数据源
+     * @return 控制库命名参数模板
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    @Bean
+    @Primary
+    public NamedParameterJdbcTemplate adminNamedParameterJdbcTemplate(
+            @Qualifier("adminDataSource") DataSource adminDataSource) {
+        return new NamedParameterJdbcTemplate(adminDataSource);
     }
 
     /**
