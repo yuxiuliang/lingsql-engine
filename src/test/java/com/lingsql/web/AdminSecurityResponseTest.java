@@ -121,7 +121,8 @@ class AdminSecurityResponseTest {
                 billingAdminService,
                 Mockito.mock(AuditOperationExecutor.class),
                 Mockito.mock(BillingReconcileLogService.class),
-                Mockito.mock(BillingCommercialReadinessService.class)
+                Mockito.mock(BillingCommercialReadinessService.class),
+                Mockito.mock(com.lingsql.billing.invocation.IPhysicalBillingResolution.class)
         );
 
         ApiResponse<?> response = controller.getOverride("TENANT_A");

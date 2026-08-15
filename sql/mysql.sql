@@ -119,27 +119,102 @@ CREATE TABLE `t_lingsql_engine_billing_tenant_override`
 -- 计费账本事件表
 CREATE TABLE `t_lingsql_engine_billing_ledger`
 (
-    `id`             bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `request_id`     varchar(64)  NOT NULL COMMENT '请求ID',
-    `event_seq`      int          NOT NULL COMMENT '事件序号',
-    `tenant_id`      varchar(64)  NOT NULL COMMENT '租户ID',
-    `model_name`     varchar(64)  DEFAULT NULL COMMENT '模型名称',
-    `token_count`    int          DEFAULT NULL COMMENT 'Token 数量',
-    `unit_cost`      bigint       DEFAULT NULL COMMENT '单价(点/Token)',
-    `cost_amount`    bigint       DEFAULT NULL COMMENT '成本金额',
-    `billing_version` varchar(64) DEFAULT NULL COMMENT '计费版本',
-    `event_type`     int      DEFAULT '0' COMMENT '事件类型: 0-预扣, 1-退款, 2-CLOSE(对账)',
-    `status`         int      DEFAULT '0' COMMENT '状态: 0-待结算, 1-已结算, 2-失败',
-    `create_time`    datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `apply_time`     datetime     DEFAULT NULL COMMENT '结算时间',
+    `id`                  bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `event_id`            varchar(64)  DEFAULT NULL COMMENT '不可变事件ID',
+    `invocation_id`       varchar(64)  DEFAULT NULL COMMENT '物理模型调用ID',
+    `workflow_request_id` varchar(64)  DEFAULT NULL COMMENT '工作流请求ID',
+    `event_name`          varchar(16)  DEFAULT NULL COMMENT 'RESERVE/REFUND/CLOSE/CANCEL',
+    `request_id`          varchar(64)  NOT NULL COMMENT '请求ID',
+    `event_seq`           int          NOT NULL COMMENT '事件序号',
+    `tenant_id`           varchar(64)  NOT NULL COMMENT '租户ID',
+    `model_name`          varchar(64)  DEFAULT NULL COMMENT '模型名称',
+    `token_count`         int          DEFAULT NULL COMMENT 'Token 数量',
+    `unit_cost`           bigint       DEFAULT NULL COMMENT '单价(点/Token)',
+    `cost_amount`         bigint       DEFAULT NULL COMMENT '成本金额',
+    `billing_version`     varchar(64)  DEFAULT NULL COMMENT '计费版本',
+    `event_type`          int          DEFAULT '0' COMMENT '事件类型: 0-预扣, 1-退款, 2-CLOSE(对账)',
+    `status`              int          DEFAULT '0' COMMENT '状态: 0-待结算, 1-已结算, 2-失败',
+    `create_time`         datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `apply_time`          datetime     DEFAULT NULL COMMENT '结算时间',
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_billing_ledger_event_id` (`event_id`),
     UNIQUE KEY `uk_billing_ledger_request_seq_model` (`request_id`, `event_seq`, `model_name`),
     KEY `idx_billing_ledger_tenant` (`tenant_id`),
     KEY `idx_billing_ledger_status` (`status`),
-    KEY `idx_billing_ledger_create` (`create_time`)
+    KEY `idx_billing_ledger_create` (`create_time`),
+    KEY `idx_billing_ledger_invocation` (`invocation_id`),
+    KEY `idx_billing_ledger_workflow` (`tenant_id`, `workflow_request_id`)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='计费账本事件表';
+
+-- 逐物理模型调用计费状态表
+CREATE TABLE `t_lingsql_engine_billing_invocation`
+(
+    `id`                  bigint         NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `reservation_id`      varchar(64)    NOT NULL COMMENT '资金预留ID',
+    `invocation_id`       varchar(64)    NOT NULL COMMENT '物理模型调用幂等ID',
+    `tenant_id`           varchar(64)    NOT NULL COMMENT '租户ID',
+    `workflow_request_id` varchar(64)    NOT NULL COMMENT '工作流请求ID',
+    `logical_call_no`     int            NOT NULL COMMENT '逻辑调用序号',
+    `stage`               varchar(64)    NOT NULL COMMENT '调用阶段',
+    `caller`              varchar(64)    NOT NULL COMMENT '调用来源',
+    `route_attempt`       int            NOT NULL COMMENT '模型路由尝试序号',
+    `provider_name`       varchar(64)    NOT NULL COMMENT '模型供应商',
+    `model_name`          varchar(64)    NOT NULL COMMENT '模型名称',
+    `prompt_hash`         char(64)       NOT NULL COMMENT 'Prompt SHA-256摘要',
+    `max_billable_tokens` int            NOT NULL COMMENT '最大可计费Token',
+    `actual_tokens`       int            DEFAULT NULL COMMENT '实际Token',
+    `unit_cost`           bigint         NOT NULL COMMENT '冻结单价',
+    `billing_weight`      decimal(18, 6) NOT NULL COMMENT '冻结计费权重',
+    `reserved_amount`     bigint         NOT NULL COMMENT '预留金额',
+    `actual_amount`       bigint         DEFAULT NULL COMMENT '实际金额',
+    `refund_amount`       bigint         DEFAULT NULL COMMENT '退款金额',
+    `billing_version`     varchar(64)    NOT NULL COMMENT '冻结计费版本',
+    `provider_request_id` varchar(128)   DEFAULT NULL COMMENT '供应商请求ID',
+    `state`               varchar(16)    NOT NULL COMMENT 'RESERVED/DISPATCHED/SETTLED/CANCELLED/UNKNOWN',
+    `failure_code`        varchar(64)    DEFAULT NULL COMMENT '失败编码',
+    `failure_message`     varchar(255)   DEFAULT NULL COMMENT '脱敏失败说明',
+    `reserved_at`         datetime       NOT NULL COMMENT '预留时间',
+    `dispatched_at`       datetime       DEFAULT NULL COMMENT '派发时间',
+    `finalized_at`        datetime       DEFAULT NULL COMMENT '终态时间',
+    `create_time`         datetime       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`         datetime       NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `lock_version`        bigint         NOT NULL DEFAULT 0 COMMENT '乐观锁版本',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_billing_invocation_reservation` (`reservation_id`),
+    UNIQUE KEY `uk_billing_invocation_id` (`invocation_id`),
+    KEY `idx_billing_invocation_tenant_workflow` (`tenant_id`, `workflow_request_id`),
+    KEY `idx_billing_invocation_state_reserved` (`state`, `reserved_at`),
+    KEY `idx_billing_invocation_state_dispatched` (`state`, `dispatched_at`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='逐物理模型调用计费状态表';
+
+-- 物理模型调用资金裁决表
+CREATE TABLE `t_lingsql_engine_billing_invocation_resolution`
+(
+    `id`                  bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `resolution_id`       varchar(64)  NOT NULL COMMENT '裁决ID',
+    `invocation_id`       varchar(64)  NOT NULL COMMENT '物理模型调用ID',
+    `tenant_id`           varchar(64)  NOT NULL COMMENT '租户ID',
+    `resolution_type`     varchar(32)  NOT NULL COMMENT 'CONFIRMED_USAGE/CONFIRMED_NOT_BILLED',
+    `actual_tokens`       int          DEFAULT NULL COMMENT '确认的实际Token',
+    `actual_amount`       bigint       NOT NULL COMMENT '确认的实际金额',
+    `refund_amount`       bigint       NOT NULL COMMENT '退款金额',
+    `provider_request_id` varchar(128) NOT NULL COMMENT '供应商请求ID',
+    `evidence_hash`       char(64)     NOT NULL COMMENT '外部证据SHA-256摘要',
+    `resolved_by`         varchar(64)  NOT NULL COMMENT '操作人',
+    `resolved_at`         datetime     NOT NULL COMMENT '裁决时间',
+    `create_time`         datetime     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_billing_resolution_id` (`resolution_id`),
+    UNIQUE KEY `uk_billing_resolution_invocation` (`invocation_id`),
+    KEY `idx_billing_resolution_tenant_time` (`tenant_id`, `resolved_at`),
+    KEY `idx_billing_resolution_type` (`resolution_type`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='物理模型调用资金裁决表';
 
 -- 计费对账日志表
 CREATE TABLE `t_lingsql_engine_billing_reconcile_log`

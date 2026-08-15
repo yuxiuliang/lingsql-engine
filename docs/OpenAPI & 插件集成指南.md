@@ -632,6 +632,23 @@ Content-Type: application/json
 }
 ```
 
+#### 4.2.6 裁决 UNKNOWN 物理模型调用
+
+```http
+PUT /api/v1/admin/billing/invocations/{invocationId}/resolve
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "evidenceHash": "外部证据文件的64位SHA-256摘要",
+  "providerRequestId": "供应商请求ID",
+  "resolutionType": "CONFIRMED_USAGE",
+  "actualTokens": 128
+}
+```
+
+该接口仅允许系统管理员使用。`CONFIRMED_USAGE` 必须提供不超过预留上限的非负 `actualTokens`，系统在同一 MySQL 事务中结算实际费用、退回差额并写入不可变裁决记录；`CONFIRMED_NOT_BILLED` 不得携带 `actualTokens`，系统将全额退回预留并取消调用。相同证据的重复请求幂等返回，不同证据或结论会被拒绝。接口只接受证据摘要，不接收或保存供应商账单正文。
+
 ### 4.3 元数据管理
 
 #### 4.3.1 获取 Schema 列表

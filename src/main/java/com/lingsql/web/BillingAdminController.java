@@ -6,7 +6,11 @@ import com.lingsql.billing.BillingCommercialReadinessService;
 import com.lingsql.billing.BillingReconcileLogService;
 import com.lingsql.billing.entity.BillingPolicyVersion;
 import com.lingsql.billing.entity.TenantBillingOverride;
+import com.lingsql.billing.invocation.IPhysicalBillingResolution;
+import com.lingsql.billing.invocation.PhysicalBillingResolutionCommand;
+import com.lingsql.billing.invocation.PhysicalBillingResolutionReceipt;
 import com.lingsql.billing.model.BillingCommercialReadinessView;
+import com.lingsql.billing.model.BillingInvocationResolutionRequest;
 import com.lingsql.billing.model.BillingLedgerEvidenceView;
 import com.lingsql.billing.model.BillingPolicyVersionRequest;
 import com.lingsql.billing.model.BillingReconcileLogQuery;
@@ -52,6 +56,7 @@ public class BillingAdminController {
     private final AuditOperationExecutor auditOperationExecutor;
     private final BillingReconcileLogService billingReconcileLogService;
     private final BillingCommercialReadinessService billingCommercialReadinessService;
+    private final IPhysicalBillingResolution physicalBillingResolution;
 
     /**
      * 查询计费策略版本列表。
@@ -302,6 +307,46 @@ public class BillingAdminController {
             return ApiResponse.forbidden("无权限访问");
         }
         return ApiResponse.success(billingAdminService.ledgerEvidence(tenantId, requestIds));
+    }
+
+    /**
+     * 依据供应商证据收口 UNKNOWN 物理调用的资金状态。
+     *
+     * @param invocationId 物理调用ID
+     * @param request 裁决请求
+     * @param http HTTP 请求
+     * @return 裁决回执
+     */
+    @PutMapping("/invocations/{invocationId}/resolve")
+    @PreAuthorize("hasAuthority('ADMIN:BILLING:WRITE')")
+    public ApiResponse<PhysicalBillingResolutionReceipt> resolveInvocation(
+            @PathVariable String invocationId,
+            @RequestBody BillingInvocationResolutionRequest request,
+            HttpServletRequest http
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        RbacUserSession session = RbacSecurityUtils.currentSession();
+        String operator = session == null || session.getUserId() == null
+                ? null
+                : String.valueOf(session.getUserId());
+        PhysicalBillingResolutionCommand command = new PhysicalBillingResolutionCommand(
+                invocationId,
+                operator,
+                request == null ? null : request.evidenceHash(),
+                request == null ? null : request.providerRequestId(),
+                request == null ? null : request.resolutionType(),
+                request == null ? null : request.actualTokens()
+        );
+        return auditOperationExecutor.executeCommittedResult(
+                "BILLING_INVOCATION_RESOLVE",
+                "BILLING_INVOCATION",
+                request,
+                http,
+                () -> physicalBillingResolution.resolve(command),
+                receipt -> receipt
+        );
     }
 
     private boolean isSysAdmin() {

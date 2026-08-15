@@ -16,8 +16,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
@@ -208,7 +206,7 @@ public class PhysicalModelBillingImpl implements IPhysicalModelBilling {
             BillingInvocationEntity entity = invocationRepository.findByInvocationIdForUpdate(invocationId)
                     .orElseThrow(() -> new BillingInvocationConflictException("物理调用资金记录不存在"));
             requireState(entity, BillingInvocationState.DISPATCHED);
-            long actualAmount = calculateActualAmount(entity, actualTokens);
+            long actualAmount = PhysicalBillingAmountCalculator.calculate(entity, actualTokens);
             long refundAmount = Math.subtractExact(entity.getReservedAmount(), actualAmount);
             LocalDateTime now = LocalDateTime.now();
             if (refundAmount > 0) {
@@ -313,18 +311,6 @@ public class PhysicalModelBillingImpl implements IPhysicalModelBilling {
         entity.setUpdateTime(now);
         entity.setLockVersion(0L);
         return entity;
-    }
-
-    private long calculateActualAmount(BillingInvocationEntity entity, int actualTokens) {
-        try {
-            return BigDecimal.valueOf(entity.getUnitCost())
-                    .multiply(BigDecimal.valueOf(actualTokens))
-                    .multiply(entity.getBillingWeight())
-                    .setScale(0, RoundingMode.HALF_UP)
-                    .longValueExact();
-        } catch (ArithmeticException ex) {
-            throw new BillingInvocationConflictException("实际模型费用超过系统上限");
-        }
     }
 
     private void assertReplay(BillingInvocationEntity entity, PhysicalModelInvocation invocation) {
