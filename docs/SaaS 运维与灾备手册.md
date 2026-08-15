@@ -409,6 +409,7 @@ fi
 
 > 生产建议直接使用仓库脚本：`scripts/ops/mysql_backup.sh`  
 > 支持参数：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASES`、`BACKUP_DIR`、`RETENTION_DAYS`。
+> 脚本使用 `umask 077` 创建仅当前运行用户可访问的备份目录，逐库执行 gzip 完整性与 SHA-256 回读校验；数据库名和保留天数不合法时失败关闭。生产环境仍须把备份加密后复制到独立故障域，不能只保存在数据库宿主机。
 
 **crontab 示例**：
 
@@ -444,8 +445,12 @@ echo "Restore completed."
 > 用法：
 
 ```bash
-MYSQL_USER=root MYSQL_PASSWORD=*** ./scripts/ops/mysql_restore.sh ./backups/mysql/20260227_020000/lingsql_engine_db.sql.gz lingsql_engine_db
+MYSQL_USER=root MYSQL_PASSWORD=*** \
+RESTORE_CONFIRM_DATABASE=lingsql_engine_db \
+./scripts/ops/mysql_restore.sh ./backups/mysql/20260227_020000/lingsql_engine_db.sql.gz lingsql_engine_db
 ```
+
+恢复默认要求同目录存在 `<backup>.sha256`，并在创建或写入目标库之前完成 SHA-256 与 gzip 校验。`RESTORE_CONFIRM_DATABASE` 必须与目标库名完全一致。历史备份确实没有校验文件时，只能在完成来源和副本复核后临时设置 `RESTORE_REQUIRE_CHECKSUM=false`，并在演练记录中说明风险；正式备份不得关闭。
 
 #### 4.3.2 Redis 缓存重建
 

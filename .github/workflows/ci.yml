@@ -33,6 +33,9 @@ jobs:
       - name: Security Compliance Guard
         run: bash scripts/ops/security_compliance_guard.sh
 
+      - name: Validate Operations Script Syntax
+        run: bash -n scripts/ops/*.sh
+
       - name: Run Maven Tests
         run: mvn -B -ntp test -DskipITs
 
