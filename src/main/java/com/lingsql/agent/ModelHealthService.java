@@ -164,6 +164,9 @@ public class ModelHealthService {
     public void enableModel(Long modelId) {
         AiModelConfig config = repository.findById(modelId)
                 .orElseThrow(() -> new BizException(ErrorCode.MODEL_NOT_FOUND, "模型不存在"));
+        if (!"HEALTHY".equals(config.getLastProbeStatus())) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "模型尚未通过验证，禁止启用");
+        }
         config.setIsActive(1);
         config.setFuseTime(null);
         config.setFuseReason(null);
@@ -220,6 +223,7 @@ public class ModelHealthService {
             return ModelHealthSnapshot.empty();
         }
         return new ModelHealthSnapshot(
+                true,
                 health.getFailureCount(),
                 health.isFused(),
                 health.getLastFailReason(),
@@ -234,17 +238,20 @@ public class ModelHealthService {
      * @date 2026-01-22
      */
     public static class ModelHealthSnapshot {
+        private final boolean tested;
         private final int failureCount;
         private final boolean fused;
         private final String lastFailReason;
         private final LocalDateTime lastFailTime;
         private final long lastCostMs;
 
-        public ModelHealthSnapshot(int failureCount,
+        public ModelHealthSnapshot(boolean tested,
+                                   int failureCount,
                                    boolean fused,
                                    String lastFailReason,
                                    LocalDateTime lastFailTime,
                                    long lastCostMs) {
+            this.tested = tested;
             this.failureCount = failureCount;
             this.fused = fused;
             this.lastFailReason = lastFailReason;
@@ -253,7 +260,11 @@ public class ModelHealthService {
         }
 
         public static ModelHealthSnapshot empty() {
-            return new ModelHealthSnapshot(0, false, null, null, 0L);
+            return new ModelHealthSnapshot(false, 0, false, null, null, 0L);
+        }
+
+        public boolean isTested() {
+            return tested;
         }
 
         public int getFailureCount() {

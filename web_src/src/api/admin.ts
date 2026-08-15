@@ -19,10 +19,24 @@ export interface ModelHealthView {
   fuseTime?: string;
   fuseReason?: string;
   failureCount: number;
+  tested: boolean;
   fused: boolean;
   lastFailReason?: string;
   lastFailTime?: string;
   lastCostMs?: number;
+  probeStatus: 'HEALTHY' | 'FAILED' | 'UNTESTED';
+  lastProbeTime?: string;
+  lastProbeCostMs?: number;
+  lastProbeErrorCode?: string;
+}
+
+export interface ModelProbeView {
+  modelId: number;
+  status: 'HEALTHY' | 'FAILED';
+  checkedAt: string;
+  costMs: number;
+  errorCode?: string;
+  message: string;
 }
 
 /**
@@ -79,6 +93,12 @@ export const refreshTenantSemantic = async (tenantId: string): Promise<string> =
  */
 export const fetchModelHealth = async (): Promise<ModelHealthView[]> => {
   return request<ModelHealthView[]>('/api/v1/admin/model/health');
+};
+
+export const probeModel = async (modelId: number): Promise<ModelProbeView> => {
+  return request<ModelProbeView>(`/api/v1/admin/model/${modelId}/probe`, {
+    method: 'POST'
+  });
 };
 
 /**

@@ -25,8 +25,11 @@ import com.lingsql.rbac.repository.RbacRolePermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
 import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
+import com.lingsql.rbac.model.UserCreateRequest;
+import com.lingsql.rbac.service.UserAdminService;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantCreateRequest;
+import com.lingsql.tenant.model.TenantAdminAccountRequest;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleOpsTaskView;
 import com.lingsql.tenant.model.TenantLifecycleSnapshot;
@@ -111,6 +114,7 @@ public class TenantAdminService {
     private final TenantLifecycleService tenantLifecycleService;
     private final OrganizationAdminService organizationAdminService;
     private final OpsAlertService opsAlertService;
+    private final UserAdminService userAdminService;
 
     /**
      * 查询租户列表。
@@ -526,8 +530,33 @@ public class TenantAdminService {
         List<RbacPermission> basePermissions = resolveBasePermissions();
         initTenantPermissionPool(tenant.getTenantId(), basePermissions);
         initRolePermissions(role.getId(), basePermissions);
+        createTenantAdminAccount(tenant.getTenantId(), role.getId(), request.getAdminAccount());
         initTenantDbConfig(tenant.getTenantId(), request);
         initTenantOrganizationTemplate(tenant.getTenantId(), request);
+    }
+
+    /**
+     * 创建租户首个管理员账号，账号与租户基础数据共享同一事务。
+     *
+     * @param tenantId 租户ID
+     * @param roleId   租户管理员角色ID
+     * @param account  管理员账号
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    private void createTenantAdminAccount(String tenantId, Long roleId, TenantAdminAccountRequest account) {
+        if (account == null) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "必须配置租户管理员账号");
+        }
+        UserCreateRequest userRequest = new UserCreateRequest();
+        userRequest.setTenantId(tenantId);
+        userRequest.setUsername(account.getUsername());
+        userRequest.setPassword(account.getPassword());
+        userRequest.setNickname(account.getNickname());
+        userRequest.setStatus(ACTIVE_STATUS);
+        userRequest.setIsExperience(0);
+        userRequest.setRoleIds(List.of(roleId));
+        userAdminService.createUser(userRequest, tenantId, true);
     }
 
     /**

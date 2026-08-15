@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import {reactive, ref} from 'vue';
+import {reactive, ref, shallowRef} from 'vue';
 import {ElMessage, ElMessageBox} from 'element-plus';
 import {AiModelConfig, createModelConfig, deleteModelConfig, fetchModelConfigs, updateModelConfig} from '@/api/config';
-import {disableModel, enableModel, fetchModelHealth, ModelHealthView} from '@/api/admin';
+import {disableModel, enableModel, fetchModelHealth, ModelHealthView, probeModel} from '@/api/admin';
 
 const modelConfigs = ref<AiModelConfig[]>([]);
 const modelHealthList = ref<ModelHealthView[]>([]);
@@ -10,6 +10,7 @@ const loadingConfig = ref(false);
 const loadingHealth = ref(false);
 const dialogVisible = ref(false);
 const editingId = ref<number | null>(null);
+const probingId = shallowRef<number | null>(null);
 
 const form = reactive<AiModelConfig>({
   providerName: '',
@@ -17,7 +18,7 @@ const form = reactive<AiModelConfig>({
   modelVersion: '',
   baseUrl: '',
   apiKey: '',
-  isActive: 1,
+  isActive: 0,
   weight: 100,
   priority: 1,
   autoRecover: 1,
@@ -37,7 +38,7 @@ const buildEmptyModel = (): AiModelConfig => ({
   modelVersion: '',
   baseUrl: '',
   apiKey: '',
-  isActive: 1,
+  isActive: 0,
   weight: 100,
   priority: 1,
   autoRecover: 1,
@@ -118,10 +119,10 @@ const handleSave = async () => {
   try {
     if (editingId.value) {
       await updateModelConfig(editingId.value, form);
-      ElMessage.success('模型配置已更新');
+      ElMessage.success('模型配置已更新，请验证后再启用');
     } else {
       await createModelConfig(form);
-      ElMessage.success('模型配置已创建');
+      ElMessage.success('模型配置已创建，请验证后再启用');
     }
     dialogVisible.value = false;
     await loadModelConfigs();
@@ -189,6 +190,26 @@ const handleDisable = async (row: ModelHealthView) => {
   }
 };
 
+const handleProbe = async (modelId?: number) => {
+  if (!modelId || probingId.value !== null) {
+    return;
+  }
+  probingId.value = modelId;
+  try {
+    const result = await probeModel(modelId);
+    if (result.status === 'HEALTHY') {
+      ElMessage.success(`模型验证通过，耗时 ${result.costMs} ms`);
+    } else {
+      ElMessage.error(result.message);
+    }
+    await loadModelHealth();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '模型验证失败');
+  } finally {
+    probingId.value = null;
+  }
+};
+
 /**
  * 解析启用状态文本。
  *
@@ -221,8 +242,17 @@ const resolveActiveType = (value?: number) => {
  * @author 余炘洋
  * @date 2026-01-23
  */
-const resolveFuseText = (fused?: boolean) => {
-  return fused ? '已熔断' : '正常';
+const resolveHealthText = (probeStatus?: string, fused?: boolean) => {
+  if (fused) {
+    return '已熔断';
+  }
+  if (probeStatus === 'FAILED') {
+    return '验证失败';
+  }
+  if (probeStatus !== 'HEALTHY') {
+    return '未验证';
+  }
+  return '正常';
 };
 
 /**
@@ -233,8 +263,14 @@ const resolveFuseText = (fused?: boolean) => {
  * @author 余炘洋
  * @date 2026-01-23
  */
-const resolveFuseType = (fused?: boolean) => {
-  return fused ? 'danger' : 'success';
+const resolveHealthType = (probeStatus?: string, fused?: boolean) => {
+  if (fused || probeStatus === 'FAILED') {
+    return 'danger';
+  }
+  if (probeStatus !== 'HEALTHY') {
+    return 'info';
+  }
+  return 'success';
 };
 
 /**
@@ -274,8 +310,15 @@ loadModelHealth();
               <el-tag :type="resolveActiveType(scope.row.isActive)">{{ resolveActiveText(scope.row.isActive) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="200">
+          <el-table-column label="操作" width="250">
             <template #default="scope">
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :loading="probingId === scope.row.id"
+                @click="handleProbe(scope.row.id)"
+              >验证</el-button>
               <el-button size="small" @click="handleEdit(scope.row)">编辑</el-button>
               <el-button size="small" type="danger" @click="handleDelete(scope.row)">删除</el-button>
             </template>
@@ -295,10 +338,12 @@ loadModelHealth();
           <el-table-column prop="weight" label="权重" width="80"/>
           <el-table-column prop="priority" label="优先级" width="90"/>
           <el-table-column prop="failureCount" label="失败次数" width="90"/>
-          <el-table-column prop="lastCostMs" label="耗时(ms)" width="100"/>
+          <el-table-column prop="lastProbeCostMs" label="验证耗时(ms)" width="110"/>
           <el-table-column prop="fused" label="熔断状态" width="100">
             <template #default="scope">
-              <el-tag :type="resolveFuseType(scope.row.fused)">{{ resolveFuseText(scope.row.fused) }}</el-tag>
+              <el-tag :type="resolveHealthType(scope.row.probeStatus, scope.row.fused)">
+                {{ resolveHealthText(scope.row.probeStatus, scope.row.fused) }}
+              </el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="isActive" label="启用状态" width="100">
@@ -306,8 +351,15 @@ loadModelHealth();
               <el-tag :type="resolveActiveType(scope.row.isActive)">{{ resolveActiveText(scope.row.isActive) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="200">
+          <el-table-column label="操作" width="260">
             <template #default="scope">
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :loading="probingId === scope.row.id"
+                @click="handleProbe(scope.row.id)"
+              >验证</el-button>
               <el-button size="small" type="success" @click="handleEnable(scope.row)">启用</el-button>
               <el-button size="small" type="warning" @click="handleDisable(scope.row)">禁用</el-button>
             </template>
@@ -338,12 +390,6 @@ loadModelHealth();
             show-password
             autocomplete="new-password"
           />
-        </el-form-item>
-        <el-form-item label="是否启用">
-          <el-select v-model="form.isActive" style="width: 100%">
-            <el-option :value="1" label="启用"/>
-            <el-option :value="0" label="停用"/>
-          </el-select>
         </el-form-item>
         <el-form-item label="权重">
           <el-input-number v-model="form.weight" :min="1" :max="1000"/>

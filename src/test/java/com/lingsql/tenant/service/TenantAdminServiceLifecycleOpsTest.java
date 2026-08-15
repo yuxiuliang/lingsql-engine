@@ -190,7 +190,8 @@ class TenantAdminServiceLifecycleOpsTest {
                 Mockito.mock(BillingPlanRepository.class),
                 lifecycleService,
                 Mockito.mock(OrganizationAdminService.class),
-                Mockito.mock(OpsAlertService.class)
+                Mockito.mock(OpsAlertService.class),
+                Mockito.mock(com.lingsql.rbac.service.UserAdminService.class)
         );
     }
 }

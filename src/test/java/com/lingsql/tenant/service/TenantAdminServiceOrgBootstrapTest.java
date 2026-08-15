@@ -17,6 +17,7 @@ import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantCreateRequest;
+import com.lingsql.tenant.model.TenantAdminAccountRequest;
 import com.lingsql.tenant.model.TenantLifecycleSnapshot;
 import com.lingsql.tenant.model.TenantLifecycleState;
 import com.lingsql.tenant.model.TenantRiskLevel;
@@ -62,7 +63,8 @@ class TenantAdminServiceOrgBootstrapTest {
                 Mockito.mock(BillingPlanRepository.class),
                 lifecycleService,
                 organizationAdminService,
-                Mockito.mock(OpsAlertService.class)
+                Mockito.mock(OpsAlertService.class),
+                Mockito.mock(com.lingsql.rbac.service.UserAdminService.class)
         );
 
         when(tenantRepository.existsByTenantIdAndIsDeleted(any(), any(Integer.class))).thenReturn(false);
@@ -96,6 +98,10 @@ class TenantAdminServiceOrgBootstrapTest {
         request.setOrgTemplateCode("CHAIN_STORE_STANDARD");
         request.setOrgRootUnitName("华东品牌总部");
         request.setNotificationChannels(List.of("dingtalk", "wecom"));
+        TenantAdminAccountRequest adminAccount = new TenantAdminAccountRequest();
+        adminAccount.setUsername("tenant-admin");
+        adminAccount.setPassword("Password123");
+        request.setAdminAccount(adminAccount);
 
         TenantView view = service.createTenant(request);
 

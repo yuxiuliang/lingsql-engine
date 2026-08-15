@@ -109,7 +109,8 @@ class TenantAdminServiceNotificationChannelTest {
                 Mockito.mock(BillingPlanRepository.class),
                 Mockito.mock(TenantLifecycleService.class),
                 Mockito.mock(OrganizationAdminService.class),
-                opsAlertService
+                opsAlertService,
+                Mockito.mock(com.lingsql.rbac.service.UserAdminService.class)
         );
     }
 }

@@ -48,7 +48,7 @@ main() {
     log_error "Schema 文件不存在: ${SCHEMA_FILE}"
     exit 1
   fi
-  if ! cmp -s "${SCHEMA_FILE}" "${LEGACY_SCHEMA_FILE}"; then
+  if ! cmp -s <(sed 's/\r$//' "${SCHEMA_FILE}") <(sed 's/\r$//' "${LEGACY_SCHEMA_FILE}"); then
     log_error "Flyway 合并基线与 sql/mysql.sql 不一致；已发布基线禁止修改，请新增更高版本迁移。"
     exit 1
   fi

@@ -4,8 +4,11 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.agent.ModelHealthService;
+import com.lingsql.agent.ModelProbeService;
 import com.lingsql.agent.model.AiModelConfig;
+import com.lingsql.agent.model.ModelProbeView;
 import com.lingsql.agent.repository.AiModelConfigRepository;
+import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.datasource.DataSourceManager;
 import com.lingsql.datasource.TenantDbConfigErrors;
 import com.lingsql.datasource.model.TenantDbConfig;
@@ -24,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 import javax.sql.DataSource;
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -45,6 +49,29 @@ public class AdminController extends BaseController {
     private final SemanticConfigService semanticConfigService;
     private final ModelHealthService modelHealthService;
     private final AiModelConfigRepository modelConfigRepository;
+    private final ModelProbeService modelProbeService;
+    private final AuditOperationExecutor auditOperationExecutor;
+
+    /**
+     * 对已保存模型执行一次真实聊天调用验证。
+     *
+     * @param modelId 模型ID
+     * @param http 请求
+     * @return 验证结果
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    @PostMapping("/model/{modelId}/probe")
+    @PreAuthorize("hasAuthority('ADMIN:MODEL:HEALTH')")
+    public ApiResponse<ModelProbeView> probeModel(@PathVariable Long modelId, HttpServletRequest http) {
+        return auditOperationExecutor.execute(
+                "MODEL_PROBE",
+                "MODEL",
+                "id=" + modelId,
+                http,
+                () -> modelProbeService.probe(modelId)
+        );
+    }
 
     /**
      * 手动触发指定租户的元数据同步。

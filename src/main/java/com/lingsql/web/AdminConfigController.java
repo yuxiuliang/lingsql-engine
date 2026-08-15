@@ -1,13 +1,13 @@
 package com.lingsql.web;
 
 import com.lingsql.agent.model.AiModelConfig;
-import com.lingsql.agent.repository.AiModelConfigRepository;
+import com.lingsql.agent.ModelConfigService;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.datasource.model.TenantDbConfig;
-import com.lingsql.datasource.repository.TenantDbConfigRepository;
+import com.lingsql.datasource.TenantDataSourceConfigService;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.rbac.security.SecureTenantResolver;
@@ -34,8 +34,6 @@ import org.springframework.web.bind.annotation.RestController;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.sql.Connection;
-import java.sql.DriverManager;
 
 /**
  * 配置管理接口，提供租户、模型、语义字典与 Join 规则的管理能力。
@@ -49,10 +47,8 @@ import java.sql.DriverManager;
 @Slf4j
 public class AdminConfigController {
 
-    private static final String CONNECTION_TEST_ERROR_MESSAGE = "连接失败，请检查数据库配置后重试";
-
-    private final TenantDbConfigRepository tenantDbConfigRepository;
-    private final AiModelConfigRepository aiModelConfigRepository;
+    private final TenantDataSourceConfigService tenantDataSourceConfigService;
+    private final ModelConfigService modelConfigService;
     private final SemanticLexiconRepository semanticLexiconRepository;
     private final JoinRuleRepository joinRuleRepository;
     private final AuditOperationExecutor auditOperationExecutor;
@@ -70,7 +66,7 @@ public class AdminConfigController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        return ApiResponse.success(tenantDbConfigRepository.findAll());
+        return ApiResponse.success(tenantDataSourceConfigService.list());
     }
 
     /**
@@ -88,14 +84,12 @@ public class AdminConfigController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        request.setId(null);
-        request.setTenantId(normalizeTenantId(request.getTenantId()));
         return auditOperationExecutor.execute(
                 "TENANT_CREATE",
                 "TENANT",
                 request,
                 http,
-                () -> tenantDbConfigRepository.save(request)
+                () -> tenantDataSourceConfigService.create(request)
         );
     }
 
@@ -113,21 +107,8 @@ public class AdminConfigController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        String driverClass = request.getDriverClass();
-        String url = request.getJdbcUrl();
-        if (driverClass == null || driverClass.isBlank()) {
-            driverClass = "com.mysql.cj.jdbc.Driver";
-        }
-        try {
-            Class.forName(driverClass);
-            String password = resolveTenantPassword(request);
-            try (Connection ignored = DriverManager.getConnection(url, request.getUsername(), password)) {
-                return ApiResponse.success("连接成功");
-            }
-        } catch (Exception ex) {
-            log.warn("测试租户数据库连接失败: driverClass={}, jdbcUrl={}", driverClass, url, ex);
-            return ApiResponse.error(CONNECTION_TEST_ERROR_MESSAGE);
-        }
+        tenantDataSourceConfigService.testConnection(request);
+        return ApiResponse.success("连接成功");
     }
 
     /**
@@ -146,27 +127,12 @@ public class AdminConfigController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        TenantDbConfig config = tenantDbConfigRepository.findById(id)
-                .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "租户配置不存在"));
-        config.setTenantId(normalizeTenantId(request.getTenantId()));
-        config.setJdbcUrl(request.getJdbcUrl());
-        config.setUsername(request.getUsername());
-        if (StringUtils.hasText(request.getPassword())) {
-            config.setPassword(request.getPassword());
-        }
-        config.setDriverClass(request.getDriverClass());
-        config.setIsolationMode(request.getIsolationMode());
-        config.setLogicColumn(request.getLogicColumn());
-        config.setWhiteListTables(request.getWhiteListTables());
-        config.setWhiteListColumns(request.getWhiteListColumns());
-        config.setSensitiveColumns(request.getSensitiveColumns());
-        config.setStatus(request.getStatus());
         return auditOperationExecutor.execute(
                 "TENANT_UPDATE",
                 "TENANT",
                 request,
                 http,
-                () -> tenantDbConfigRepository.save(config)
+                () -> tenantDataSourceConfigService.update(id, request)
         );
     }
 
@@ -190,7 +156,7 @@ public class AdminConfigController {
                 "TENANT",
                 "id=" + id,
                 http,
-                () -> tenantDbConfigRepository.deleteById(id),
+                () -> tenantDataSourceConfigService.delete(id),
                 "租户配置已删除"
         );
     }
@@ -208,7 +174,7 @@ public class AdminConfigController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        return ApiResponse.success(aiModelConfigRepository.findAll());
+        return ApiResponse.success(modelConfigService.list());
     }
 
     /**
@@ -226,13 +192,12 @@ public class AdminConfigController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        request.setId(null);
         return auditOperationExecutor.execute(
                 "MODEL_CREATE",
                 "MODEL",
                 request,
                 http,
-                () -> aiModelConfigRepository.save(request)
+                () -> modelConfigService.create(request)
         );
     }
 
@@ -252,26 +217,12 @@ public class AdminConfigController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        AiModelConfig config = aiModelConfigRepository.findById(id)
-                .orElseThrow(() -> new BizException(ErrorCode.MODEL_NOT_FOUND, "模型配置不存在"));
-        config.setProviderName(request.getProviderName());
-        config.setModelName(request.getModelName());
-        config.setModelVersion(request.getModelVersion());
-        config.setBaseUrl(request.getBaseUrl());
-        if (StringUtils.hasText(request.getApiKey())) {
-            config.setApiKey(request.getApiKey());
-        }
-        config.setIsActive(request.getIsActive());
-        config.setWeight(request.getWeight());
-        config.setPriority(request.getPriority());
-        config.setAutoRecover(request.getAutoRecover());
-        config.setCooldownSeconds(request.getCooldownSeconds());
         return auditOperationExecutor.execute(
                 "MODEL_UPDATE",
                 "MODEL",
                 request,
                 http,
-                () -> aiModelConfigRepository.save(config)
+                () -> modelConfigService.update(id, request)
         );
     }
 
@@ -295,7 +246,7 @@ public class AdminConfigController {
                 "MODEL",
                 "id=" + id,
                 http,
-                () -> aiModelConfigRepository.deleteById(id),
+                () -> modelConfigService.delete(id),
                 "模型配置已删除"
         );
     }
@@ -527,20 +478,4 @@ public class AdminConfigController {
         }
     }
 
-    /**
-     * 解析连接测试使用的数据库密码。编辑已有配置时，空密码沿用已保存值。
-     *
-     * @param request 数据源配置
-     * @return 数据库密码
-     * @author 余炘洋
-     * @date 2026-08-15
-     */
-    private String resolveTenantPassword(TenantDbConfig request) {
-        if (StringUtils.hasText(request.getPassword()) || request.getId() == null) {
-            return request.getPassword();
-        }
-        return tenantDbConfigRepository.findById(request.getId())
-                .map(TenantDbConfig::getPassword)
-                .orElse(null);
-    }
 }

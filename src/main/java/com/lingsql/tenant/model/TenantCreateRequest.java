@@ -14,6 +14,14 @@ import java.util.List;
 public class TenantCreateRequest {
 
     /**
+     * 首个租户管理员账号。创建租户时必须同步开户，避免产生无法登录的空租户。
+     *
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    private TenantAdminAccountRequest adminAccount;
+
+    /**
      * 租户ID（由系统自动生成）。
      *
      * @author 余炘洋

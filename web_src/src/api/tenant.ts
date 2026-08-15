@@ -100,6 +100,11 @@ export interface TenantCreateRequest {
    * @date 2026-01-26
    */
   tenantId?: string;
+  adminAccount: {
+    username: string;
+    password: string;
+    nickname?: string;
+  };
   tenantName: string;
   status?: number;
   remark?: string;

@@ -1,7 +1,7 @@
 package com.lingsql.web;
 
 import com.lingsql.agent.model.AiModelConfig;
-import com.lingsql.agent.repository.AiModelConfigRepository;
+import com.lingsql.agent.ModelConfigService;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.billing.BillingAdminService;
 import com.lingsql.billing.BillingCommercialReadinessService;
@@ -10,7 +10,7 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.datasource.model.TenantDbConfig;
-import com.lingsql.datasource.repository.TenantDbConfigRepository;
+import com.lingsql.datasource.TenantDataSourceConfigService;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.schema.entity.SemanticLexiconItem;
 import com.lingsql.schema.repository.JoinRuleRepository;
@@ -68,9 +68,10 @@ class AdminSecurityResponseTest {
 
     @Test
     void testTenantConnectionShouldNotExposeRawExceptionMessage() {
+        TenantDataSourceConfigService dataSourceConfigService = Mockito.mock(TenantDataSourceConfigService.class);
         AdminConfigController controller = new AdminConfigController(
-                Mockito.mock(TenantDbConfigRepository.class),
-                Mockito.mock(AiModelConfigRepository.class),
+                dataSourceConfigService,
+                Mockito.mock(ModelConfigService.class),
                 Mockito.mock(SemanticLexiconRepository.class),
                 Mockito.mock(JoinRuleRepository.class),
                 Mockito.mock(AuditOperationExecutor.class)
@@ -81,17 +82,20 @@ class AdminSecurityResponseTest {
         request.setUsername("root");
         request.setPassword("secret");
 
-        ApiResponse<String> response = controller.testTenantConnection(request);
+        Mockito.doThrow(new BizException(ErrorCode.CONFIG_INVALID, "连接失败，请检查数据库配置后重试"))
+                .when(dataSourceConfigService).testConnection(request);
 
-        assertEquals(500, response.getCode());
-        assertEquals("连接失败，请检查数据库配置后重试", response.getMessage());
+        BizException ex = assertThrows(BizException.class, () -> controller.testTenantConnection(request));
+
+        assertEquals(ErrorCode.CONFIG_INVALID, ex.getErrorCode());
+        assertEquals("连接失败，请检查数据库配置后重试", ex.getMessage());
     }
 
     @Test
     void semanticMappingValidationShouldReturnGenericMessage() {
         AdminConfigController controller = new AdminConfigController(
-                Mockito.mock(TenantDbConfigRepository.class),
-                Mockito.mock(AiModelConfigRepository.class),
+                Mockito.mock(TenantDataSourceConfigService.class),
+                Mockito.mock(ModelConfigService.class),
                 Mockito.mock(SemanticLexiconRepository.class),
                 Mockito.mock(JoinRuleRepository.class),
                 Mockito.mock(AuditOperationExecutor.class)

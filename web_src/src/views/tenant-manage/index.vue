@@ -635,6 +635,9 @@ interface TenantForm {
   logicColumn: string;
   orgTemplateCode: string;
   orgRootUnitName: string;
+  adminUsername: string;
+  adminPassword: string;
+  adminNickname: string;
 }
 
 const form = reactive<TenantForm>({
@@ -655,7 +658,10 @@ const form = reactive<TenantForm>({
   driverClass: DEFAULT_MYSQL_DRIVER_CLASS,
   logicColumn: 'tenant_id',
   orgTemplateCode: '',
-  orgRootUnitName: ''
+  orgRootUnitName: '',
+  adminUsername: '',
+  adminPassword: '',
+  adminNickname: ''
 });
 const jdbcForm = reactive(createEmptyMysqlConnectionForm());
 const jdbcManualMode = ref(false);
@@ -1083,6 +1089,9 @@ const resetForm = () => {
   form.logicColumn = 'tenant_id';
   form.orgTemplateCode = '';
   form.orgRootUnitName = '';
+  form.adminUsername = '';
+  form.adminPassword = '';
+  form.adminNickname = '';
   syncJdbcForm(form.jdbcUrl);
 };
 
@@ -1424,6 +1433,11 @@ const handleEdit = (row: TenantView) => {
 const buildCreatePayload = (jdbcUrl?: string): TenantCreateRequest => {
   const payload: TenantCreateRequest = {
     tenantName: form.tenantName.trim(),
+    adminAccount: {
+      username: form.adminUsername.trim(),
+      password: form.adminPassword,
+      nickname: form.adminNickname.trim() || undefined
+    },
     status: form.status,
     remark: form.remark || undefined,
     contactName: form.contactName || undefined,
@@ -1478,6 +1492,10 @@ const buildUpdatePayload = (): TenantUpdateRequest => {
 const handleSave = async () => {
   if (!form.tenantName.trim()) {
     ElMessage.warning('请填写租户名称');
+    return;
+  }
+  if (!editingId.value && (!form.adminUsername.trim() || !form.adminPassword)) {
+    ElMessage.warning('请填写租户管理员账号和初始密码');
     return;
   }
   const jdbcUrl = !editingId.value && initConfig.value ? validateInitJdbcUrl() : null;
@@ -3271,6 +3289,22 @@ refreshTenantData();
         </el-form-item>
         <template v-if="!editingId">
           <el-divider content-position="left">初始化配置</el-divider>
+          <el-form-item label="管理员账号">
+            <el-input v-model="form.adminUsername" maxlength="64" placeholder="租户首个登录账号" autocomplete="off"/>
+          </el-form-item>
+          <el-form-item label="管理员密码">
+            <el-input
+              v-model="form.adminPassword"
+              type="password"
+              maxlength="32"
+              placeholder="8-32 位，必须包含字母和数字"
+              show-password
+              autocomplete="new-password"
+            />
+          </el-form-item>
+          <el-form-item label="管理员昵称">
+            <el-input v-model="form.adminNickname" maxlength="64" placeholder="可选"/>
+          </el-form-item>
           <el-form-item label="组织模板">
             <el-select v-model="form.orgTemplateCode" clearable filterable style="width: 100%" placeholder="可选，创建租户后自动初始化组织树">
               <el-option

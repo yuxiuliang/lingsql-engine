@@ -507,6 +507,11 @@ Content-Type: application/json
 {
   "tenantId": "tenant_new",
   "tenantName": "新租户",
+  "adminAccount": {
+    "username": "tenant_admin",
+    "password": "ChangeMe2026",
+    "nickname": "租户管理员"
+  },
   "serviceLevel": "BASIC",
   "tenantType": "STANDARD",
   "quotaBalance": 100000,
@@ -514,6 +519,8 @@ Content-Type: application/json
   "contactEmail": "lisi@example.com"
 }
 ```
+
+`adminAccount` 为必填对象。租户、`TENANT_ADMIN` 角色、首个登录账号和角色绑定在同一事务内创建；任一步失败都会回滚，不会留下无法登录的空租户。密码只用于写入，响应和审计详情均不得回显。
 
 #### 4.1.3 更新租户
 
@@ -704,6 +711,34 @@ Content-Type: application/json
   }
 }
 ```
+
+### 4.4 模型即时验证
+
+保存模型配置后，必须通过真实的 OpenAI 兼容 chat 接口验证模型名称、鉴权和响应能力。仅访问 `/v1/models` 不作为可用证据。
+
+```http
+POST /api/v1/admin/model/{modelId}/probe
+Authorization: Bearer {accessToken}
+```
+
+调用账号需要 `ADMIN:MODEL:HEALTH` 权限。验证操作会进入管理审计，失败原因只返回归一化错误码和脱敏说明。
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "modelId": 1,
+    "status": "HEALTHY",
+    "checkedAt": "2026-08-15T16:30:00",
+    "costMs": 428,
+    "errorCode": null,
+    "message": "模型验证通过"
+  }
+}
+```
+
+健康列表中的 `tested=false` 表示模型从未成功或失败地完成实际调用，前端必须显示“未验证”，不得显示为“正常”。模型新增或修改后会强制停用并进入待验证状态；验证通过后仍需管理员显式启用，不能让未经验证的新配置直接承载客户请求。
 
 ---
 

@@ -156,4 +156,20 @@ public class AiModelConfig {
      */
     @Column(name = "fuse_reason")
     private String fuseReason;
+
+    /** 最近一次真实调用验证状态：HEALTHY / FAILED。 */
+    @Column(name = "last_probe_status")
+    private String lastProbeStatus;
+
+    /** 最近一次真实调用验证时间。 */
+    @Column(name = "last_probe_time")
+    private LocalDateTime lastProbeTime;
+
+    /** 最近一次真实调用验证耗时。 */
+    @Column(name = "last_probe_cost_ms")
+    private Long lastProbeCostMs;
+
+    /** 最近一次真实调用验证的归一化错误码。 */
+    @Column(name = "last_probe_error_code")
+    private String lastProbeErrorCode;
 }

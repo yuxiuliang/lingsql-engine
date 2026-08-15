@@ -96,7 +96,8 @@ class TenantAdminServicePlanBindingTest {
                 billingPlanRepository,
                 lifecycleService,
                 Mockito.mock(OrganizationAdminService.class),
-                Mockito.mock(OpsAlertService.class)
+                Mockito.mock(OpsAlertService.class),
+                Mockito.mock(com.lingsql.rbac.service.UserAdminService.class)
         );
     }
 }

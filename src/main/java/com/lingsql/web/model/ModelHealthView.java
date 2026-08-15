@@ -28,10 +28,15 @@ public class ModelHealthView {
     private String fuseReason;
 
     private int failureCount;
+    private boolean tested;
     private boolean fused;
     private String lastFailReason;
     private LocalDateTime lastFailTime;
     private long lastCostMs;
+    private String probeStatus;
+    private LocalDateTime lastProbeTime;
+    private Long lastProbeCostMs;
+    private String lastProbeErrorCode;
 
     /**
      * 构建视图对象。
@@ -55,8 +60,13 @@ public class ModelHealthView {
         view.setCooldownSeconds(config.getCooldownSeconds());
         view.setFuseTime(config.getFuseTime());
         view.setFuseReason(config.getFuseReason());
+        view.setProbeStatus(config.getLastProbeStatus() == null ? "UNTESTED" : config.getLastProbeStatus());
+        view.setLastProbeTime(config.getLastProbeTime());
+        view.setLastProbeCostMs(config.getLastProbeCostMs());
+        view.setLastProbeErrorCode(config.getLastProbeErrorCode());
 
         if (snapshot != null) {
+            view.setTested(config.getLastProbeStatus() != null || snapshot.isTested());
             view.setFailureCount(snapshot.getFailureCount());
             view.setFused(snapshot.isFused());
             view.setLastFailReason(snapshot.getLastFailReason());

@@ -1,6 +1,7 @@
 package com.lingsql.agent;
 
 import com.lingsql.agent.model.AiModelConfig;
+import com.lingsql.agent.model.ModelProbeView;
 import com.lingsql.agent.repository.AiModelConfigRepository;
 import com.lingsql.config.LingSqlProperties;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +29,7 @@ public class ModelRecoveryScheduler {
     private final AiModelConfigRepository repository;
     private final ModelHealthService healthService;
     private final LingSqlProperties properties;
-    private final ModelProbeClient probeClient;
+    private final ModelProbeService probeService;
 
     /**
      * 定时检查已熔断模型并尝试自动恢复。
@@ -52,16 +53,16 @@ public class ModelRecoveryScheduler {
             if (elapsed.compareTo(cooldown) < 0) {
                 continue;
             }
-            ModelProbeClient.ProbeResult probeResult = probeClient.probe(config);
-            if (!probeResult.isSuccess()) {
+            ModelProbeView probeResult = probeService.probe(config.getId());
+            if (!"HEALTHY".equals(probeResult.status())) {
                 config.setFuseTime(now);
-                config.setFuseReason("半开探测失败: " + probeResult.getReason());
+                config.setFuseReason("半开探测失败: " + probeResult.message());
                 repository.save(config);
                 log.warn("模型半开探测失败，继续熔断: id={}, provider={}, model={}, reason={}",
                         config.getId(),
                         config.getProviderName(),
                         config.getModelName(),
-                        probeResult.getReason());
+                        probeResult.message());
                 continue;
             }
 
