@@ -1,9 +1,4 @@
 services:
-  app:
-    build:
-      args:
-        LINGSQL_BUILD_COMMIT: ${LINGSQL_BUILD_COMMIT}
-
   model-stub:
     image: node:24-alpine
     container_name: lingsql-model-stub

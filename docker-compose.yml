@@ -63,6 +63,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        LINGSQL_BUILD_COMMIT: ${LINGSQL_BUILD_COMMIT:-local}
     image: lingsql-engine:local
     container_name: lingsql-app
     restart: unless-stopped
