@@ -1,7 +1,7 @@
 package com.lingsql.llm;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.agent.ModelHealthService;
 import com.lingsql.agent.ModelRouter;
 import com.lingsql.agent.model.AiModelConfig;
@@ -9,13 +9,11 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.web.client.RestTemplateBuilder;
-import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -41,8 +39,8 @@ public class LlmClient {
     private final ModelRouter modelRouter;
     private final ModelHealthService healthService;
     private final ObjectMapper objectMapper;
-    private final RestTemplateBuilder restTemplateBuilder;
-    private volatile RestTemplate sharedRestTemplate;
+    private final RestClient.Builder restClientBuilder;
+    private volatile RestClient sharedRestClient;
 
     /**
      * 发送聊天请求。
@@ -105,7 +103,7 @@ public class LlmClient {
                 Map.of("role", "user", "content", userPrompt)
         ));
 
-        RestTemplate restTemplate = resolveRestTemplate();
+        RestClient restClient = resolveRestClient();
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -114,9 +112,13 @@ public class LlmClient {
             headers.set("Authorization", auth);
         }
 
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
         String url = resolveChatUrl(modelConfig.getBaseUrl());
-        String response = restTemplate.postForObject(url, entity, String.class);
+        String response = restClient.post()
+                .uri(url)
+                .headers(requestHeaders -> requestHeaders.addAll(headers))
+                .body(request)
+                .retrieve()
+                .body(String.class);
         ParsedLlmResponse parsedResponse = parseResponse(response);
         String content = parsedResponse.content();
         if (content == null || content.isBlank()) {
@@ -141,29 +143,27 @@ public class LlmClient {
     }
 
     /**
-     * 获取共享 RestTemplate，避免每次请求重复构建客户端对象。
+     * 获取共享 RestClient，避免每次请求重复构建客户端对象。
      *
-     * @return RestTemplate
+     * @return RestClient
      * @author 余炘洋
      * @date 2026-02-28
      */
-    private RestTemplate resolveRestTemplate() {
-        if (sharedRestTemplate != null) {
-            return sharedRestTemplate;
+    private RestClient resolveRestClient() {
+        if (sharedRestClient != null) {
+            return sharedRestClient;
         }
         synchronized (this) {
-            if (sharedRestTemplate != null) {
-                return sharedRestTemplate;
+            if (sharedRestClient != null) {
+                return sharedRestClient;
             }
-            sharedRestTemplate = restTemplateBuilder
-                    .requestFactory(() -> {
-                        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-                        factory.setConnectTimeout((int) DEFAULT_TIMEOUT.toMillis());
-                        factory.setReadTimeout((int) DEFAULT_TIMEOUT.toMillis());
-                        return factory;
-                    })
+            SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+            requestFactory.setConnectTimeout(DEFAULT_TIMEOUT);
+            requestFactory.setReadTimeout(DEFAULT_TIMEOUT);
+            sharedRestClient = restClientBuilder
+                    .requestFactory(requestFactory)
                     .build();
-            return sharedRestTemplate;
+            return sharedRestClient;
         }
     }
 
@@ -184,9 +184,9 @@ public class LlmClient {
             String content = "";
             JsonNode choices = root.path("choices");
             if (choices.isArray() && !choices.isEmpty()) {
-                content = choices.get(0).path("message").path("content").asText("");
+                content = choices.get(0).path("message").path("content").stringValue("");
             } else {
-                content = root.path("content").asText("");
+                content = root.path("content").stringValue("");
             }
             Integer tokenCount = null;
             JsonNode usage = root.path("usage");

@@ -1,6 +1,6 @@
 package com.lingsql.billing;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.context.TenantContext;
 import jakarta.servlet.http.HttpServletRequest;

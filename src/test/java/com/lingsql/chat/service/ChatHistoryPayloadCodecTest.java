@@ -1,6 +1,6 @@
 package com.lingsql.chat.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.chat.model.ChatTraceStep;
 import org.junit.jupiter.api.Test;
 

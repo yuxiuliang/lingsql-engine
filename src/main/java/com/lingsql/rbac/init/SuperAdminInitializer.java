@@ -1,7 +1,7 @@
 package com.lingsql.rbac.init;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.billing.BillingBalanceService;
 import com.lingsql.billing.entity.BillingPlan;
 import com.lingsql.billing.BillingPolicy;

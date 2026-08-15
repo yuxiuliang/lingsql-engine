@@ -1,6 +1,6 @@
 package com.lingsql.rbac.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.rbac.security.RbacSecurityConstants;
 import com.lingsql.rbac.security.RbacUserSession;
 import lombok.RequiredArgsConstructor;

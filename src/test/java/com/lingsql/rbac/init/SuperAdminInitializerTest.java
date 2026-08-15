@@ -1,7 +1,7 @@
 package com.lingsql.rbac.init;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.billing.BillingBalanceService;
 import com.lingsql.billing.repository.BillingPlanRepository;
 import com.lingsql.config.LingSqlProperties;
@@ -108,7 +108,7 @@ class SuperAdminInitializerTest {
     }
 
     private Set<String> collectCodes(JsonNode nodes, String fieldName) {
-        return nodes.findValuesAsText(fieldName).stream().collect(Collectors.toSet());
+        return nodes.findValues(fieldName).stream().map(JsonNode::asText).collect(Collectors.toSet());
     }
 
     private RbacPermission buildPermission(Long id, String code) {

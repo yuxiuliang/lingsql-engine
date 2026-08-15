@@ -1,6 +1,6 @@
 package com.lingsql.rbac.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.rbac.entity.RbacUserExperiencePolicy;
 import com.lingsql.rbac.model.DataScopeRule;
 import com.lingsql.common.exception.BizException;

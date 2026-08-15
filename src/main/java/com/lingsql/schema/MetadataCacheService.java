@@ -1,6 +1,6 @@
 package com.lingsql.schema;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.metadata.service.MetadataExtService;
 import com.lingsql.schema.model.TableInfo;
@@ -14,7 +14,6 @@ import org.springframework.util.StringUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 /**
  * 元数据缓存服务，负责 Schema 与 LLM 补全文本的缓存。
@@ -84,8 +83,7 @@ public class MetadataCacheService {
             redisTemplate.opsForValue().set(
                     cacheKey,
                     json,
-                    properties.getCache().getSchemaTtl().toSeconds(),
-                    TimeUnit.SECONDS
+                    properties.getCache().getSchemaTtl()
             );
         } catch (Exception e) {
             log.error("缓存 Schema 失败: ", e);
@@ -172,8 +170,7 @@ public class MetadataCacheService {
         redisTemplate.opsForValue().set(
                 COMMENT_CACHE_PREFIX + key,
                 comment,
-                properties.getCache().getCommentTtl().toSeconds(),
-                TimeUnit.SECONDS
+                properties.getCache().getCommentTtl()
         );
     }
 

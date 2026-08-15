@@ -1,6 +1,6 @@
 package com.lingsql.rbac.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.organization.entity.OrgUnit;
 import com.lingsql.organization.entity.OrgUnitRelation;
 import com.lingsql.organization.entity.UserOrgMembership;
