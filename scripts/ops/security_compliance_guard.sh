@@ -112,8 +112,8 @@ main() {
   fi
 
   # 4) 运行时可观察能力必备项
-  if ! search_regex "retry-enabled:" "${PROD_CONFIG}"; then
-    log_error "缺少审计重试配置，可能导致关键审计数据丢失"
+  if ! search_regex "delivery-max-attempts:" "${PROD_CONFIG}"; then
+    log_error "缺少审计持久投递配置，可能导致关键审计数据无法补偿"
     exit 1
   fi
   if ! search_regex "retention:" "${PROD_CONFIG}"; then

@@ -97,11 +97,11 @@ lingsql:
     max-page-size: ${LINGSQL_WEB_MAX_PAGE_SIZE:100}
     export-max-rows: ${LINGSQL_WEB_EXPORT_MAX_ROWS:10000}
   audit:
-    retry-enabled: ${LINGSQL_AUDIT_RETRY_ENABLED:true}
-    retry-max-queue: ${LINGSQL_AUDIT_RETRY_MAX_QUEUE:1000}
-    retry-batch-size: ${LINGSQL_AUDIT_RETRY_BATCH_SIZE:100}
-    retry-max-attempts: ${LINGSQL_AUDIT_RETRY_MAX_ATTEMPTS:3}
-    retry-delay-ms: ${LINGSQL_AUDIT_RETRY_DELAY_MS:60000}
+    delivery-batch-size: ${LINGSQL_AUDIT_DELIVERY_BATCH_SIZE:100}
+    delivery-max-attempts: ${LINGSQL_AUDIT_DELIVERY_MAX_ATTEMPTS:10}
+    delivery-retry-delay-ms: ${LINGSQL_AUDIT_DELIVERY_RETRY_DELAY_MS:5000}
+    delivery-interval-ms: ${LINGSQL_AUDIT_DELIVERY_INTERVAL_MS:5000}
+    prepared-timeout: ${LINGSQL_AUDIT_PREPARED_TIMEOUT:5m}
   alert:
     enabled: ${LINGSQL_ALERT_ENABLED:false}
     webhook-url: ${LINGSQL_ALERT_WEBHOOK_URL:}

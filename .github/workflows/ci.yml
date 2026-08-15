@@ -120,7 +120,7 @@ jobs:
           bash scripts/ops/flyway_migrate.sh
           bash scripts/ops/flyway_migrate.sh
           test "$(docker compose exec -T mysql mysql -N -B -uroot -pci-root-password lingsql_engine_db -e \
-            "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='lingsql_engine_db' AND TABLE_NAME LIKE 't_lingsql_engine\\_%';")" = "36"
+            "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='lingsql_engine_db' AND TABLE_NAME LIKE 't_lingsql_engine\\_%';")" = "37"
           test "$(docker compose exec -T mysql mysql -N -B -uroot -pci-root-password lingsql_engine_db -e \
             "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0;")" = "0"
 
@@ -133,6 +133,8 @@ jobs:
           MYSQL_DATABASE=lingsql_legacy_ci bash scripts/ops/flyway_migrate.sh
           test "$(docker compose exec -T mysql mysql -N -B -uroot -pci-root-password lingsql_legacy_ci -e \
             "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1 AND version = '20260815.02';")" = "1"
+          test "$(docker compose exec -T mysql mysql -N -B -uroot -pci-root-password lingsql_legacy_ci -e \
+            "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1 AND version = '20260815.03';")" = "1"
 
       - name: Stop Migration Stack
         if: always()

@@ -582,44 +582,33 @@ public class LingSqlProperties {
     @Data
     public static class Audit {
         /**
-         * 是否启用审计写入重试。
+         * 每次投递批量大小。
          *
          * @author 余炘洋
          * @date 2026-01-28
          */
-        private boolean retryEnabled = true;
+        private int deliveryBatchSize = 100;
 
         /**
-         * 重试队列最大长度。
+         * 单条投递最大尝试次数。
          *
          * @author 余炘洋
          * @date 2026-01-28
          */
-        private int retryMaxQueue = 1000;
+        private int deliveryMaxAttempts = 10;
 
         /**
-         * 每次重试批量大小。
+         * 投递补偿基础间隔（毫秒）。
          *
          * @author 余炘洋
          * @date 2026-01-28
          */
-        private int retryBatchSize = 100;
+        private long deliveryRetryDelayMs = 5000;
 
         /**
-         * 单条日志最大重试次数。
-         *
-         * @author 余炘洋
-         * @date 2026-01-28
+         * PREPARED 操作结果确认超时，超时后标记 UNKNOWN。
          */
-        private int retryMaxAttempts = 3;
-
-        /**
-         * 重试间隔（毫秒）。
-         *
-         * @author 余炘洋
-         * @date 2026-01-28
-         */
-        private long retryDelayMs = 60000;
+        private Duration preparedTimeout = Duration.ofMinutes(5);
     }
 
     /**

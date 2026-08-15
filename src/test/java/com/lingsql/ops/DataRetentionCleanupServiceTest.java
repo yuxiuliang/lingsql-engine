@@ -1,6 +1,7 @@
 package com.lingsql.ops;
 
 import com.lingsql.audit.repository.AuditLogRepository;
+import com.lingsql.audit.repository.AuditDeliveryRepository;
 import com.lingsql.audit.repository.SqlExecuteLogRepository;
 import com.lingsql.chat.repository.ChatHistoryRepository;
 import com.lingsql.config.LingSqlProperties;
@@ -23,12 +24,14 @@ class DataRetentionCleanupServiceTest {
     void shouldSkipWhenRetentionDisabled() {
         SqlExecuteLogRepository sqlLogRepository = Mockito.mock(SqlExecuteLogRepository.class);
         AuditLogRepository auditLogRepository = Mockito.mock(AuditLogRepository.class);
+        AuditDeliveryRepository auditDeliveryRepository = Mockito.mock(AuditDeliveryRepository.class);
         ChatHistoryRepository chatHistoryRepository = Mockito.mock(ChatHistoryRepository.class);
         OpsAlertService alertService = Mockito.mock(OpsAlertService.class);
         LingSqlProperties properties = new LingSqlProperties();
         properties.getRetention().setEnabled(false);
         DataRetentionCleanupService service = new DataRetentionCleanupService(
                 auditLogRepository,
+                auditDeliveryRepository,
                 sqlLogRepository,
                 chatHistoryRepository,
                 properties,
@@ -46,6 +49,7 @@ class DataRetentionCleanupServiceTest {
     void shouldOnlyCountInDryRunMode() {
         SqlExecuteLogRepository sqlLogRepository = Mockito.mock(SqlExecuteLogRepository.class);
         AuditLogRepository auditLogRepository = Mockito.mock(AuditLogRepository.class);
+        AuditDeliveryRepository auditDeliveryRepository = Mockito.mock(AuditDeliveryRepository.class);
         ChatHistoryRepository chatHistoryRepository = Mockito.mock(ChatHistoryRepository.class);
         OpsAlertService alertService = Mockito.mock(OpsAlertService.class);
         LingSqlProperties properties = new LingSqlProperties();
@@ -53,6 +57,7 @@ class DataRetentionCleanupServiceTest {
         properties.getRetention().setDryRun(true);
         DataRetentionCleanupService service = new DataRetentionCleanupService(
                 auditLogRepository,
+                auditDeliveryRepository,
                 sqlLogRepository,
                 chatHistoryRepository,
                 properties,
@@ -76,6 +81,7 @@ class DataRetentionCleanupServiceTest {
     void shouldDeleteAndNotifyWhenThresholdReached() {
         SqlExecuteLogRepository sqlLogRepository = Mockito.mock(SqlExecuteLogRepository.class);
         AuditLogRepository auditLogRepository = Mockito.mock(AuditLogRepository.class);
+        AuditDeliveryRepository auditDeliveryRepository = Mockito.mock(AuditDeliveryRepository.class);
         ChatHistoryRepository chatHistoryRepository = Mockito.mock(ChatHistoryRepository.class);
         OpsAlertService alertService = Mockito.mock(OpsAlertService.class);
         LingSqlProperties properties = new LingSqlProperties();
@@ -84,6 +90,7 @@ class DataRetentionCleanupServiceTest {
         properties.getRetention().setAlertThreshold(10L);
         DataRetentionCleanupService service = new DataRetentionCleanupService(
                 auditLogRepository,
+                auditDeliveryRepository,
                 sqlLogRepository,
                 chatHistoryRepository,
                 properties,

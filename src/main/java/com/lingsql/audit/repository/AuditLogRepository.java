@@ -12,6 +12,8 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
  */
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long>, JpaSpecificationExecutor<AuditLog> {
 
+    boolean existsByEventId(String eventId);
+
     /**
      * 统计指定时间之前的管理审计日志数量。
      *

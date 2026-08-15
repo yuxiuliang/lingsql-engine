@@ -22,6 +22,12 @@ import java.time.LocalDateTime;
 public class AuditLog {
 
     /**
+     * 审计事件唯一标识。
+     */
+    @Column(name = "event_id", length = 64)
+    private String eventId;
+
+    /**
      * 主键ID。
      *
      * @author 余炘洋

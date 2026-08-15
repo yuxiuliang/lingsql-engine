@@ -1,6 +1,7 @@
 package com.lingsql.ops;
 
 import com.lingsql.audit.repository.AuditLogRepository;
+import com.lingsql.audit.repository.AuditDeliveryRepository;
 import com.lingsql.audit.repository.SqlExecuteLogRepository;
 import com.lingsql.chat.repository.ChatHistoryRepository;
 import com.lingsql.config.LingSqlProperties;
@@ -26,6 +27,7 @@ import java.util.Map;
 public class DataRetentionCleanupService {
 
     private final AuditLogRepository auditLogRepository;
+    private final AuditDeliveryRepository auditDeliveryRepository;
     private final SqlExecuteLogRepository sqlExecuteLogRepository;
     private final ChatHistoryRepository chatHistoryRepository;
     private final LingSqlProperties properties;
@@ -55,26 +57,32 @@ public class DataRetentionCleanupService {
 
         long sqlLogCandidate = sqlExecuteLogRepository.countByCreateTimeBefore(sqlLogCutoff);
         long auditLogCandidate = auditLogRepository.countByCreateTimeBefore(auditLogCutoff);
+        long auditDeliveryCandidate = auditDeliveryRepository
+                .countByDeliveryStatusAndUpdateTimeBefore("DELIVERED", auditLogCutoff);
         long chatHistoryCandidate = chatHistoryRepository.countByCreateTimeBefore(chatHistoryCutoff);
         if (retention.isDryRun()) {
-            log.info("留存清理演练模式: sqlLogs={}, auditLogs={}, chatHistory={}",
-                    sqlLogCandidate, auditLogCandidate, chatHistoryCandidate);
+            log.info("留存清理演练模式: sqlLogs={}, auditLogs={}, auditDeliveries={}, chatHistory={}",
+                    sqlLogCandidate, auditLogCandidate, auditDeliveryCandidate, chatHistoryCandidate);
             return;
         }
 
         long sqlLogDeleted = sqlExecuteLogRepository.deleteByCreateTimeBefore(sqlLogCutoff);
         long auditLogDeleted = auditLogRepository.deleteByCreateTimeBefore(auditLogCutoff);
+        long auditDeliveryDeleted = auditDeliveryRepository
+                .deleteByDeliveryStatusAndUpdateTimeBefore("DELIVERED", auditLogCutoff);
         long chatHistoryDeleted = chatHistoryRepository.deleteByCreateTimeBefore(chatHistoryCutoff);
-        long totalDeleted = sqlLogDeleted + auditLogDeleted + chatHistoryDeleted;
-        log.info("留存清理完成: sqlLogs={}, auditLogs={}, chatHistory={}, total={}",
-                sqlLogDeleted, auditLogDeleted, chatHistoryDeleted, totalDeleted);
-        maybeAlert(retention, now, sqlLogDeleted, auditLogDeleted, chatHistoryDeleted, totalDeleted);
+        long totalDeleted = sqlLogDeleted + auditLogDeleted + auditDeliveryDeleted + chatHistoryDeleted;
+        log.info("留存清理完成: sqlLogs={}, auditLogs={}, auditDeliveries={}, chatHistory={}, total={}",
+                sqlLogDeleted, auditLogDeleted, auditDeliveryDeleted, chatHistoryDeleted, totalDeleted);
+        maybeAlert(retention, now, sqlLogDeleted, auditLogDeleted, auditDeliveryDeleted,
+                chatHistoryDeleted, totalDeleted);
     }
 
     private void maybeAlert(LingSqlProperties.Retention retention,
                             LocalDateTime now,
                             long sqlLogDeleted,
                             long auditLogDeleted,
+                            long auditDeliveryDeleted,
                             long chatHistoryDeleted,
                             long totalDeleted) {
         long threshold = Math.max(0L, retention.getAlertThreshold());
@@ -85,6 +93,7 @@ public class DataRetentionCleanupService {
         details.put("runAt", now.toString());
         details.put("deleted.sqlLogs", sqlLogDeleted);
         details.put("deleted.auditLogs", auditLogDeleted);
+        details.put("deleted.auditDeliveries", auditDeliveryDeleted);
         details.put("deleted.chatHistory", chatHistoryDeleted);
         details.put("deleted.total", totalDeleted);
         details.put("alertThreshold", threshold);

@@ -111,11 +111,11 @@ lingsql:
     max-page-size: 100
     export-max-rows: 10000
   audit:
-    retry-enabled: true
-    retry-max-queue: 1000
-    retry-batch-size: 100
-    retry-max-attempts: 3
-    retry-delay-ms: 60000
+    delivery-batch-size: 100
+    delivery-max-attempts: 10
+    delivery-retry-delay-ms: 5000
+    delivery-interval-ms: 5000
+    prepared-timeout: 5m
   alert:
     enabled: ${LINGSQL_ALERT_ENABLED:false}
     webhook-url: ${LINGSQL_ALERT_WEBHOOK_URL:}

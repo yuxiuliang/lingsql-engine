@@ -12,6 +12,11 @@ import lombok.Data;
 public class AuditLogCommand {
 
     /**
+     * 审计事件唯一标识，用于补偿重放幂等。
+     */
+    private String eventId;
+
+    /**
      * 租户ID。
      *
      * @author 余炘洋

@@ -8,12 +8,7 @@ import com.lingsql.audit.repository.AuditLogRepository;
 import com.lingsql.common.result.PageResult;
 import com.lingsql.common.pagination.PageParam;
 import com.lingsql.common.pagination.PageParamResolver;
-import com.lingsql.config.LingSqlProperties;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -22,10 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 管理操作审计日志服务。
@@ -33,36 +25,12 @@ import java.util.Map;
  * @author 余炘洋
  * @date 2026-01-26
  */
-@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuditLogService {
 
     private final AuditLogRepository repository;
-    private final ObjectMapper objectMapper;
-    private final LingSqlProperties properties;
     private final PageParamResolver pageParamResolver;
-
-    private final java.util.Queue<RetryItem> retryQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
-    private final java.util.concurrent.atomic.AtomicInteger retrySize = new java.util.concurrent.atomic.AtomicInteger();
-
-    /**
-     * 写入审计日志。
-     *
-     * @param command 写入请求
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    public void record(AuditLogCommand command) {
-        if (command == null) {
-            return;
-        }
-        try {
-            persist(command);
-        } catch (Exception ex) {
-            enqueueRetry(command, ex);
-        }
-    }
 
     /**
      * 查询审计日志。
@@ -106,84 +74,30 @@ public class AuditLogService {
         );
     }
 
-    @org.springframework.scheduling.annotation.Scheduled(fixedDelayString = "${lingsql.audit.retry-delay-ms:60000}")
-    public void retryFailedLogs() {
-        LingSqlProperties.Audit audit = properties.getAudit();
-        if (audit == null || !audit.isRetryEnabled()) {
+    void persistIdempotently(AuditLogCommand command) {
+        if (StringUtils.hasText(command.getEventId()) && repository.existsByEventId(command.getEventId())) {
             return;
         }
-        int batchSize = Math.max(1, audit.getRetryBatchSize());
-        for (int i = 0; i < batchSize; i++) {
-            RetryItem item = retryQueue.poll();
-            if (item == null) {
-                return;
-            }
-            retrySize.decrementAndGet();
-            try {
-                persist(item.command());
-            } catch (Exception ex) {
-                handleRetryFailure(item, ex);
-            }
-        }
+        persist(command);
     }
 
     private void persist(AuditLogCommand command) {
         AuditLog logEntity = new AuditLog();
+        logEntity.setEventId(command.getEventId());
         logEntity.setTenantId(command.getTenantId());
         logEntity.setUserId(command.getUserId());
         logEntity.setRealUserId(resolveRealUserId(command));
         logEntity.setUsername(command.getUsername());
         logEntity.setAction(command.getAction());
         logEntity.setResource(command.getResource());
-        logEntity.setDetail(sanitizeDetail(command.getDetail()));
+        logEntity.setDetail(command.getDetail());
         logEntity.setSummary(resolveSummary(command));
         logEntity.setSuccess(command.isSuccess() ? 1 : 0);
         logEntity.setErrorMessage(command.getErrorMessage());
         logEntity.setRequestIp(command.getRequestIp());
         logEntity.setUserAgent(command.getUserAgent());
         logEntity.setCreateTime(LocalDateTime.now());
-        repository.save(logEntity);
-    }
-
-    private void enqueueRetry(AuditLogCommand command, Exception ex) {
-        LingSqlProperties.Audit audit = properties.getAudit();
-        if (audit == null || !audit.isRetryEnabled()) {
-            log.error("写入审计日志失败且未启用重试: {}", ex.getMessage(), ex);
-            return;
-        }
-        int maxQueue = audit.getRetryMaxQueue();
-        if (maxQueue <= 0) {
-            log.error("写入审计日志失败且重试队列容量为 0: {}", ex.getMessage(), ex);
-            return;
-        }
-        int current = retrySize.get();
-        if (current >= maxQueue) {
-            log.error("审计重试队列已满，丢弃日志: size={}, reason={}", current, ex.getMessage());
-            return;
-        }
-        retryQueue.offer(new RetryItem(command, 1));
-        retrySize.incrementAndGet();
-        log.warn("写入审计日志失败，已进入重试队列: size={}, reason={}", retrySize.get(), ex.getMessage());
-    }
-
-    private void handleRetryFailure(RetryItem item, Exception ex) {
-        LingSqlProperties.Audit audit = properties.getAudit();
-        if (audit == null) {
-            log.error("审计重试失败: {}", ex.getMessage(), ex);
-            return;
-        }
-        int maxAttempts = Math.max(1, audit.getRetryMaxAttempts());
-        int nextAttempt = item.attempt() + 1;
-        if (nextAttempt > maxAttempts) {
-            log.error("审计日志重试超过最大次数，已丢弃: attempts={}, reason={}", item.attempt(), ex.getMessage());
-            return;
-        }
-        retryQueue.offer(new RetryItem(item.command(), nextAttempt));
-        retrySize.incrementAndGet();
-        log.warn("审计日志重试失败，已重新入队: attempts={}, reason={}", nextAttempt, ex.getMessage());
-    }
-
-    private record RetryItem(AuditLogCommand command, int attempt) {
+        repository.saveAndFlush(logEntity);
     }
 
     /**
@@ -255,77 +169,6 @@ public class AuditLogService {
             summary = summary + "，资源=" + resource;
         }
         return summary;
-    }
-
-    /**
-     * 过滤详情中的敏感字段。
-     *
-     * @param detail 详情
-     * @return 脱敏后的详情
-     * @author 余炘洋
-     * @date 2026-01-27
-     */
-    private String sanitizeDetail(String detail) {
-        if (!StringUtils.hasText(detail)) {
-            return detail;
-        }
-        try {
-            JsonNode root = objectMapper.readTree(detail);
-            removePasswordFields(root);
-            return objectMapper.writeValueAsString(root);
-        } catch (Exception ex) {
-            return detail;
-        }
-    }
-
-    /**
-     * 递归移除 password 字段。
-     *
-     * @param node JSON 节点
-     * @author 余炘洋
-     * @date 2026-01-27
-     */
-    private void removePasswordFields(JsonNode node) {
-        if (node == null) {
-            return;
-        }
-        if (node.isObject() && node instanceof ObjectNode objectNode) {
-            List<String> toRemove = new ArrayList<>();
-            Iterator<Map.Entry<String, JsonNode>> fields = objectNode.properties().iterator();
-            while (fields.hasNext()) {
-                Map.Entry<String, JsonNode> entry = fields.next();
-                String fieldName = entry.getKey();
-                if (shouldMaskField(fieldName)) {
-                    toRemove.add(fieldName);
-                    continue;
-                }
-                removePasswordFields(entry.getValue());
-            }
-            if (!toRemove.isEmpty()) {
-                objectNode.remove(toRemove);
-            }
-            return;
-        }
-        if (node.isArray()) {
-            for (JsonNode item : node) {
-                removePasswordFields(item);
-            }
-        }
-    }
-
-    /**
-     * 判断字段是否需要脱敏。
-     *
-     * @param fieldName 字段名
-     * @return 是否脱敏
-     * @author 余炘洋
-     * @date 2026-01-27
-     */
-    private boolean shouldMaskField(String fieldName) {
-        if (!StringUtils.hasText(fieldName)) {
-            return false;
-        }
-        return fieldName.trim().toLowerCase().contains("password");
     }
 
     /**

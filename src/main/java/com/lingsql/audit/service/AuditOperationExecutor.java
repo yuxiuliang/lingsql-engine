@@ -1,6 +1,5 @@
 package com.lingsql.audit.service;
 
-import tools.jackson.databind.ObjectMapper;
 import com.lingsql.audit.model.AuditLogCommand;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
@@ -12,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -30,21 +30,12 @@ public class AuditOperationExecutor {
     private static final String HEADER_X_FORWARDED_FOR = "X-Forwarded-For";
     private static final String HEADER_X_REAL_IP = "X-Real-IP";
 
-    private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
+    private final AuditDeliveryService auditDeliveryService;
+    private final AuditDeliveryPublisher auditDeliveryPublisher;
 
     public <T> ApiResponse<T> execute(String action, String resource, Object request, HttpServletRequest http, Supplier<T> supplier) {
-        try {
-            T result = supplier.get();
-            recordAudit(action, resource, request, true, null, http);
-            return ApiResponse.success(result);
-        } catch (BizException ex) {
-            recordAudit(action, resource, request, false, ex.getMessage(), http);
-            throw ex;
-        } catch (Exception ex) {
-            recordAudit(action, resource, request, false, ex.getMessage(), http);
-            throw new BizException(ErrorCode.SYSTEM_ERROR, "系统异常，请稍后再试", ex);
-        }
+        return executeInternal(action, resource, request, http, supplier, result -> request);
     }
 
     public <T> ApiResponse<T> execute(String action,
@@ -53,38 +44,55 @@ public class AuditOperationExecutor {
                                       HttpServletRequest http,
                                       Supplier<T> supplier,
                                       Function<T, Object> successAuditDetailMapper) {
-        try {
-            T result = supplier.get();
-            Object auditDetail = successAuditDetailMapper == null ? request : successAuditDetailMapper.apply(result);
-            recordAudit(action, resource, auditDetail, true, null, http);
-            return ApiResponse.success(result);
-        } catch (BizException ex) {
-            recordAudit(action, resource, request, false, ex.getMessage(), http);
-            throw ex;
-        } catch (Exception ex) {
-            recordAudit(action, resource, request, false, ex.getMessage(), http);
-            throw new BizException(ErrorCode.SYSTEM_ERROR, "系统异常，请稍后再试", ex);
-        }
+        Function<T, Object> mapper = successAuditDetailMapper == null ? result -> request : successAuditDetailMapper;
+        return executeInternal(action, resource, request, http, supplier, mapper);
     }
 
     public ApiResponse<String> executeVoid(String action, String resource, Object request, HttpServletRequest http, Runnable runnable, String successMessage) {
-        try {
+        return executeInternal(action, resource, request, http, () -> {
             runnable.run();
-            recordAudit(action, resource, request, true, null, http);
-            return ApiResponse.success(successMessage);
-        } catch (BizException ex) {
-            recordAudit(action, resource, request, false, ex.getMessage(), http);
-            throw ex;
-        } catch (Exception ex) {
-            recordAudit(action, resource, request, false, ex.getMessage(), http);
-            throw new BizException(ErrorCode.SYSTEM_ERROR, "系统异常，请稍后再试", ex);
-        }
+            return successMessage;
+        }, result -> request);
     }
 
-    private void recordAudit(String action, String resource, Object request, boolean success, String error, HttpServletRequest http) {
+    private <T> ApiResponse<T> executeInternal(String action,
+                                               String resource,
+                                               Object request,
+                                               HttpServletRequest http,
+                                               Supplier<T> supplier,
+                                               Function<T, Object> successAuditDetailMapper) {
+        AuditLogCommand command = buildCommand(action, resource, request, http);
+        String eventId = auditDeliveryService.prepare(command);
+        T result;
+        try {
+            result = supplier.get();
+        } catch (BizException ex) {
+            finalizeFailure(eventId, request, ex);
+            throw ex;
+        } catch (AuditPersistenceException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            finalizeFailure(eventId, request, ex);
+            throw new BizException(ErrorCode.SYSTEM_ERROR, "系统异常，请稍后再试", ex);
+        }
+        Object auditDetail = resolveSuccessDetail(successAuditDetailMapper, result, request, eventId);
+        try {
+            finalizeSuccess(eventId, auditDetail);
+        } catch (AuditPersistenceException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new AuditPersistenceException("成功操作的审计结果无法持久化，需要人工核对", ex);
+        }
+        return ApiResponse.success(result);
+    }
+
+    private AuditLogCommand buildCommand(String action,
+                                         String resource,
+                                         Object request,
+                                         HttpServletRequest http) {
         RbacUserSession session = RbacSecurityUtils.currentSession();
         if (session == null) {
-            return;
+            throw new AuditPersistenceException("缺少审计操作人上下文，已拒绝执行管理操作", null);
         }
         AuditLogCommand command = new AuditLogCommand();
         command.setTenantId(session.getTenantId());
@@ -94,11 +102,36 @@ public class AuditOperationExecutor {
         command.setAction(action);
         command.setResource(resource);
         command.setDetail(serialize(request));
-        command.setSuccess(success);
-        command.setErrorMessage(error);
         command.setRequestIp(resolveIp(http));
         command.setUserAgent(resolveUserAgent(http));
-        auditLogService.record(command);
+        return command;
+    }
+
+    private <T> Object resolveSuccessDetail(Function<T, Object> mapper,
+                                            T result,
+                                            Object fallback,
+                                            String eventId) {
+        try {
+            return mapper.apply(result);
+        } catch (Exception ex) {
+            log.error("成功审计详情映射失败，使用原始请求: eventId={}", eventId, ex);
+            return fallback;
+        }
+    }
+
+    private void finalizeSuccess(String eventId, Object detail) {
+        auditDeliveryService.finalizeOutcome(eventId, serialize(detail), true, null);
+        auditDeliveryPublisher.publishNow(eventId);
+    }
+
+    private void finalizeFailure(String eventId, Object detail, Exception businessFailure) {
+        try {
+            auditDeliveryService.finalizeOutcome(eventId, serialize(detail), false, businessFailure.getMessage());
+            auditDeliveryPublisher.publishNow(eventId);
+        } catch (Exception auditFailure) {
+            businessFailure.addSuppressed(auditFailure);
+            log.error("失败操作的审计结果持久化异常: eventId={}", eventId, auditFailure);
+        }
     }
 
     private String serialize(Object value) {
