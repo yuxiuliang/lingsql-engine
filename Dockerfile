@@ -23,5 +23,6 @@ WORKDIR /app
 ENV TZ=Asia/Shanghai
 COPY --from=app-build /workspace/target/lingsql-engine-*.jar /app/lingsql-engine.jar
 EXPOSE 8000
+USER 10001:10001
 ENTRYPOINT ["java", "-jar", "/app/lingsql-engine.jar"]
 

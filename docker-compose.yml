@@ -10,11 +10,9 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-lingsql_engine_db}
-      MYSQL_USER: ${MYSQL_APP_USERNAME:-lingsql_app}
-      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD}
       TZ: Asia/Shanghai
     ports:
-      - "${MYSQL_PORT:-3306}:3306"
+      - "${MYSQL_BIND_ADDRESS:-127.0.0.1}:${MYSQL_PORT:-3306}:3306"
     volumes:
       - lingsql_mysql_data:/var/lib/mysql
     healthcheck:
@@ -31,7 +29,7 @@ services:
     environment:
       TZ: Asia/Shanghai
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_BIND_ADDRESS:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - lingsql_redis_data:/data
     healthcheck:
@@ -75,7 +73,14 @@ services:
       LINGSQL_RETENTION_ENABLED: ${LINGSQL_RETENTION_ENABLED:-true}
       LINGSQL_RETENTION_DRY_RUN: ${LINGSQL_RETENTION_DRY_RUN:-true}
     ports:
-      - "${APP_PORT:-8000}:8000"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8000}:8000"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
 volumes:
   lingsql_mysql_data:

@@ -78,8 +78,29 @@ ensure_app_database_user() {
     mysql -uroot "-p${MYSQL_ROOT_PASSWORD}" -e \
     "CREATE USER IF NOT EXISTS '${MYSQL_APP_USERNAME}'@'%' IDENTIFIED BY '${MYSQL_APP_PASSWORD}';
      ALTER USER '${MYSQL_APP_USERNAME}'@'%' IDENTIFIED BY '${MYSQL_APP_PASSWORD}';
+     REVOKE ALL PRIVILEGES, GRANT OPTION FROM '${MYSQL_APP_USERNAME}'@'%';
      GRANT SELECT, INSERT, UPDATE, DELETE ON \`${MYSQL_DATABASE}\`.* TO '${MYSQL_APP_USERNAME}'@'%';
      FLUSH PRIVILEGES;"
+  assert_database_privileges "${MYSQL_APP_USERNAME}" "${MYSQL_DATABASE}" "DELETE,INSERT,SELECT,UPDATE"
+}
+
+assert_database_privileges() {
+  local username="$1"
+  local database="$2"
+  local expected="$3"
+  local actual
+  actual="$(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
+    mysql -N -B -uroot "-p${MYSQL_ROOT_PASSWORD}" -e \
+    "SELECT COALESCE(GROUP_CONCAT(PRIVILEGE_TYPE ORDER BY PRIVILEGE_TYPE SEPARATOR ','), '')
+       FROM information_schema.SCHEMA_PRIVILEGES
+      WHERE GRANTEE = CONCAT(CHAR(39), '${username}', CHAR(39), '@', CHAR(39), '%', CHAR(39))
+        AND TABLE_SCHEMA = '${database}';")"
+  actual="$(printf '%s' "${actual}" | tr -d '\r\n')"
+  if [[ "${actual}" != "${expected}" ]]; then
+    log_error "数据库账号 ${username} 权限不符合最小权限要求: expected=${expected}, actual=${actual:-<none>}"
+    exit 1
+  fi
+  log_info "数据库账号 ${username} 最小权限校验通过: ${actual}"
 }
 
 reject_placeholder() {
@@ -177,8 +198,10 @@ init_demo_database() {
     "CREATE DATABASE IF NOT EXISTS \`${LINGSQL_DEMO_DATABASE}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
      CREATE USER IF NOT EXISTS '${LINGSQL_DEMO_USERNAME}'@'%' IDENTIFIED BY '${LINGSQL_DEMO_PASSWORD}';
      ALTER USER '${LINGSQL_DEMO_USERNAME}'@'%' IDENTIFIED BY '${LINGSQL_DEMO_PASSWORD}';
+     REVOKE ALL PRIVILEGES, GRANT OPTION FROM '${LINGSQL_DEMO_USERNAME}'@'%';
      GRANT SELECT ON \`${LINGSQL_DEMO_DATABASE}\`.* TO '${LINGSQL_DEMO_USERNAME}'@'%';
      FLUSH PRIVILEGES;"
+  assert_database_privileges "${LINGSQL_DEMO_USERNAME}" "${LINGSQL_DEMO_DATABASE}" "SELECT"
   docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
     mysql -uroot "-p${MYSQL_ROOT_PASSWORD}" "${LINGSQL_DEMO_DATABASE}" < "${DEMO_SCHEMA_FILE}"
   log_info "演示数据源: jdbc:mysql://mysql:3306/${LINGSQL_DEMO_DATABASE}"
@@ -243,5 +266,6 @@ main() {
   log_info "- 健康检查: http://127.0.0.1:${APP_PORT:-8000}/actuator/health"
 }
 
-main "$@"
-
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
