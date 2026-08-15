@@ -1,8 +1,8 @@
 package com.lingsql.agent;
 
 import com.lingsql.agent.model.AiModelConfig;
-import com.lingsql.common.exception.BizException;
-import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.llm.OpenAiChatResponseParser;
+import com.lingsql.llm.OpenAiEndpointResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -28,9 +28,9 @@ import java.util.Map;
 public class ModelProbeClient {
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(8);
-    private static final String DEFAULT_CHAT_PATH = "/v1/chat/completions";
-
     private final RestClient.Builder restClientBuilder;
+    private final OpenAiEndpointResolver endpointResolver;
+    private final OpenAiChatResponseParser responseParser;
 
     /**
      * 执行一次轻量探测。
@@ -129,42 +129,18 @@ public class ModelProbeClient {
                     Map.of("role", "user", "content", "health check")
             ));
 
-            String url = resolveChatUrl(modelConfig.getBaseUrl());
+            String url = endpointResolver.resolveChatUrl(modelConfig.getBaseUrl());
             String response = restClient.post()
                     .uri(url)
                     .headers(requestHeaders -> requestHeaders.addAll(headers))
                     .body(request)
                     .retrieve()
                     .body(String.class);
-            if (response == null || response.isBlank()) {
-                return ProbeResult.fail("chat 响应为空");
-            }
+            responseParser.parse(response);
             return ProbeResult.success();
         } catch (Exception ex) {
             return ProbeResult.fail(ex.getMessage());
         }
-    }
-
-    /**
-     * 解析聊天接口地址。
-     *
-     * @param baseUrl 模型基础地址
-     * @return 完整请求地址
-     * @author 余炘洋
-     * @date 2026-01-22
-     */
-    private String resolveChatUrl(String baseUrl) {
-        if (baseUrl == null || baseUrl.isBlank()) {
-            throw new BizException(ErrorCode.CONFIG_INVALID, "模型基础地址不能为空");
-        }
-        String trimmed = baseUrl.trim();
-        if (trimmed.endsWith(DEFAULT_CHAT_PATH)) {
-            return trimmed;
-        }
-        if (trimmed.endsWith("/")) {
-            return trimmed.substring(0, trimmed.length() - 1) + DEFAULT_CHAT_PATH;
-        }
-        return trimmed + DEFAULT_CHAT_PATH;
     }
 
     /**

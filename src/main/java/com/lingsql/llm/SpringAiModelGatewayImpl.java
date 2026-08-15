@@ -42,14 +42,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SpringAiModelGatewayImpl implements IModelGateway {
 
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
-    private static final String OPENAI_API_PATH = "/v1";
-    private static final String OPENAI_CHAT_PATH = "/v1/chat/completions";
     private static final double DEFAULT_TEMPERATURE = 0.0d;
     private static final int DEFAULT_MAX_TOKENS = 512;
 
     private final ModelRouter modelRouter;
     private final ModelHealthService healthService;
     private final OpenAiCompatibleNoAuthClient noAuthClient;
+    private final OpenAiEndpointResolver endpointResolver;
     private final IPhysicalModelBilling physicalModelBilling;
     private final ConcurrentHashMap<Long, SpringAiModelHolder> modelCache = new ConcurrentHashMap<>();
 
@@ -183,7 +182,7 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
                 OpenAiChatModel chatModel = resolveChatModel(modelConfig);
                 return () -> requestWithSpringAi(chatModel, command.systemPrompt(), command.userPrompt());
             }
-            resolveApiBaseUrl(modelConfig.getBaseUrl());
+            endpointResolver.resolveApiBaseUrl(modelConfig.getBaseUrl());
             return () -> noAuthClient.chat(modelConfig, command.systemPrompt(), command.userPrompt());
         } catch (Exception exception) {
             throw new LocalModelPreparationException("模型客户端本地初始化失败", exception);
@@ -287,7 +286,7 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
             throw new BizException(ErrorCode.CONFIG_INVALID, "模型名称不能为空");
         }
         OpenAiChatOptions options = OpenAiChatOptions.builder()
-                .baseUrl(resolveApiBaseUrl(modelConfig.getBaseUrl()))
+                .baseUrl(endpointResolver.resolveApiBaseUrl(modelConfig.getBaseUrl()))
                 .apiKey(resolveApiKey(modelConfig.getApiKey()))
                 .model(modelConfig.getModelName().trim())
                 .temperature(DEFAULT_TEMPERATURE)
@@ -313,31 +312,6 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
             return null;
         }
         return response.getMetadata().getUsage().getTotalTokens();
-    }
-
-    /**
-     * 规范化 OpenAI 兼容接口基础地址。
-     *
-     * @param baseUrl 数据库模型地址
-     * @return Spring AI 使用的基础地址
-     * @author 余炘洋
-     * @date 2026-08-15
-     */
-    private String resolveApiBaseUrl(String baseUrl) {
-        if (baseUrl == null || baseUrl.isBlank()) {
-            throw new BizException(ErrorCode.CONFIG_INVALID, "模型基础地址不能为空");
-        }
-        String normalized = baseUrl.trim();
-        while (normalized.endsWith("/")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
-        }
-        if (normalized.endsWith(OPENAI_CHAT_PATH)) {
-            return normalized.substring(0, normalized.length() - "/chat/completions".length());
-        }
-        if (normalized.endsWith(OPENAI_API_PATH)) {
-            return normalized;
-        }
-        return normalized + OPENAI_API_PATH;
     }
 
     private String resolveApiKey(String apiKey) {
