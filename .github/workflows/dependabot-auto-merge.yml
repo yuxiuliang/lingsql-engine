@@ -1,8 +1,6 @@
 name: LingSQL Dependabot Auto Merge
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
   workflow_run:
     workflows:
       - LingSQL CI
@@ -16,21 +14,10 @@ permissions:
   actions: read
 
 concurrency:
-  group: lingsql-dependabot-automerge-${{ github.event.pull_request.number || github.event.workflow_run.head_branch }}
+  group: lingsql-dependabot-automerge-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 jobs:
-  auto-approve:
-    name: Auto Approve Dependabot PR
-    if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' && startsWith(github.head_ref, 'dependabot/') }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Auto Approve
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr review "${PR_NUMBER}" --approve --body "自动批准：依赖升级由系统门禁保障。"
-
   merge-when-green:
     name: Merge Dependabot PR When Gates Are Green
     if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'dependabot/') }}
@@ -40,6 +27,7 @@ jobs:
         id: resolve
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           PR_NUMBER="$(gh pr list --state open --head "${HEAD_BRANCH}" --json number,author,isDraft,baseRefName --jq 'map(select(.author.login=="dependabot[bot]" and .baseRefName=="master" and (.isDraft|not)))[0].number // empty')"
@@ -50,9 +38,37 @@ jobs:
           fi
           echo "pr_number=${PR_NUMBER}" >> "${GITHUB_OUTPUT}"
 
-      - name: Merge PR
+      - name: Verify All Required Checks
+        id: verify
         if: ${{ steps.resolve.outputs.pr_number != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
+        run: |
+          CHECKS_JSON="$(gh pr checks "${PR_NUMBER}" --json name,state 2>/dev/null || true)"
+          REQUIRED_CHECKS=(
+            "Backend Test"
+            "Frontend Build"
+            "Dependency Review"
+            "Trivy Library Scan"
+            "Analyze (java)"
+            "Analyze (javascript-typescript)"
+          )
+          READY=true
+          for CHECK_NAME in "${REQUIRED_CHECKS[@]}"; do
+            CHECK_STATE="$(jq -r --arg name "${CHECK_NAME}" '[.[] | select(.name == $name)][0].state // "MISSING"' <<< "${CHECKS_JSON}")"
+            echo "${CHECK_NAME}: ${CHECK_STATE}"
+            if [ "${CHECK_STATE}" != "SUCCESS" ]; then
+              READY=false
+            fi
+          done
+          echo "merge_ready=${READY}" >> "${GITHUB_OUTPUT}"
+
+      - name: Merge PR
+        if: ${{ steps.verify.outputs.merge_ready == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
         run: gh pr merge "${PR_NUMBER}" --squash --delete-branch
