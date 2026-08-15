@@ -185,6 +185,63 @@ public interface BillingLedgerEventRepository extends JpaRepository<BillingLedge
                                                  @Param("requestIds") List<String> requestIds);
 
     /**
+     * 按工作流请求汇总逐物理调用账本守恒证据。
+     *
+     * @param tenantId 租户ID
+     * @param requestIds 工作流请求ID
+     * @return 逐请求账本证据
+     */
+    @Query(value = """
+            SELECT workflowRequestId,
+                   COUNT(*) AS ledgerInvocationCount,
+                   SUM(eventCount) AS eventCount,
+                   SUM(reserveCount) AS reserveCount,
+                   SUM(refundCount) AS refundCount,
+                   SUM(closeCount) AS closeCount,
+                   SUM(reserveAmount) AS reserveAmount,
+                   SUM(refundAmount) AS refundAmount,
+                   SUM(closeAmount) AS closeAmount,
+                   SUM(CASE
+                       WHEN reserveCount = 1
+                        AND closeCount = 1
+                        AND refundCount IN (0, 1)
+                        AND reserveAmount = refundAmount + closeAmount
+                       THEN 1 ELSE 0
+                   END) AS conservedInvocationCount,
+                   SUM(CASE
+                       WHEN reserveCount <> 1
+                         OR closeCount <> 1
+                         OR refundCount NOT IN (0, 1)
+                         OR reserveAmount <> refundAmount + closeAmount
+                       THEN 1 ELSE 0
+                   END) AS unbalancedInvocationCount
+              FROM (
+                    SELECT workflow_request_id AS workflowRequestId,
+                           invocation_id AS invocationId,
+                           COUNT(*) AS eventCount,
+                           SUM(CASE WHEN event_name = 'RESERVE' THEN 1 ELSE 0 END) AS reserveCount,
+                           SUM(CASE WHEN event_name = 'REFUND' THEN 1 ELSE 0 END) AS refundCount,
+                           SUM(CASE WHEN event_name = 'CLOSE' THEN 1 ELSE 0 END) AS closeCount,
+                           SUM(CASE WHEN event_name = 'RESERVE' THEN IFNULL(cost_amount, 0) ELSE 0 END)
+                               AS reserveAmount,
+                           SUM(CASE WHEN event_name = 'REFUND' THEN IFNULL(cost_amount, 0) ELSE 0 END)
+                               AS refundAmount,
+                           SUM(CASE WHEN event_name = 'CLOSE' THEN IFNULL(cost_amount, 0) ELSE 0 END)
+                               AS closeAmount
+                      FROM t_lingsql_engine_billing_ledger
+                     WHERE tenant_id = :tenantId
+                       AND workflow_request_id IN (:requestIds)
+                       AND invocation_id IS NOT NULL
+                     GROUP BY workflow_request_id, invocation_id
+                   ) invocationLedger
+             GROUP BY workflowRequestId
+            """, nativeQuery = true)
+    List<RequestLedgerEvidenceProjection> findRequestLedgerEvidence(
+            @Param("tenantId") String tenantId,
+            @Param("requestIds") List<String> requestIds
+    );
+
+    /**
      * 账本对账投影。
      *
      * @author 余炘洋
@@ -212,5 +269,29 @@ public interface BillingLedgerEventRepository extends JpaRepository<BillingLedge
         Long getCloseCount();
 
         Long getReserveAmount();
+    }
+
+    interface RequestLedgerEvidenceProjection {
+        String getWorkflowRequestId();
+
+        Long getLedgerInvocationCount();
+
+        Long getEventCount();
+
+        Long getReserveCount();
+
+        Long getRefundCount();
+
+        Long getCloseCount();
+
+        Long getReserveAmount();
+
+        Long getRefundAmount();
+
+        Long getCloseAmount();
+
+        Long getConservedInvocationCount();
+
+        Long getUnbalancedInvocationCount();
     }
 }

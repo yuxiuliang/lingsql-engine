@@ -14,6 +14,14 @@ import java.time.LocalDateTime;
 public class SqlExecuteLogQuery {
 
     /**
+     * 请求链路标识。
+     *
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    private String requestId;
+
+    /**
      * 租户ID。
      *
      * @author 余炘洋

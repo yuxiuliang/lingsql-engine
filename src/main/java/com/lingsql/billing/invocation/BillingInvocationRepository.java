@@ -68,6 +68,34 @@ public interface BillingInvocationRepository extends JpaRepository<BillingInvoca
             @Param("workflowRequestIds") List<String> workflowRequestIds
     );
 
+    /**
+     * 按工作流请求汇总逐物理调用状态与角色证据。
+     *
+     * @param tenantId 租户ID
+     * @param workflowRequestIds 工作流请求ID
+     * @return 逐请求调用证据
+     */
+    @Query(value = """
+            SELECT workflow_request_id AS workflowRequestId,
+                   COUNT(*) AS invocationCount,
+                   SUM(CASE WHEN stage = 'SQL_ARCHITECT' AND state = 'SETTLED' THEN 1 ELSE 0 END)
+                       AS architectSettledCount,
+                   SUM(CASE WHEN stage = 'BUSINESS_ANALYST' AND state = 'SETTLED' THEN 1 ELSE 0 END)
+                       AS analystSettledCount,
+                   SUM(CASE WHEN state = 'SETTLED' THEN 1 ELSE 0 END) AS settledCount,
+                   SUM(CASE WHEN state = 'UNKNOWN' THEN 1 ELSE 0 END) AS unknownCount,
+                   SUM(CASE WHEN state IN ('RESERVED', 'DISPATCHED') THEN 1 ELSE 0 END) AS pendingCount,
+                   SUM(CASE WHEN state = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelledCount
+              FROM t_lingsql_engine_billing_invocation
+             WHERE tenant_id = :tenantId
+               AND workflow_request_id IN (:workflowRequestIds)
+             GROUP BY workflow_request_id
+            """, nativeQuery = true)
+    List<RequestInvocationEvidenceProjection> findRequestInvocationEvidence(
+            @Param("tenantId") String tenantId,
+            @Param("workflowRequestIds") List<String> workflowRequestIds
+    );
+
     List<BillingInvocationEntity> findByStateAndReservedAtBeforeOrderByIdAsc(
             String state,
             LocalDateTime cutoff,
@@ -91,5 +119,23 @@ public interface BillingInvocationRepository extends JpaRepository<BillingInvoca
         Long getUnknownCount();
 
         Long getPendingCount();
+    }
+
+    interface RequestInvocationEvidenceProjection {
+        String getWorkflowRequestId();
+
+        Long getInvocationCount();
+
+        Long getArchitectSettledCount();
+
+        Long getAnalystSettledCount();
+
+        Long getSettledCount();
+
+        Long getUnknownCount();
+
+        Long getPendingCount();
+
+        Long getCancelledCount();
     }
 }

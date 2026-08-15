@@ -91,6 +91,7 @@ public class AuditLogController {
      * 查询 SQL 执行日志。
      *
      * @param tenantId     租户ID
+     * @param requestId    请求链路标识
      * @param userId       用户ID
      * @param question     问题关键词
      * @param requestSource 请求来源
@@ -106,6 +107,7 @@ public class AuditLogController {
     @PreAuthorize("hasAuthority('ADMIN:SQLLOG:READ')")
     public ApiResponse<PageResult<SqlExecuteLogView>> listSqlLogs(
             @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) String requestId,
             @RequestParam(required = false) Long userId,
             @RequestParam(required = false) String question,
             @RequestParam(required = false) String requestSource,
@@ -118,6 +120,7 @@ public class AuditLogController {
         boolean sysAdmin = SecureTenantResolver.isSysAdmin(session);
         SqlExecuteLogQuery query = new SqlExecuteLogQuery();
         query.setTenantId(sysAdmin ? tenantId : session.getTenantId());
+        query.setRequestId(requestId);
         query.setUserId(userId);
         query.setQuestion(question);
         query.setRequestSource(requestSource);

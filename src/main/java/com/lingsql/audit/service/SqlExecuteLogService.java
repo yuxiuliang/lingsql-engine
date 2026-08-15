@@ -48,6 +48,7 @@ public class SqlExecuteLogService {
     private static final int DEFAULT_TOKEN_AUDIT_DAYS = 30;
     private static final int DEFAULT_TOP_N = 10;
     private static final int MAX_TOP_N = 50;
+    private static final int MAX_REQUEST_ID_LENGTH = 64;
 
     private final SqlExecuteLogRepository repository;
     private final PageParamResolver pageParamResolver;
@@ -201,10 +202,14 @@ public class SqlExecuteLogService {
 
     private PageResult<SqlExecuteLogView> queryInternal(SqlExecuteLogQuery query, PageParam param) {
         SqlExecuteLogQuery safeQuery = query == null ? new SqlExecuteLogQuery() : query;
+        String requestId = normalizeRequestId(safeQuery.getRequestId());
         Specification<SqlExecuteLog> specification = (root, criteriaQuery, criteriaBuilder) -> {
             var predicate = criteriaBuilder.conjunction();
             if (StringUtils.hasText(safeQuery.getTenantId())) {
                 predicate = criteriaBuilder.and(predicate, criteriaBuilder.equal(root.get("tenantId"), safeQuery.getTenantId()));
+            }
+            if (requestId != null) {
+                predicate = criteriaBuilder.and(predicate, criteriaBuilder.equal(root.get("requestId"), requestId));
             }
             if (safeQuery.getUserId() != null) {
                 predicate = criteriaBuilder.and(predicate, criteriaBuilder.equal(root.get("userId"), safeQuery.getUserId()));
@@ -232,6 +237,17 @@ public class SqlExecuteLogService {
                 param.page(),
                 param.size()
         );
+    }
+
+    private String normalizeRequestId(String requestId) {
+        if (!StringUtils.hasText(requestId)) {
+            return null;
+        }
+        String normalized = requestId.trim();
+        if (normalized.length() > MAX_REQUEST_ID_LENGTH) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "请求ID长度不能超过64个字符");
+        }
+        return normalized;
     }
 
     private void applySummary(TokenAuditOverviewView view, SqlExecuteLogRepository.TokenAuditSummaryProjection summary) {

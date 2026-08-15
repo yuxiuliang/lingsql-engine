@@ -1,10 +1,12 @@
 package com.lingsql.billing;
 
+import com.lingsql.audit.repository.SqlExecuteLogRepository;
 import com.lingsql.billing.entity.BillingPolicyVersion;
 import com.lingsql.billing.entity.TenantBillingOverride;
 import com.lingsql.billing.invocation.BillingInvocationRepository;
 import com.lingsql.billing.model.BillingLedgerEvidenceView;
 import com.lingsql.billing.model.BillingPolicyVersionRequest;
+import com.lingsql.billing.model.BillingRequestEvidenceView;
 import com.lingsql.billing.model.TenantBillingOverrideRequest;
 import com.lingsql.billing.repository.BillingLedgerEventRepository;
 import com.lingsql.billing.repository.BillingPolicyVersionRepository;
@@ -20,8 +22,13 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -37,12 +44,14 @@ public class BillingAdminService {
 
     private static final int ACTIVE_STATUS = 1;
     private static final int INACTIVE_STATUS = 0;
+    private static final int MAX_EVIDENCE_REQUESTS = 100;
 
     private final BillingPolicyVersionRepository policyRepository;
     private final TenantBillingOverrideRepository overrideRepository;
     private final BillingOverrideService billingOverrideService;
     private final BillingLedgerEventRepository ledgerEventRepository;
     private final BillingInvocationRepository invocationRepository;
+    private final SqlExecuteLogRepository sqlExecuteLogRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -191,37 +200,197 @@ public class BillingAdminService {
         if (!StringUtils.hasText(tenantId) || requestIds == null || requestIds.isEmpty()) {
             throw new BizException(ErrorCode.INVALID_PARAM, "租户ID和请求ID不能为空");
         }
-        List<String> normalized = requestIds.stream()
-                .filter(StringUtils::hasText)
-                .map(String::trim)
-                .filter(value -> value.length() <= 64)
-                .distinct()
-                .limit(20)
-                .toList();
-        if (normalized.isEmpty()) {
+        if (requestIds.stream().anyMatch(value -> !StringUtils.hasText(value) || value.trim().length() > 64)) {
             throw new BizException(ErrorCode.INVALID_PARAM, "请求ID格式不正确");
         }
-        BillingLedgerEventRepository.LedgerEvidenceProjection evidence =
-                ledgerEventRepository.findLedgerEvidence(tenantId.trim(), normalized);
-        BillingInvocationRepository.InvocationEvidenceProjection invocationEvidence =
-                invocationRepository.findInvocationEvidence(tenantId.trim(), normalized);
+        List<String> normalized = requestIds.stream()
+                .map(String::trim)
+                .distinct()
+                .toList();
+        if (normalized.size() > MAX_EVIDENCE_REQUESTS) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "单次最多核验100个请求ID");
+        }
+
+        String normalizedTenantId = tenantId.trim();
+        Map<String, SqlExecuteLogRepository.SqlAuditEvidenceProjection> sqlEvidence = indexBy(
+                sqlExecuteLogRepository.findSqlAuditEvidence(normalizedTenantId, normalized),
+                SqlExecuteLogRepository.SqlAuditEvidenceProjection::getRequestId
+        );
+        Map<String, BillingInvocationRepository.RequestInvocationEvidenceProjection> invocationEvidence = indexBy(
+                invocationRepository.findRequestInvocationEvidence(normalizedTenantId, normalized),
+                BillingInvocationRepository.RequestInvocationEvidenceProjection::getWorkflowRequestId
+        );
+        Map<String, BillingLedgerEventRepository.RequestLedgerEvidenceProjection> ledgerEvidence = indexBy(
+                ledgerEventRepository.findRequestLedgerEvidence(normalizedTenantId, normalized),
+                BillingLedgerEventRepository.RequestLedgerEvidenceProjection::getWorkflowRequestId
+        );
+        List<BillingRequestEvidenceView> requests = normalized.stream()
+                .map(requestId -> buildRequestEvidence(
+                        requestId,
+                        sqlEvidence.get(requestId),
+                        invocationEvidence.get(requestId),
+                        ledgerEvidence.get(requestId)
+                ))
+                .toList();
+
+        long invocationCount = sum(requests, BillingRequestEvidenceView::invocationCount);
+        long settledCount = sum(requests, BillingRequestEvidenceView::settledInvocationCount);
+        long unknownCount = sum(requests, BillingRequestEvidenceView::unknownInvocationCount);
+        long pendingCount = sum(requests, BillingRequestEvidenceView::pendingInvocationCount);
+        long cancelledCount = sum(requests, BillingRequestEvidenceView::cancelledInvocationCount);
+        long reserveAmount = sum(requests, BillingRequestEvidenceView::reserveAmount);
+        long refundAmount = sum(requests, BillingRequestEvidenceView::refundAmount);
+        long closeAmount = sum(requests, BillingRequestEvidenceView::closeAmount);
+        long completeRequestCount = requests.stream().filter(BillingRequestEvidenceView::complete).count();
+        long unbalancedCount = sum(requests, BillingRequestEvidenceView::unbalancedInvocationCount);
+        boolean conserved = completeRequestCount == normalized.size()
+                && unbalancedCount == 0
+                && amountsConserved(reserveAmount, refundAmount, closeAmount);
         return new BillingLedgerEvidenceView(
                 normalized.size(),
-                projectionValue(evidence == null ? null : evidence.getMatchedRequestCount()),
-                projectionValue(evidence == null ? null : evidence.getEventCount()),
-                projectionValue(evidence == null ? null : evidence.getReserveCount()),
-                projectionValue(evidence == null ? null : evidence.getCloseCount()),
-                projectionValue(evidence == null ? null : evidence.getReserveAmount()),
-                projectionValue(invocationEvidence == null ? null : invocationEvidence.getInvocationCount()),
-                projectionValue(invocationEvidence == null ? null : invocationEvidence.getMatchedWorkflowCount()),
-                projectionValue(invocationEvidence == null ? null : invocationEvidence.getSettledCount()),
-                projectionValue(invocationEvidence == null ? null : invocationEvidence.getUnknownCount()),
-                projectionValue(invocationEvidence == null ? null : invocationEvidence.getPendingCount())
+                requests.stream().filter(item -> item.ledgerInvocationCount() > 0).count(),
+                sum(requests, BillingRequestEvidenceView::eventCount),
+                sum(requests, BillingRequestEvidenceView::reserveCount),
+                sum(requests, BillingRequestEvidenceView::closeCount),
+                reserveAmount,
+                invocationCount,
+                requests.stream().filter(item -> item.invocationCount() > 0).count(),
+                settledCount,
+                unknownCount,
+                pendingCount,
+                cancelledCount,
+                sum(requests, BillingRequestEvidenceView::sqlAuditCount),
+                sum(requests, BillingRequestEvidenceView::successfulSqlAuditCount),
+                sum(requests, BillingRequestEvidenceView::refundCount),
+                refundAmount,
+                closeAmount,
+                sum(requests, BillingRequestEvidenceView::conservedInvocationCount),
+                unbalancedCount,
+                completeRequestCount,
+                conserved,
+                requests
         );
     }
 
-    private long projectionValue(Long value) {
+    private BillingRequestEvidenceView buildRequestEvidence(
+            String requestId,
+            SqlExecuteLogRepository.SqlAuditEvidenceProjection sql,
+            BillingInvocationRepository.RequestInvocationEvidenceProjection invocation,
+            BillingLedgerEventRepository.RequestLedgerEvidenceProjection ledger
+    ) {
+        long sqlAuditCount = value(sql == null ? null : sql.getAuditCount());
+        long successfulSqlAuditCount = value(sql == null ? null : sql.getSuccessCount());
+        long invocationCount = value(invocation == null ? null : invocation.getInvocationCount());
+        long architectCount = value(invocation == null ? null : invocation.getArchitectSettledCount());
+        long analystCount = value(invocation == null ? null : invocation.getAnalystSettledCount());
+        long settledCount = value(invocation == null ? null : invocation.getSettledCount());
+        long unknownCount = value(invocation == null ? null : invocation.getUnknownCount());
+        long pendingCount = value(invocation == null ? null : invocation.getPendingCount());
+        long cancelledCount = value(invocation == null ? null : invocation.getCancelledCount());
+        long ledgerInvocationCount = value(ledger == null ? null : ledger.getLedgerInvocationCount());
+        long eventCount = value(ledger == null ? null : ledger.getEventCount());
+        long reserveCount = value(ledger == null ? null : ledger.getReserveCount());
+        long refundCount = value(ledger == null ? null : ledger.getRefundCount());
+        long closeCount = value(ledger == null ? null : ledger.getCloseCount());
+        long reserveAmount = value(ledger == null ? null : ledger.getReserveAmount());
+        long refundAmount = value(ledger == null ? null : ledger.getRefundAmount());
+        long closeAmount = value(ledger == null ? null : ledger.getCloseAmount());
+        long conservedCount = value(ledger == null ? null : ledger.getConservedInvocationCount());
+        long unbalancedCount = value(ledger == null ? null : ledger.getUnbalancedInvocationCount());
+
+        List<String> failureReasons = new ArrayList<>();
+        addFailure(failureReasons, sqlAuditCount != 1, "SQL审计数量必须为1");
+        addFailure(failureReasons, successfulSqlAuditCount != 1, "成功SQL审计数量必须为1");
+        addFailure(failureReasons, invocationCount <= 0, "缺少物理模型调用");
+        addFailure(failureReasons, architectCount <= 0, "缺少已结算SQL架构师调用");
+        addFailure(failureReasons, analystCount <= 0, "缺少已结算业务分析师调用");
+        addFailure(failureReasons, settledCount != invocationCount, "存在未结算物理模型调用");
+        addFailure(failureReasons, unknownCount > 0, "存在UNKNOWN物理模型调用");
+        addFailure(failureReasons, pendingCount > 0, "存在RESERVED或DISPATCHED物理模型调用");
+        addFailure(failureReasons, cancelledCount > 0, "存在CANCELLED物理模型调用");
+        addFailure(failureReasons, ledgerInvocationCount != invocationCount, "物理调用与账本调用数量不一致");
+        addFailure(failureReasons, reserveCount != invocationCount, "每次物理调用必须恰有一个RESERVE");
+        addFailure(failureReasons, closeCount != invocationCount, "每次物理调用必须恰有一个CLOSE");
+        addFailure(failureReasons, conservedCount != invocationCount || unbalancedCount > 0,
+                "存在不满足RESERVE=CLOSE+REFUND的物理调用");
+        addFailure(failureReasons, !eventsConserved(eventCount, reserveCount, refundCount, closeCount),
+                "账本包含非验收事件或事件数量不一致");
+        addFailure(failureReasons, !amountsConserved(reserveAmount, refundAmount, closeAmount),
+                "请求资金金额不守恒");
+
+        return new BillingRequestEvidenceView(
+                requestId,
+                sqlAuditCount,
+                successfulSqlAuditCount,
+                invocationCount,
+                architectCount,
+                analystCount,
+                settledCount,
+                unknownCount,
+                pendingCount,
+                cancelledCount,
+                ledgerInvocationCount,
+                eventCount,
+                reserveCount,
+                refundCount,
+                closeCount,
+                reserveAmount,
+                refundAmount,
+                closeAmount,
+                conservedCount,
+                unbalancedCount,
+                failureReasons.isEmpty(),
+                List.copyOf(failureReasons)
+        );
+    }
+
+    private <T> Map<String, T> indexBy(List<T> rows, Function<T, String> keyExtractor) {
+        if (rows == null || rows.isEmpty()) {
+            return Map.of();
+        }
+        return rows.stream()
+                .filter(row -> row != null && StringUtils.hasText(keyExtractor.apply(row)))
+                .collect(Collectors.toMap(
+                        row -> keyExtractor.apply(row).trim(),
+                        Function.identity(),
+                        (left, right) -> right,
+                        LinkedHashMap::new
+                ));
+    }
+
+    private long sum(List<BillingRequestEvidenceView> requests,
+                     java.util.function.ToLongFunction<BillingRequestEvidenceView> extractor) {
+        try {
+            return requests.stream().mapToLong(extractor).reduce(0L, Math::addExact);
+        } catch (ArithmeticException ex) {
+            throw new BizException(ErrorCode.BILLING_INVALID, "计费验收汇总超过系统上限", ex);
+        }
+    }
+
+    private long value(Long value) {
         return value == null ? 0L : Math.max(0L, value);
+    }
+
+    private void addFailure(List<String> reasons, boolean failed, String reason) {
+        if (failed) {
+            reasons.add(reason);
+        }
+    }
+
+    private boolean eventsConserved(long eventCount, long reserveCount, long refundCount, long closeCount) {
+        try {
+            return eventCount == Math.addExact(Math.addExact(reserveCount, refundCount), closeCount);
+        } catch (ArithmeticException ex) {
+            return false;
+        }
+    }
+
+    private boolean amountsConserved(long reserveAmount, long refundAmount, long closeAmount) {
+        try {
+            return reserveAmount == Math.addExact(refundAmount, closeAmount);
+        } catch (ArithmeticException ex) {
+            return false;
+        }
     }
 
     private void applyPolicyRequest(BillingPolicyVersion entity, BillingPolicyVersionRequest request, boolean isCreate) {

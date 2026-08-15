@@ -1,5 +1,7 @@
 package com.lingsql.billing.model;
 
+import java.util.List;
+
 /**
  * 指定请求集合的计费账本验收证据。
  *
@@ -14,6 +16,17 @@ package com.lingsql.billing.model;
  * @param settledInvocationCount 已结算物理调用数
  * @param unknownInvocationCount 未知物理调用数
  * @param pendingInvocationCount 未终态物理调用数
+ * @param cancelledInvocationCount 已取消物理调用数
+ * @param sqlAuditCount SQL审计数量
+ * @param successfulSqlAuditCount 成功SQL审计数量
+ * @param refundCount 退款事件数量
+ * @param refundAmount 退款金额
+ * @param closeAmount 实扣金额
+ * @param conservedInvocationCount 资金守恒调用数
+ * @param unbalancedInvocationCount 资金不守恒调用数
+ * @param completeRequestCount 完整请求数
+ * @param conserved 是否整批守恒并完整
+ * @param requests 逐请求证据
  * @author 余炘洋
  * @date 2026-08-15
  */
@@ -28,6 +41,17 @@ public record BillingLedgerEvidenceView(
         long matchedWorkflowCount,
         long settledInvocationCount,
         long unknownInvocationCount,
-        long pendingInvocationCount
+        long pendingInvocationCount,
+        long cancelledInvocationCount,
+        long sqlAuditCount,
+        long successfulSqlAuditCount,
+        long refundCount,
+        long refundAmount,
+        long closeAmount,
+        long conservedInvocationCount,
+        long unbalancedInvocationCount,
+        long completeRequestCount,
+        boolean conserved,
+        List<BillingRequestEvidenceView> requests
 ) {
 }

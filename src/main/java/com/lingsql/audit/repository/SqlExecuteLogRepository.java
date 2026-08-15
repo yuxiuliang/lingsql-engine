@@ -50,6 +50,29 @@ public interface SqlExecuteLogRepository extends JpaRepository<SqlExecuteLog, Lo
     long deleteByCreateTimeBefore(LocalDateTime createTime);
 
     /**
+     * 按工作流请求汇总 SQL 审计验收证据。
+     *
+     * @param tenantId 租户ID
+     * @param requestIds 工作流请求ID
+     * @return 逐请求审计证据
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    @Query(value = """
+            SELECT request_id AS requestId,
+                   COUNT(*) AS auditCount,
+                   SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS successCount
+              FROM t_lingsql_engine_sql_execute_log
+             WHERE tenant_id = :tenantId
+               AND request_id IN (:requestIds)
+             GROUP BY request_id
+            """, nativeQuery = true)
+    List<SqlAuditEvidenceProjection> findSqlAuditEvidence(
+            @Param("tenantId") String tenantId,
+            @Param("requestIds") List<String> requestIds
+    );
+
+    /**
      * 统计租户在时间范围内的 Token 消耗。
      *
      * @param tenantId 租户ID
@@ -413,5 +436,19 @@ public interface SqlExecuteLogRepository extends JpaRepository<SqlExecuteLog, Lo
         Long getTotalTokens();
 
         Long getTotalCost();
+    }
+
+    /**
+     * 单个工作流请求的 SQL 审计投影。
+     *
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    interface SqlAuditEvidenceProjection {
+        String getRequestId();
+
+        Long getAuditCount();
+
+        Long getSuccessCount();
     }
 }
