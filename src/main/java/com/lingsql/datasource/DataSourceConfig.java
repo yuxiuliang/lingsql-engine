@@ -76,6 +76,20 @@ public class DataSourceConfig {
     }
 
     /**
+     * 控制库专用 JDBC 模板，作为控制面查询和写入的默认模板。
+     *
+     * @param adminDataSource 主配置库数据源
+     * @return 控制库 JDBC 模板
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    @Bean
+    @Primary
+    public JdbcTemplate adminJdbcTemplate(@Qualifier("adminDataSource") DataSource adminDataSource) {
+        return new JdbcTemplate(adminDataSource);
+    }
+
+    /**
      * 控制库专用命名参数模板，防止账本等控制面写入被路由到租户业务库。
      *
      * @param adminDataSource 主配置库数据源
