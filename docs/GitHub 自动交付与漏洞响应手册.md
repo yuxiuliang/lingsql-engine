@@ -93,6 +93,7 @@
 - `RELEASE_GATE_BILLING_TOKEN`：可读取计费快照和 SQL 审计的短期验收 Token。
 - `RELEASE_GATE_PILOT_TENANT_ID`、`RELEASE_GATE_PILOT_USERNAME`、`RELEASE_GATE_PILOT_PASSWORD`：专用验证租户与账号；该账号须具备问数、读取自身 SQL 审计和计费验收快照的最小权限，不得使用真实客户个人账号。
 - `RELEASE_NOTIFY_*`、`LINGSQL_DEPLOY_BASE`、`LINGSQL_SWITCH_HOOK`：按部署拓扑配置的通知与切换参数。
+- `LINGSQL_MIGRATION_HOOK`：self-hosted Runner 上的可执行数据库迁移 Hook。它必须在目标控制库完成备份、Flyway 校验/迁移和结果留档，非零退出会阻断制品发布。
 
 发布制品先执行前端依赖审计与生产构建，把管理后台写入 Spring Boot 静态资源，再执行 Schema 漂移检查及 Maven 测试；工作流会检查最终 JAR 确实包含后台首页。门禁会完成登录、三条真实问数、SQL 审计增量、计费账本增量、最少 100 个非 Actuator 请求的 SLO 证据和 P1 演练校验；任何 `FAIL` 或 `SKIP` 都阻断发布。验收账号、模型、数据源或 Prometheus 尚未准备好时，应先在 UAT 完成配置，不能临时关闭门禁。
 
@@ -102,6 +103,9 @@
 2. 前端构建
 3. 前端依赖漏洞审计（高危及以上）
 4. Compose 配置校验、生产镜像构建与非 root 运行用户断言
+5. MySQL 8.4 空库迁移、重复迁移 no-op 与当前旧库完整指纹接管
+
+正式部署在蓝绿切换前强制运行 `LINGSQL_MIGRATION_HOOK`。应用冒烟失败时会回滚应用槽位，但不会自动执行反向数据库 DDL；因此所有生产迁移必须向前兼容上一稳定应用版本，并在执行前完成可验证备份。详细协议见[数据库版本迁移与旧库接管手册](数据库版本迁移与旧库接管手册.md)。
 
 ## 4. 漏洞处理策略
 

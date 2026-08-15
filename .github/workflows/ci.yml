@@ -93,3 +93,47 @@ jobs:
       - name: Verify Non Root Runtime User
         run: |
           test "$(docker image inspect --format '{{.Config.User}}' lingsql-engine:ci)" = "10001:10001"
+
+  database-migration:
+    name: Database Migration
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      MYSQL_ROOT_PASSWORD: ci-root-password
+      MYSQL_DATABASE: lingsql_engine_db
+      MYSQL_APP_USERNAME: lingsql_app
+      MYSQL_APP_PASSWORD: ci-app-password
+      REDIS_PASSWORD: ci-redis-password
+      LINGSQL_JWT_SECRET: ci-jwt-secret-at-least-32-characters
+      LINGSQL_DATA_ENCRYPTION_KEY: ci-data-encryption-key-at-least-48-characters-long
+      LINGSQL_ADMIN_PASSWORD: ci-admin-password
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Start MySQL 8.4
+        run: docker compose up -d --wait mysql
+
+      - name: Verify Empty Database Migration Is Repeatable
+        run: |
+          bash scripts/ops/flyway_migrate.sh
+          bash scripts/ops/flyway_migrate.sh
+          test "$(docker compose exec -T mysql mysql -N -B -uroot -pci-root-password lingsql_engine_db -e \
+            "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='lingsql_engine_db' AND TABLE_NAME LIKE 't_lingsql_engine\\_%';")" = "36"
+          test "$(docker compose exec -T mysql mysql -N -B -uroot -pci-root-password lingsql_engine_db -e \
+            "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 0;")" = "0"
+
+      - name: Verify Exact Legacy Database Adoption
+        run: |
+          docker compose exec -T mysql mysql -uroot -pci-root-password -e \
+            "CREATE DATABASE lingsql_legacy_ci CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+          docker compose exec -T mysql mysql -uroot -pci-root-password lingsql_legacy_ci \
+            < src/main/resources/db/migration/B20260815_02__lingsql_control_schema.sql
+          MYSQL_DATABASE=lingsql_legacy_ci bash scripts/ops/flyway_migrate.sh
+          test "$(docker compose exec -T mysql mysql -N -B -uroot -pci-root-password lingsql_legacy_ci -e \
+            "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1 AND version = '20260815.02';")" = "1"
+
+      - name: Stop Migration Stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans

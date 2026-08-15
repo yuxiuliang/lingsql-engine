@@ -139,6 +139,7 @@ jobs:
           DETECTED_AT: ${{ inputs.p1_detected_at }}
           ACKED_AT: ${{ inputs.p1_acked_at }}
           MITIGATED_AT: ${{ inputs.p1_mitigated_at }}
+          LINGSQL_MIGRATION_HOOK: ${{ vars.LINGSQL_MIGRATION_HOOK }}
         run: |
           BASE_URL_TRIMMED="$(printf '%s' "${BASE_URL}" | xargs)"
           BILLING_URL_TRIMMED="$(printf '%s' "${BILLING_READINESS_URL}" | xargs)"
@@ -146,7 +147,7 @@ jobs:
             echo "::error::billing_readiness_url 与 base_url 不能同时为空。"
             exit 1
           fi
-          for name in PROMETHEUS_URL DRILL_ID DETECTED_AT ACKED_AT MITIGATED_AT; do
+          for name in PROMETHEUS_URL DRILL_ID DETECTED_AT ACKED_AT MITIGATED_AT LINGSQL_MIGRATION_HOOK; do
             if [ -z "$(printf '%s' "${!name}" | xargs)" ]; then
               echo "::error::严格发布门禁缺少 ${name}。"
               exit 1
@@ -194,6 +195,17 @@ jobs:
           ACKED_AT: ${{ inputs.p1_acked_at }}
           MITIGATED_AT: ${{ inputs.p1_mitigated_at }}
         run: ./scripts/ops/release_gate.sh
+
+      - name: Run Required Database Migration Hook
+        env:
+          LINGSQL_MIGRATION_HOOK: ${{ vars.LINGSQL_MIGRATION_HOOK }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [ ! -x "${LINGSQL_MIGRATION_HOOK}" ]; then
+            echo "::error::数据库迁移 Hook 不存在或不可执行: ${LINGSQL_MIGRATION_HOOK}"
+            exit 1
+          fi
+          "${LINGSQL_MIGRATION_HOOK}" "${GITHUB_SHA}" "${RELEASE_TAG}"
 
       - name: Deploy And Auto Rollback
         env:

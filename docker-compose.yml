@@ -38,6 +38,26 @@ services:
       timeout: 5s
       retries: 12
 
+  migration:
+    image: flyway/flyway:12.4.0
+    profiles: ["tools"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      FLYWAY_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-lingsql_engine_db}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+      FLYWAY_USER: root
+      FLYWAY_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_CONNECT_RETRIES: "60"
+      FLYWAY_VALIDATE_MIGRATION_NAMING: "true"
+      FLYWAY_BASELINE_ON_MIGRATE: "false"
+      FLYWAY_CLEAN_DISABLED: "true"
+      FLYWAY_OUT_OF_ORDER: "false"
+      FLYWAY_ENCODING: UTF-8
+    volumes:
+      - ./src/main/resources/db/migration:/flyway/sql:ro
+
   app:
     build:
       context: .

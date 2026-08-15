@@ -14,9 +14,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/docker-compose.yml"
 ENV_FILE="${ROOT_DIR}/.env"
-SCHEMA_FILE="${ROOT_DIR}/sql/mysql.sql"
 SEED_FILE="${ROOT_DIR}/sql/seed_commercial_baseline.sql"
 DEMO_SCHEMA_FILE="${ROOT_DIR}/sql/demo_sales_inventory.sql"
+MIGRATION_SCRIPT="${ROOT_DIR}/scripts/ops/flyway_migrate.sh"
 
 SKIP_SEED="${SKIP_SEED:-false}"
 SKIP_APP_START="${SKIP_APP_START:-false}"
@@ -126,43 +126,6 @@ wait_mysql_ready() {
   exit 1
 }
 
-init_schema() {
-  if [[ ! -f "${SCHEMA_FILE}" ]]; then
-    log_error "未找到 schema 文件: ${SCHEMA_FILE}"
-    exit 1
-  fi
-  local expected_tables expected_count expected_sql found_count
-  expected_tables="$(awk -F'`' '/^CREATE TABLE `/ {print $2}' "${SCHEMA_FILE}")"
-  expected_count="$(printf '%s\n' "${expected_tables}" | awk 'NF {count++} END {print count+0}')"
-  if [[ "${expected_count}" -le 0 ]]; then
-    log_error "未能从基线文件解析必需表，拒绝继续初始化。"
-    exit 1
-  fi
-  expected_sql="$(printf '%s\n' "${expected_tables}" | awk 'NF {printf "%s\047%s\047", separator, $0; separator=","}')"
-  found_count="$(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
-    mysql -N -uroot "-p${MYSQL_ROOT_PASSWORD}" -e \
-    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${MYSQL_DATABASE}' AND table_name IN (${expected_sql});")"
-  if [[ "${found_count}" -eq "${expected_count}" ]]; then
-    log_info "数据库基线结构完整，跳过基线 DDL；版本升级请执行受控迁移脚本。"
-    return 0
-  fi
-  if [[ "${found_count}" -gt 0 ]]; then
-    log_error "检测到部分初始化结构（${found_count}/${expected_count}），拒绝覆盖；请先备份并按迁移流程修复。"
-    exit 1
-  fi
-  log_info "开始初始化数据库结构..."
-  docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
-    mysql -uroot "-p${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" < "${SCHEMA_FILE}"
-  found_count="$(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
-    mysql -N -uroot "-p${MYSQL_ROOT_PASSWORD}" -e \
-    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${MYSQL_DATABASE}' AND table_name IN (${expected_sql});")"
-  if [[ "${found_count}" -ne "${expected_count}" ]]; then
-    log_error "数据库结构初始化不完整（${found_count}/${expected_count}）。"
-    exit 1
-  fi
-  log_info "数据库结构初始化完成。"
-}
-
 validate_demo_identifier() {
   local name="$1"
   local value="$2"
@@ -247,7 +210,11 @@ main() {
   docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" up -d mysql redis
 
   wait_mysql_ready
-  init_schema
+  if [[ ! -x "${MIGRATION_SCRIPT}" ]]; then
+    log_error "数据库迁移脚本不可执行: ${MIGRATION_SCRIPT}"
+    exit 1
+  fi
+  "${MIGRATION_SCRIPT}"
   ensure_app_database_user
   seed_commercial_baseline
   init_demo_database

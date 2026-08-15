@@ -17,7 +17,7 @@ spring:
   # 2. JPA 配置
   jpa:
     hibernate:
-      ddl-auto: update # 自动建表/更新表结构
+      ddl-auto: validate # 结构变更统一由 Flyway 迁移任务执行
     show-sql: true
     properties:
       hibernate:

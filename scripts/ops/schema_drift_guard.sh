@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 # LingSQL Schema 漂移门禁
-# 目标：确保 JPA 实体表定义与 sql/mysql.sql 同步，避免生产环境 validate 启动失败。
+# 目标：确保 JPA 实体表定义与 Flyway 合并基线同步，避免生产环境 validate 启动失败。
 #
 # 用法：
 #   ./scripts/ops/schema_drift_guard.sh
 #
 # 可选环境变量：
 #   ENTITY_ROOT=./src/main/java
-#   SCHEMA_FILE=./sql/mysql.sql
+#   SCHEMA_FILE=./src/main/resources/db/migration/B20260815_02__lingsql_control_schema.sql
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENTITY_ROOT="${ENTITY_ROOT:-${ROOT_DIR}/src/main/java}"
-SCHEMA_FILE="${SCHEMA_FILE:-${ROOT_DIR}/sql/mysql.sql}"
+SCHEMA_FILE="${SCHEMA_FILE:-${ROOT_DIR}/src/main/resources/db/migration/B20260815_02__lingsql_control_schema.sql}"
+LEGACY_SCHEMA_FILE="${LEGACY_SCHEMA_FILE:-${ROOT_DIR}/sql/mysql.sql}"
+MIGRATION_DIR="${MIGRATION_DIR:-${ROOT_DIR}/src/main/resources/db/migration}"
 
 log_info() {
   echo "[INFO] $*"
@@ -36,6 +38,7 @@ main() {
   require_cmd sed
   require_cmd sort
   require_cmd comm
+  require_cmd cmp
 
   if [[ ! -d "${ENTITY_ROOT}" ]]; then
     log_error "实体目录不存在: ${ENTITY_ROOT}"
@@ -43,6 +46,14 @@ main() {
   fi
   if [[ ! -f "${SCHEMA_FILE}" ]]; then
     log_error "Schema 文件不存在: ${SCHEMA_FILE}"
+    exit 1
+  fi
+  if ! cmp -s "${SCHEMA_FILE}" "${LEGACY_SCHEMA_FILE}"; then
+    log_error "Flyway 合并基线与 sql/mysql.sql 不一致；已发布基线禁止修改，请新增更高版本迁移。"
+    exit 1
+  fi
+  if [[ ! -d "${MIGRATION_DIR}" ]]; then
+    log_error "Flyway 迁移目录不存在: ${MIGRATION_DIR}"
     exit 1
   fi
 
@@ -56,7 +67,7 @@ main() {
     | sed -E 's/.*"([^"]+)".*/\1/' \
     | sort -u > "${entity_tables}"
 
-  grep -hoE 'CREATE TABLE `[^`]+`' "${SCHEMA_FILE}" \
+  grep -hoE 'CREATE TABLE `[^`]+`' "${MIGRATION_DIR}"/*.sql \
     | sed -E 's/CREATE TABLE `([^`]+)`/\1/' \
     | sort -u > "${schema_tables}"
 
