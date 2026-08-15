@@ -76,6 +76,7 @@ submit_usage_missing() {
     log_error "失败响应未返回可审计 requestId"
     exit 2
   }
+  log_error "确定性请求摘要: requestId=${request_id}, failureCode=$(jq -r '.data.failureCode // "NONE"' <<< "${response}"), hasSql=$(jq -r '((.data.sql // "") | length) > 0' <<< "${response}"), rowCount=$(jq -r '(.data.data // []) | length' <<< "${response}")"
   printf '%s' "${request_id}"
 }
 
@@ -98,6 +99,7 @@ load_unknown_invocation() {
     && "${failure_code}" == "USAGE_MISSING" && "${max_tokens}" -gt 32 \
     && "${reserved_amount}" =~ ^[0-9]+$ ]] || {
     log_error "请求 ${request_id} 没有形成预期状态: state=${state:-NONE}, failure=${failure_code:-NONE}"
+    mysql_query "SELECT CONCAT('recent=', workflow_request_id, '/', state, '/', COALESCE(failure_code, 'NONE')) FROM t_lingsql_engine_billing_invocation WHERE tenant_id='${LINGSQL_DEMO_TENANT_ID}' ORDER BY id DESC LIMIT 3;" >&2 || true
     exit 2
   }
   printf '%s' "${invocation_id}"
