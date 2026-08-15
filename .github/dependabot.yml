@@ -2,12 +2,20 @@ version: 2
 updates:
   - package-ecosystem: "maven"
     directory: "/"
+    target-branch: "master"
     schedule:
       interval: "weekly"
       day: "monday"
       time: "04:00"
       timezone: "Asia/Shanghai"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      maven-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     labels:
       - "dependencies"
       - "java"
@@ -17,12 +25,20 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/web_src"
+    target-branch: "master"
     schedule:
       interval: "weekly"
       day: "monday"
       time: "04:15"
       timezone: "Asia/Shanghai"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     labels:
       - "dependencies"
       - "frontend"
