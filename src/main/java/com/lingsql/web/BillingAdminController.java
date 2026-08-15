@@ -4,12 +4,17 @@ import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.billing.BillingAdminService;
 import com.lingsql.billing.BillingCommercialReadinessService;
 import com.lingsql.billing.BillingReconcileLogService;
+import com.lingsql.billing.acceptance.BillingAcceptanceReceipt;
+import com.lingsql.billing.acceptance.BillingAcceptanceSessionReceipt;
+import com.lingsql.billing.acceptance.IBillingAcceptanceSession;
 import com.lingsql.billing.entity.BillingPolicyVersion;
 import com.lingsql.billing.entity.TenantBillingOverride;
 import com.lingsql.billing.invocation.IPhysicalBillingResolution;
 import com.lingsql.billing.invocation.PhysicalBillingResolutionCommand;
 import com.lingsql.billing.invocation.PhysicalBillingResolutionReceipt;
 import com.lingsql.billing.model.BillingCommercialReadinessView;
+import com.lingsql.billing.model.BillingAcceptanceCloseRequest;
+import com.lingsql.billing.model.BillingAcceptanceOpenRequest;
 import com.lingsql.billing.model.BillingInvocationResolutionRequest;
 import com.lingsql.billing.model.BillingLedgerEvidenceView;
 import com.lingsql.billing.model.BillingPolicyVersionRequest;
@@ -57,6 +62,7 @@ public class BillingAdminController {
     private final BillingReconcileLogService billingReconcileLogService;
     private final BillingCommercialReadinessService billingCommercialReadinessService;
     private final IPhysicalBillingResolution physicalBillingResolution;
+    private final IBillingAcceptanceSession billingAcceptanceSession;
 
     /**
      * 查询计费策略版本列表。
@@ -327,10 +333,7 @@ public class BillingAdminController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        RbacUserSession session = RbacSecurityUtils.currentSession();
-        String operator = session == null || session.getUserId() == null
-                ? null
-                : String.valueOf(session.getUserId());
+        String operator = currentOperator();
         PhysicalBillingResolutionCommand command = new PhysicalBillingResolutionCommand(
                 invocationId,
                 operator,
@@ -347,6 +350,71 @@ public class BillingAdminController {
                 () -> physicalBillingResolution.resolve(command),
                 receipt -> receipt
         );
+    }
+
+    /**
+     * 冻结计费验收的 MySQL 余额与账本起始水位。
+     *
+     * @param request 开启请求
+     * @param http HTTP 请求
+     * @return 会话基线回执
+     */
+    @PostMapping("/acceptance/sessions")
+    @PreAuthorize("hasAuthority('ADMIN:BILLING:WRITE')")
+    public ApiResponse<BillingAcceptanceSessionReceipt> openAcceptanceSession(
+            @RequestBody BillingAcceptanceOpenRequest request,
+            HttpServletRequest http
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        String operator = currentOperator();
+        return auditOperationExecutor.executeCommittedResult(
+                "BILLING_ACCEPTANCE_OPEN",
+                "BILLING_ACCEPTANCE_SESSION",
+                request,
+                http,
+                () -> billingAcceptanceSession.open(request == null ? null : request.tenantId(), operator),
+                receipt -> receipt
+        );
+    }
+
+    /**
+     * 对精确请求集合完成计费验收并生成不可变回执。
+     *
+     * @param sessionId 验收会话ID
+     * @param request 关闭请求
+     * @param http HTTP 请求
+     * @return 不可变验收回执
+     */
+    @PostMapping("/acceptance/sessions/{sessionId}/close")
+    @PreAuthorize("hasAuthority('ADMIN:BILLING:WRITE')")
+    public ApiResponse<BillingAcceptanceReceipt> closeAcceptanceSession(
+            @PathVariable String sessionId,
+            @RequestBody BillingAcceptanceCloseRequest request,
+            HttpServletRequest http
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        String operator = currentOperator();
+        return auditOperationExecutor.executeCommittedResult(
+                "BILLING_ACCEPTANCE_CLOSE",
+                "BILLING_ACCEPTANCE_RECEIPT",
+                request,
+                http,
+                () -> billingAcceptanceSession.close(
+                        sessionId,
+                        request == null ? null : request.requestIds(),
+                        operator
+                ),
+                receipt -> receipt
+        );
+    }
+
+    private String currentOperator() {
+        RbacUserSession session = RbacSecurityUtils.currentSession();
+        return session == null || session.getUserId() == null ? null : String.valueOf(session.getUserId());
     }
 
     private boolean isSysAdmin() {

@@ -108,6 +108,11 @@ public interface BillingInvocationRepository extends JpaRepository<BillingInvoca
             Pageable pageable
     );
 
+    List<BillingInvocationEntity> findByTenantIdAndWorkflowRequestIdInOrderByInvocationIdAsc(
+            String tenantId,
+            List<String> workflowRequestIds
+    );
+
     interface InvocationEvidenceProjection {
 
         Long getInvocationCount();

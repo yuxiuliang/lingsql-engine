@@ -106,6 +106,45 @@ load_ledger_evidence() {
   jq -c '.data' <<< "${response}"
 }
 
+open_billing_acceptance() {
+  local token="$1"
+  local body response
+  body="$(jq -cn --arg tenantId "${PILOT_TENANT_ID}" '{tenantId:$tenantId}')"
+  response="$(api_post "/api/v1/admin/billing/acceptance/sessions" "${body}" "${token}")"
+  if [[ "$(jq -r '.code // 0' <<< "${response}")" != "200" ]]; then
+    log_error "无法冻结计费验收余额与账本水位。"
+    exit 2
+  fi
+  jq -r '.data.sessionId // empty' <<< "${response}"
+}
+
+close_billing_acceptance() {
+  local token="$1"
+  local session_id="$2"
+  shift 2
+  local request_ids_json body response valid expected_count
+  expected_count="$#"
+  request_ids_json="$(printf '%s\n' "$@" | jq -Rsc 'split("\n") | map(select(length > 0))')"
+  body="$(jq -cn --argjson requestIds "${request_ids_json}" '{requestIds:$requestIds}')"
+  response="$(api_post "/api/v1/admin/billing/acceptance/sessions/${session_id}/close" "${body}" "${token}")"
+  if [[ "$(jq -r '.code // 0' <<< "${response}")" != "200" ]]; then
+    log_error "本批请求未通过 MySQL 余额与账本区间验收。"
+    exit 2
+  fi
+  valid="$(jq -r --argjson expectedCount "${expected_count}" '
+    .data as $receipt |
+    ($receipt.requestIds | length) == $expectedCount and
+    $receipt.unrelatedEventCount == 0 and
+    $receipt.cancelledInvocationCount == 0 and
+    $receipt.settledInvocationCount == $receipt.invocationCount and
+    $receipt.scopeNetAmount == $receipt.intervalNetAmount and
+    ($receipt.balanceBefore - $receipt.balanceAfter) == $receipt.intervalNetAmount and
+    ($receipt.receiptHash | test("^[0-9a-f]{64}$"))
+  ' <<< "${response}")"
+  [[ "${valid}" == "true" ]] || { log_error "计费验收回执不满足资金守恒约束。"; exit 2; }
+  jq -c '.data' <<< "${response}"
+}
+
 main() {
   require_cmd curl
   require_cmd jq
@@ -132,10 +171,12 @@ main() {
     "${BASE_URL}" "${PILOT_CONTROL_TOKEN}" "${PILOT_CONTROL_TENANT_ID}" \
     "${PILOT_CONTROL_USERNAME}" "${PILOT_CONTROL_PASSWORD}")"
 
-  local baseline_audit_total baseline_billing_snapshot baseline_ledger_total
+  local baseline_audit_total baseline_billing_snapshot baseline_ledger_total billing_acceptance_session_id
   baseline_audit_total="$(load_audit_total "${control_token}" "${PILOT_TENANT_ID}" "${user_id}")"
   baseline_billing_snapshot="$(load_billing_snapshot "${control_token}")"
   baseline_ledger_total="$(jq -r '.ledgerTotal // 0' <<< "${baseline_billing_snapshot}")"
+  billing_acceptance_session_id="$(open_billing_acceptance "${control_token}")"
+  require_value "计费验收会话 ID" "${billing_acceptance_session_id}"
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
@@ -189,6 +230,7 @@ main() {
   local request_ids_csv ledger_evidence matched_request_count reserve_count close_count
   local invocation_count matched_workflow_count settled_invocation_count unknown_invocation_count pending_invocation_count
   local cancelled_invocation_count complete_request_count unbalanced_invocation_count conserved strict_request_count
+  local billing_acceptance_receipt billing_acceptance_receipt_hash balance_before balance_after interval_net_amount
   audit_total="$(load_audit_total "${control_token}" "${PILOT_TENANT_ID}" "${user_id}")"
   audit_increment=$((audit_total - baseline_audit_total))
   if [[ "${audit_increment}" -lt 3 ]]; then
@@ -207,6 +249,11 @@ main() {
   billing_ready="$(jq -r '.ready // false' <<< "${billing_snapshot}")"
   ledger_increment=$((ledger_total - baseline_ledger_total))
   request_ids_csv="$(IFS=,; echo "${request_ids[*]}")"
+  billing_acceptance_receipt="$(close_billing_acceptance "${control_token}" "${billing_acceptance_session_id}" "${request_ids[@]}")"
+  billing_acceptance_receipt_hash="$(jq -r '.receiptHash' <<< "${billing_acceptance_receipt}")"
+  balance_before="$(jq -r '.balanceBefore' <<< "${billing_acceptance_receipt}")"
+  balance_after="$(jq -r '.balanceAfter' <<< "${billing_acceptance_receipt}")"
+  interval_net_amount="$(jq -r '.intervalNetAmount' <<< "${billing_acceptance_receipt}")"
   ledger_evidence="$(load_ledger_evidence "${control_token}" "${PILOT_TENANT_ID}" "${request_ids_csv}")"
   matched_request_count="$(jq -r '.matchedRequestCount // 0' <<< "${ledger_evidence}")"
   reserve_count="$(jq -r '.reserveCount // 0' <<< "${ledger_evidence}")"
@@ -264,6 +311,7 @@ main() {
 - 关联 RESERVE/CLOSE: ${reserve_count}/${close_count}
 - 完整逐请求证据: ${complete_request_count}/3（严格复核 ${strict_request_count}/3，资金守恒 ${conserved}）
 - 物理模型调用: ${invocation_count}（已结算 ${settled_invocation_count}，UNKNOWN ${unknown_invocation_count}，未终态 ${pending_invocation_count}，取消 ${cancelled_invocation_count}）
+- MySQL 余额与账本区间: ${balance_before} -> ${balance_after}（净扣款 ${interval_net_amount}，回执 ${billing_acceptance_receipt_hash}）
 - 计费就绪: ${billing_ready}
 - 验收结论: PASS
 

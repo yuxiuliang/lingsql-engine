@@ -649,6 +649,28 @@ Content-Type: application/json
 
 该接口仅允许系统管理员使用。`CONFIRMED_USAGE` 必须提供不超过预留上限的非负 `actualTokens`，系统在同一 MySQL 事务中结算实际费用、退回差额并写入不可变裁决记录；`CONFIRMED_NOT_BILLED` 不得携带 `actualTokens`，系统将全额退回预留并取消调用。相同证据的重复请求幂等返回，不同证据或结论会被拒绝。接口只接受证据摘要，不接收或保存供应商账单正文。
 
+#### 4.2.7 生成 MySQL 计费验收回执
+
+先在试点流量开始前冻结余额和账本水位：
+
+```http
+POST /api/v1/admin/billing/acceptance/sessions
+Content-Type: application/json
+
+{"tenantId":"tenant-pilot"}
+```
+
+完成试点请求后，提交从问数响应中取得的精确 `requestId` 集合：
+
+```http
+POST /api/v1/admin/billing/acceptance/sessions/{sessionId}/close
+Content-Type: application/json
+
+{"requestIds":["request-001","request-002","request-003"]}
+```
+
+两个接口均要求系统管理员及 `ADMIN:BILLING:WRITE` 权限。关闭操作会锁定 MySQL 租户余额事实行，并拒绝以下情况：目标请求在起始水位前已有账本、区间内出现非本批请求、存在非 `APPLIED` 或缺少 `apply_time` 的账本事件、物理调用未进入 `SETTLED/CANCELLED`、逐调用事件不守恒，或 `balanceBefore - balanceAfter` 不等于完整区间净扣款。通过后返回并持久化包含起止水位、精确请求摘要、余额前后值、本批/区间净扣款、非本批事件数、调用终态统计及 `receiptHash` 的不可变回执。相同请求集合重复关闭会返回原回执，不同集合会被拒绝。
+
 ### 4.3 元数据管理
 
 #### 4.3.1 获取 Schema 列表
@@ -1613,6 +1635,8 @@ async function callApi<T>(request: () => Promise<T>): Promise<T> {
 | GET | `/api/v1/admin/billing/overrides` | 覆盖列表 | ADMIN:BILLING:READ |
 | GET | `/api/v1/admin/billing/overrides/{tenantId}` | 查询覆盖 | ADMIN:BILLING:READ |
 | PUT | `/api/v1/admin/billing/overrides/{tenantId}` | 设置覆盖 | ADMIN:BILLING:WRITE |
+| POST | `/api/v1/admin/billing/acceptance/sessions` | 冻结计费验收基线 | ADMIN:BILLING:WRITE |
+| POST | `/api/v1/admin/billing/acceptance/sessions/{sessionId}/close` | 生成不可变计费验收回执 | ADMIN:BILLING:WRITE |
 | **元数据管理** |
 | GET | `/api/v1/admin/metadata/schema` | Schema 列表 | ADMIN:METADATA:READ |
 | GET | `/api/v1/admin/metadata/table` | 表详情 | ADMIN:METADATA:READ |

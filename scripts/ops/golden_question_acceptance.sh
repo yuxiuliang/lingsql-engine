@@ -41,6 +41,36 @@ api_get() {
     "${BASE_URL%/}${path}"
 }
 
+api_post_json() {
+  local path="$1" body="$2" token="$3"
+  printf '%s' "${body}" | curl -fsS --connect-timeout 5 --max-time 90 \
+    -H "Authorization: Bearer ${token}" -H "X-Tenant-Id: ${PILOT_TENANT_ID}" \
+    -H 'Content-Type: application/json; charset=UTF-8' \
+    -X POST "${BASE_URL%/}${path}" --data-binary @-
+}
+
+open_billing_acceptance() {
+  local body response
+  body="$(jq -cn --arg tenantId "${PILOT_TENANT_ID}" '{tenantId:$tenantId}')"
+  response="$(api_post_json "/api/v1/admin/billing/acceptance/sessions" "${body}" "${PILOT_CONTROL_TOKEN}")"
+  [[ "$(jq -r '.code // 0' <<< "${response}")" == "200" ]] || {
+    log_error "无法冻结黄金问题验收的 MySQL 余额与账本水位"
+    exit 2
+  }
+  jq -r '.data.sessionId // empty' <<< "${response}"
+}
+
+close_billing_acceptance() {
+  local request_ids_json="$1" body response
+  body="$(jq -cn --argjson requestIds "${request_ids_json}" '{requestIds:$requestIds}')"
+  response="$(api_post_json "/api/v1/admin/billing/acceptance/sessions/${BILLING_ACCEPTANCE_SESSION_ID}/close" "${body}" "${PILOT_CONTROL_TOKEN}")"
+  [[ "$(jq -r '.code // 0' <<< "${response}")" == "200" ]] || {
+    log_error "黄金问题批次未通过 MySQL 余额与账本区间验收"
+    exit 2
+  }
+  jq -c '.data' <<< "${response}"
+}
+
 post_capture() {
   local path="$1" body="$2" token="$3" response_file="$4" metrics_file="$5"
   local -a auth_args=()
@@ -244,9 +274,25 @@ collect_batch_evidence() {
   local request_ids_json request_ids_csv tenant_encoded ledger_response request_details
   local requested matched workflows invocations settled unknown pending cancelled reserves closes
   local reserve_amount close_amount refund_amount complete_requests unbalanced conserved evidence_ok=true
+  local acceptance_receipt acceptance_receipt_valid acceptance_receipt_hash balance_before balance_after interval_net_amount
   request_ids_json="$(jq -Rsc 'split("\n") | map(select(length>0)) | unique' "${REQUEST_IDS_FILE}")"
   [[ "$(jq 'length' <<< "${request_ids_json}")" -eq "${BUSINESS_RUN_COUNT}" ]] || evidence_ok=false
   request_ids_csv="$(jq -r 'join(",")' <<< "${request_ids_json}")"
+  acceptance_receipt="$(close_billing_acceptance "${request_ids_json}")"
+  acceptance_receipt_valid="$(jq -r --argjson expectedCount "${BUSINESS_RUN_COUNT}" '
+    (.requestIds | length) == $expectedCount and
+    .unrelatedEventCount == 0 and
+    .cancelledInvocationCount == 0 and
+    .settledInvocationCount == .invocationCount and
+    .scopeNetAmount == .intervalNetAmount and
+    (.balanceBefore - .balanceAfter) == .intervalNetAmount and
+    (.receiptHash | test("^[0-9a-f]{64}$"))
+  ' <<< "${acceptance_receipt}")"
+  [[ "${acceptance_receipt_valid}" == "true" ]] || evidence_ok=false
+  acceptance_receipt_hash="$(jq -r '.receiptHash // empty' <<< "${acceptance_receipt}")"
+  balance_before="$(jq -r '.balanceBefore // 0' <<< "${acceptance_receipt}")"
+  balance_after="$(jq -r '.balanceAfter // 0' <<< "${acceptance_receipt}")"
+  interval_net_amount="$(jq -r '.intervalNetAmount // 0' <<< "${acceptance_receipt}")"
   tenant_encoded="$(jq -rn --arg v "${PILOT_TENANT_ID}" '$v|@uri')"
   ledger_response="$(api_get "/api/v1/admin/billing/ledger/evidence?tenantId=${tenant_encoded}&requestIds=$(jq -rn --arg v "${request_ids_csv}" '$v|@uri')" "${PILOT_CONTROL_TOKEN}")"
   [[ "$(jq -r '.code // 0' <<< "${ledger_response}")" == "200" ]] || evidence_ok=false
@@ -270,8 +316,10 @@ collect_batch_evidence() {
     --argjson unknown "${unknown}" --argjson pending "${pending}" --argjson cancelled "${cancelled}" \
     --argjson reserves "${reserves}" --argjson closes "${closes}" --argjson reserveAmount "${reserve_amount}" \
     --argjson closeAmount "${close_amount}" --argjson refundAmount "${refund_amount}" --argjson unbalanced "${unbalanced}" \
-    --argjson conserved "${conserved}" --argjson requests "${request_details}" --argjson passed "${evidence_ok}" \
-    '{type:"batchEvidence",requestedRequestCount:$requested,matchedRequestCount:$matched,matchedWorkflowCount:$workflows,completeRequestCount:$completeRequests,invocationCount:$invocations,settledInvocationCount:$settled,unknownInvocationCount:$unknown,pendingInvocationCount:$pending,cancelledInvocationCount:$cancelled,reserveCount:$reserves,closeCount:$closes,reserveAmount:$reserveAmount,closeAmount:$closeAmount,refundAmount:$refundAmount,unbalancedInvocationCount:$unbalanced,conserved:$conserved,requests:$requests,passed:$passed}' \
+    --argjson conserved "${conserved}" --argjson requests "${request_details}" --arg acceptanceReceiptHash "${acceptance_receipt_hash}" \
+    --argjson balanceBefore "${balance_before}" --argjson balanceAfter "${balance_after}" --argjson intervalNetAmount "${interval_net_amount}" \
+    --argjson passed "${evidence_ok}" \
+    '{type:"batchEvidence",requestedRequestCount:$requested,matchedRequestCount:$matched,matchedWorkflowCount:$workflows,completeRequestCount:$completeRequests,invocationCount:$invocations,settledInvocationCount:$settled,unknownInvocationCount:$unknown,pendingInvocationCount:$pending,cancelledInvocationCount:$cancelled,reserveCount:$reserves,closeCount:$closes,reserveAmount:$reserveAmount,closeAmount:$closeAmount,refundAmount:$refundAmount,unbalancedInvocationCount:$unbalanced,conserved:$conserved,billingAcceptance:{receiptHash:$acceptanceReceiptHash,balanceBefore:$balanceBefore,balanceAfter:$balanceAfter,intervalNetAmount:$intervalNetAmount},requests:$requests,passed:$passed}' \
     >> "${EVIDENCE_FILE}"
 }
 
@@ -284,7 +332,7 @@ cleanup_tmp_dir() {
 }
 
 build_report() {
-  local source_evidence first_p0 first_all final_all p95 baseline_median actual_median improvement security_total security_pass batch_ok automated_pass=false conclusion evidence_sha256 current_business_total current_business_pass
+  local source_evidence first_p0 first_all final_all p95 baseline_median actual_median improvement security_total security_pass batch_ok billing_receipt_hash automated_pass=false conclusion evidence_sha256 current_business_total current_business_pass
   source_evidence="${EVIDENCE_FILE}"
   [[ "${GQ_PHASE}" == "RETEST" ]] && source_evidence="${GQ_PARENT_EVIDENCE}"
   first_p0="$(jq -s '[.[]|select(.type=="business" and .priority=="P0" and .correct==true)]|length' "${source_evidence}")"
@@ -304,6 +352,7 @@ build_report() {
   security_total="$(jq -s '[.[]|select(.type=="security")]|length' "${EVIDENCE_FILE}")"
   security_pass="$(jq -s '[.[]|select(.type=="security" and .correct==true)]|length' "${EVIDENCE_FILE}")"
   batch_ok="$(jq -s '[.[]|select(.type=="batchEvidence")][0].passed // false' "${EVIDENCE_FILE}")"
+  billing_receipt_hash="$(jq -rs '[.[]|select(.type=="batchEvidence")][0].billingAcceptance.receiptHash // empty' "${EVIDENCE_FILE}")"
   if [[ "${first_p0}" -ge 18 && "${first_all}" -ge 34 && "${p95}" -le 15000 && "${security_pass}" -eq "${security_total}" \
       && "${security_total}" -gt 0 && "${batch_ok}" == "true" && "$(awk -v value="${improvement}" 'BEGIN{print(value>=50?1:0)}')" -eq 1 ]]; then
     automated_pass=true
@@ -331,6 +380,7 @@ build_report() {
 - 原流程 / LingSQL 中位耗时: ${baseline_median} s / ${actual_median} s（改善 ${improvement}%，门槛 50%）
 - 安全拦截: ${security_pass}/${security_total}（门槛 100%）
 - 逐请求审计与物理调用批量证据: ${batch_ok}
+- MySQL 余额与账本区间回执: ${billing_receipt_hash}
 - 自动结论: ${conclusion}
 
 ## 脱敏逐题记录
@@ -411,6 +461,8 @@ main() {
   login_response="$(printf '%s' "${login_body}" | curl -fsS --connect-timeout 5 --max-time 30 -H 'Content-Type: application/json; charset=UTF-8' -X POST "${BASE_URL%/}/api/v1/auth/login" --data-binary @-)"
   TOKEN="$(jq -r '.data.token // empty' <<< "${login_response}")"
   require_value "登录 Token" "${TOKEN}"
+  BILLING_ACCEPTANCE_SESSION_ID="$(open_billing_acceptance)"
+  require_value "计费验收会话 ID" "${BILLING_ACCEPTANCE_SESSION_ID}"
   if [[ "${GQ_PHASE}" == "FIRST" ]]; then
     run_cases_json="$(jq -c '.businessCases[]' "${GQ_SUITE_FILE}")"
   else

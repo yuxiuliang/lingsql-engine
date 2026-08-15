@@ -1,7 +1,9 @@
 package com.lingsql.tenant.repository;
 
 import com.lingsql.tenant.entity.TenantInfo;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -48,6 +50,18 @@ public interface TenantRepository extends JpaRepository<TenantInfo, Long> {
      * @date 2026-01-26
      */
     Optional<TenantInfo> findByTenantIdAndIsDeleted(String tenantId, Integer isDeleted);
+
+    /**
+     * 锁定租户余额事实行，建立计费验收一致性边界。
+     *
+     * @param tenantId 租户ID
+     * @param isDeleted 删除标记
+     * @return 租户信息
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM TenantInfo t WHERE t.tenantId = :tenantId AND t.isDeleted = :isDeleted")
+    Optional<TenantInfo> findByTenantIdAndIsDeletedForUpdate(@Param("tenantId") String tenantId,
+                                                             @Param("isDeleted") Integer isDeleted);
 
     /**
      * 查询带到期时间的活跃租户。
