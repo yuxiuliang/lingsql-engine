@@ -1,5 +1,6 @@
 package com.lingsql.common.exception;
 
+import com.lingsql.billing.invocation.BillingInvocationConflictException;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.result.ApiResponse;
@@ -162,6 +163,21 @@ public class GlobalExceptionHandler {
             log.warn("业务异常: {}", ex.getMessage());
         }
         return attachRequestId(ApiResponse.fail(errorCode, ex.getMessage()));
+    }
+
+    /**
+     * 处理物理模型计费幂等或状态冲突。
+     *
+     * @param ex 计费冲突异常
+     * @return 统一响应
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    @ExceptionHandler(BillingInvocationConflictException.class)
+    public ApiResponse<Void> handleBillingInvocationConflictException(
+            BillingInvocationConflictException ex) {
+        log.warn("物理模型计费冲突: {}", ex.getMessage());
+        return attachRequestId(ApiResponse.fail(ErrorCode.CONFLICT, ex.getMessage()));
     }
 
     /**
