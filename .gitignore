@@ -18,3 +18,4 @@ target/
 /src/main/resources/static/admin/
 **/dist/
 /reports/
+/.local-private/
