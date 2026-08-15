@@ -10,6 +10,8 @@ import com.lingsql.audit.model.SqlExecuteLogQuery;
 import com.lingsql.audit.model.SqlExecuteLogView;
 import com.lingsql.audit.repository.SqlExecuteLogRepository;
 import com.lingsql.common.result.PageResult;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.pagination.PageParam;
 import com.lingsql.common.pagination.PageParamResolver;
 import lombok.RequiredArgsConstructor;
@@ -85,7 +87,7 @@ public class SqlExecuteLogService {
             repository.save(logEntity);
             triggerSlowExecuteAlert(logEntity);
         } catch (Exception ex) {
-            log.warn("写入 SQL 执行日志失败: {}", ex.getMessage());
+            throw new BizException(ErrorCode.SYSTEM_ERROR, "SQL 执行审计日志写入失败", ex);
         }
     }
 

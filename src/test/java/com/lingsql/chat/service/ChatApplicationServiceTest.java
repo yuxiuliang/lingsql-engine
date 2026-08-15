@@ -1,5 +1,9 @@
 package com.lingsql.chat.service;
 
+import com.lingsql.agent.orchestration.ControlledAgentOrchestratorImpl;
+import com.lingsql.agent.orchestration.AgentRunControl;
+import com.lingsql.agent.orchestration.SqlQueryTask;
+import com.lingsql.agent.plugin.AgentPluginExecutor;
 import com.lingsql.chat.entity.ChatHistory;
 import com.lingsql.chat.model.ChatRequest;
 import com.lingsql.chat.model.ChatResult;
@@ -23,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -36,12 +41,17 @@ class ChatApplicationServiceTest {
 
     @Test
     void askShouldSanitizeExecutionFailureForUser() {
-        SmartSqlExecutor sqlExecutor = Mockito.mock(SmartSqlExecutor.class);
+        AgentPluginExecutor pluginExecutor = Mockito.mock(AgentPluginExecutor.class);
         ResultRefiner resultRefiner = Mockito.mock(ResultRefiner.class);
         ChatHistoryService chatHistoryService = Mockito.mock(ChatHistoryService.class);
         ChatMemoryService chatMemoryService = Mockito.mock(ChatMemoryService.class);
 
-        when(sqlExecutor.execute("TENANT_A", "查销售额", "WEB"))
+        when(pluginExecutor.execute(
+                eq(SmartSqlExecutor.PLUGIN_ID),
+                any(),
+                any(AgentRunControl.class),
+                any(SqlQueryTask.class),
+                eq(SqlExecutionResult.class)))
                 .thenReturn(SqlExecutionResult.failure(
                         "SELECT * FROM t_order",
                         "Communications link failure: connect timed out",
@@ -55,8 +65,7 @@ class ChatApplicationServiceTest {
                 .thenReturn(history);
 
         ChatApplicationService service = new ChatApplicationService(
-                sqlExecutor,
-                resultRefiner,
+                new ControlledAgentOrchestratorImpl(pluginExecutor, resultRefiner),
                 chatHistoryService,
                 chatMemoryService
         );
@@ -80,12 +89,17 @@ class ChatApplicationServiceTest {
 
     @Test
     void askShouldExposeTenantConfigGuidanceWhenTenantDbConfigMissing() {
-        SmartSqlExecutor sqlExecutor = Mockito.mock(SmartSqlExecutor.class);
+        AgentPluginExecutor pluginExecutor = Mockito.mock(AgentPluginExecutor.class);
         ResultRefiner resultRefiner = Mockito.mock(ResultRefiner.class);
         ChatHistoryService chatHistoryService = Mockito.mock(ChatHistoryService.class);
         ChatMemoryService chatMemoryService = Mockito.mock(ChatMemoryService.class);
 
-        when(sqlExecutor.execute("TENANT_A", "查销售额", "WEB"))
+        when(pluginExecutor.execute(
+                eq(SmartSqlExecutor.PLUGIN_ID),
+                any(),
+                any(AgentRunControl.class),
+                any(SqlQueryTask.class),
+                eq(SqlExecutionResult.class)))
                 .thenThrow(new BizException(ErrorCode.TENANT_DB_CONFIG_NOT_FOUND, "租户数据源配置不存在，请先完成租户数据库连接配置"));
 
         ChatHistory history = new ChatHistory();
@@ -94,8 +108,7 @@ class ChatApplicationServiceTest {
                 .thenReturn(history);
 
         ChatApplicationService service = new ChatApplicationService(
-                sqlExecutor,
-                resultRefiner,
+                new ControlledAgentOrchestratorImpl(pluginExecutor, resultRefiner),
                 chatHistoryService,
                 chatMemoryService
         );
@@ -118,14 +131,13 @@ class ChatApplicationServiceTest {
 
     @Test
     void askShouldRejectBlankQuestionBeforeExecution() {
-        SmartSqlExecutor sqlExecutor = Mockito.mock(SmartSqlExecutor.class);
+        AgentPluginExecutor pluginExecutor = Mockito.mock(AgentPluginExecutor.class);
         ResultRefiner resultRefiner = Mockito.mock(ResultRefiner.class);
         ChatHistoryService chatHistoryService = Mockito.mock(ChatHistoryService.class);
         ChatMemoryService chatMemoryService = Mockito.mock(ChatMemoryService.class);
 
         ChatApplicationService service = new ChatApplicationService(
-                sqlExecutor,
-                resultRefiner,
+                new ControlledAgentOrchestratorImpl(pluginExecutor, resultRefiner),
                 chatHistoryService,
                 chatMemoryService
         );
@@ -138,7 +150,7 @@ class ChatApplicationServiceTest {
 
         assertEquals(ErrorCode.INVALID_PARAM, ex.getErrorCode());
         assertEquals("问题不能为空", ex.getMessage());
-        verify(sqlExecutor, never()).execute(anyString(), anyString(), anyString());
+        verify(pluginExecutor, never()).execute(anyString(), any(), any(), any(), any());
         verify(chatHistoryService, never()).saveHistory(anyString(), anyLong(), anyString(), anyString(), anyString(), anyString(), any(), any());
     }
 }

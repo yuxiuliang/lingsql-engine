@@ -2,7 +2,7 @@ package com.lingsql.schema;
 
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
-import com.lingsql.llm.LlmClient;
+import com.lingsql.llm.IModelGateway;
 import com.lingsql.schema.model.TableInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +32,7 @@ import java.util.Set;
 public class SchemaScanner {
 
     private final MetadataCacheService cacheService;
-    private final LlmClient llmClient;
+    private final IModelGateway modelGateway;
 
     /**
      * 扫描指定数据源中的表结构。
@@ -142,7 +142,7 @@ public class SchemaScanner {
             return cached;
         }
         try {
-            String generated = llmClient.chat("你是数据库元数据助手，只输出简短中文描述。", prompt);
+            String generated = modelGateway.chat("你是数据库元数据助手，只输出简短中文描述。", prompt);
             String comment = StringUtils.hasText(generated) ? generated.trim() : "无描述";
             cacheService.cacheComment(cacheKey, comment);
             return comment;

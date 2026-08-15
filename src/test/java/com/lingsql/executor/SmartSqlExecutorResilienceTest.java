@@ -1,7 +1,8 @@
 package com.lingsql.executor;
 
 import com.lingsql.agent.SqlAgentService;
-import com.lingsql.agent.collaboration.SqlComplianceAuditor;
+import com.lingsql.agent.orchestration.AgentBillingSettlementException;
+import com.lingsql.agent.orchestration.sql.SqlGuardedQueryExecutor;
 import com.lingsql.audit.model.SqlExecuteLogCommand;
 import com.lingsql.audit.service.SqlExecuteLogService;
 import com.lingsql.billing.TenantBillingService;
@@ -33,7 +34,7 @@ import static org.mockito.Mockito.when;
 class SmartSqlExecutorResilienceTest {
 
     @Test
-    void executeShouldKeepSuccessResultWhenChargeFailsInFinally() {
+    void executeShouldFailClosedButStillAuditWhenChargeFails() {
         SqlAgentService agentService = Mockito.mock(SqlAgentService.class);
         SqlSecurityChecker securityChecker = Mockito.mock(SqlSecurityChecker.class);
         SqlRewriter rewriter = Mockito.mock(SqlRewriter.class);
@@ -54,19 +55,21 @@ class SmartSqlExecutorResilienceTest {
 
         SmartSqlExecutor executor = new SmartSqlExecutor(
                 agentService,
-                new SqlComplianceAuditor(rewriter, securityChecker),
+                new SqlGuardedQueryExecutor(rewriter, securityChecker, jdbcTemplate),
                 new SqlRecoveryPolicy(new LingSqlProperties()),
                 configRepository,
                 logService,
                 taskTracker,
-                billingService,
-                jdbcTemplate
+                billingService
         );
 
-        SqlExecutionResult result = executor.execute("TENANT_A", "查询今天订单数", "WEB");
+        AgentBillingSettlementException exception = assertThrows(
+                AgentBillingSettlementException.class,
+                () -> executor.execute("TENANT_A", "查询今天订单数", "WEB")
+        );
 
-        assertTrue(result.isSuccess());
-        assertEquals("SELECT 1 AS cnt", result.getSql());
+        assertEquals("执行后计费失败", exception.getMessage());
+        assertEquals("计费系统异常", exception.getCause().getMessage());
         verify(taskTracker).finish("TENANT_A");
         ArgumentCaptor<SqlExecuteLogCommand> logCaptor = ArgumentCaptor.forClass(SqlExecuteLogCommand.class);
         verify(logService).record(logCaptor.capture());
@@ -101,13 +104,12 @@ class SmartSqlExecutorResilienceTest {
 
         SmartSqlExecutor executor = new SmartSqlExecutor(
                 agentService,
-                new SqlComplianceAuditor(rewriter, securityChecker),
+                new SqlGuardedQueryExecutor(rewriter, securityChecker, jdbcTemplate),
                 new SqlRecoveryPolicy(new LingSqlProperties()),
                 configRepository,
                 logService,
                 taskTracker,
-                billingService,
-                jdbcTemplate
+                billingService
         );
 
         SqlExecutionResult result = executor.execute("TENANT_A", "查询今天订单数", "WEB");
@@ -137,13 +139,12 @@ class SmartSqlExecutorResilienceTest {
 
         SmartSqlExecutor executor = new SmartSqlExecutor(
                 agentService,
-                new SqlComplianceAuditor(rewriter, securityChecker),
+                new SqlGuardedQueryExecutor(rewriter, securityChecker, jdbcTemplate),
                 new SqlRecoveryPolicy(new LingSqlProperties()),
                 configRepository,
                 logService,
                 taskTracker,
-                billingService,
-                jdbcTemplate
+                billingService
         );
 
         BizException ex = assertThrows(BizException.class, () -> executor.execute("TENANT_A", "查询今天订单数", "WEB"));

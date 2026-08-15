@@ -9,7 +9,7 @@ import com.lingsql.datasource.DataSourceManager;
 import com.lingsql.datasource.TenantDbConfigErrors;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
-import com.lingsql.llm.LlmClient;
+import com.lingsql.llm.IModelGateway;
 import com.lingsql.schema.MetadataCacheService;
 import com.lingsql.schema.SchemaScanner;
 import com.lingsql.schema.SemanticLexicon;
@@ -33,7 +33,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SqlAgentService {
 
-    private final LlmClient llmClient;
+    private final IModelGateway modelGateway;
     private final MetadataCacheService metadataCacheService;
     private final SqlPromptTemplate sqlPromptTemplate;
     private final SemanticLexicon semanticLexicon;
@@ -131,7 +131,7 @@ public class SqlAgentService {
         String finalUserInput = buildUserPrompt(userInput, reason);
 
         log.info("AI 正在生成租户 [{}] 的 SQL...", tenantId);
-        String generatedSql = llmClient.chat(systemPrompt, finalUserInput);
+        String generatedSql = modelGateway.chat(systemPrompt, finalUserInput);
         return cleanSql(generatedSql);
     }
 

@@ -141,7 +141,10 @@ public class TenantBillingService {
         int closeSeq = command.nextBillingEventSeq();
         boolean closeRecorded = billingLedgerService.recordCloseEvents(requestId, tenantId, closeSeq, chargeItems);
         if (!closeRecorded) {
-            log.warn("写入CLOSE账本失败: tenantId={}, requestId={}, eventSeq={}", tenantId, requestId, closeSeq);
+            billingBalanceService.refundBalanceRequired(tenantId, reserved);
+            command.setReservedCostAmount(0L);
+            command.setCostAmount(0L);
+            throw new BizException(ErrorCode.BILLING_INVALID, "计费账本结算失败，请稍后重试");
         }
         command.setCostAmount(costAmount);
         command.setBillingVersion(chargeItems.getFirst().policyVersion());

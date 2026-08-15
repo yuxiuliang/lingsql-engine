@@ -1,5 +1,7 @@
 package com.lingsql.billing;
 
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -183,6 +185,26 @@ public class BillingBalanceService {
             stringRedisTemplate.opsForValue().increment(key, amount);
         } catch (Exception ex) {
             log.warn("退回余额缓存失败: tenantId={}, error={}", tenantId, ex.getMessage());
+        }
+    }
+
+    /**
+     * 退回预扣余额，失败时中断当前结算并交由上层记录补偿故障。
+     *
+     * @param tenantId 租户ID
+     * @param amount 退回金额
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    public void refundBalanceRequired(String tenantId, long amount) {
+        if (!StringUtils.hasText(tenantId) || amount <= 0) {
+            return;
+        }
+        try {
+            String key = balanceKey(tenantId);
+            stringRedisTemplate.opsForValue().increment(key, amount);
+        } catch (Exception ex) {
+            throw new BizException(ErrorCode.BILLING_INVALID, "退回预扣余额失败，请人工核对账本", ex);
         }
     }
 

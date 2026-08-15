@@ -2,13 +2,25 @@ package com.lingsql.executor;
 
 import com.lingsql.agent.SqlAgentService;
 import com.lingsql.agent.collaboration.AgentRole;
-import com.lingsql.agent.collaboration.SqlComplianceAuditor;
+import com.lingsql.agent.orchestration.AgentAuditPersistenceException;
+import com.lingsql.agent.orchestration.AgentBillingSettlementException;
+import com.lingsql.agent.orchestration.AgentExecutionContext;
+import com.lingsql.agent.orchestration.AgentRunControl;
+import com.lingsql.agent.orchestration.SqlQueryTask;
+import com.lingsql.agent.orchestration.sql.CandidateSql;
+import com.lingsql.agent.orchestration.sql.GuardedQueryException;
+import com.lingsql.agent.orchestration.sql.GuardedQueryEventSink;
+import com.lingsql.agent.orchestration.sql.GuardedQueryResult;
+import com.lingsql.agent.orchestration.sql.GuardedQueryStage;
+import com.lingsql.agent.orchestration.sql.SqlGuardedQueryExecutor;
+import com.lingsql.agent.plugin.AgentPluginAccess;
+import com.lingsql.agent.plugin.AgentPluginCost;
+import com.lingsql.agent.plugin.AgentPluginDescriptor;
+import com.lingsql.agent.plugin.IAgentPlugin;
 import com.lingsql.audit.model.SqlExecuteLogCommand;
 import com.lingsql.audit.service.SqlExecuteLogService;
 import com.lingsql.billing.TenantBillingService;
 import com.lingsql.chat.model.ChatTraceStep;
-import com.lingsql.common.exception.BizException;
-import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.trace.RequestTraceContext;
 import com.lingsql.context.TenantContext;
 import com.lingsql.datasource.TenantDbConfigErrors;
@@ -18,8 +30,6 @@ import com.lingsql.llm.LlmTraceContext;
 import com.lingsql.llm.LlmTraceInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -35,7 +45,17 @@ import java.util.Map;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class SmartSqlExecutor {
+public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecutionResult> {
+
+    public static final String PLUGIN_ID = "secure_query";
+    private static final AgentPluginDescriptor PLUGIN_DESCRIPTOR = new AgentPluginDescriptor(
+            PLUGIN_ID,
+            "1.0.0",
+            AgentPluginAccess.SYSTEM_ONLY,
+            AgentPluginCost.HIGH,
+            false,
+            "生成、审计并执行只读 SQL 查询"
+    );
 
     private static final String TRACE_TYPE_THOUGHT = "THOUGHT";
     private static final String TRACE_TYPE_ACTION = "ACTION";
@@ -45,15 +65,12 @@ public class SmartSqlExecutor {
     private static final String TRACE_STATUS_FAILURE = "FAILURE";
 
     private final SqlAgentService agentService;
-    private final SqlComplianceAuditor complianceAuditor;
+    private final SqlGuardedQueryExecutor guardedQueryExecutor;
     private final SqlRecoveryPolicy recoveryPolicy;
     private final TenantDbConfigRepository tenantDbConfigRepository;
     private final SqlExecuteLogService sqlExecuteLogService;
     private final SqlTaskTracker sqlTaskTracker;
     private final TenantBillingService tenantBillingService;
-
-    @Qualifier("businessJdbcTemplate")
-    private final JdbcTemplate jdbcTemplate;
 
     /**
      * 执行自然语言查询。
@@ -79,30 +96,103 @@ public class SmartSqlExecutor {
      * @date 2026-01-26
      */
     public SqlExecutionResult execute(String tenantId, String question, String requestSource) {
+        AgentExecutionContext context = new AgentExecutionContext(
+                RequestTraceContext.resolveRequestId(),
+                RequestTraceContext.resolveRequestId(),
+                tenantId,
+                TenantContext.getUserId(),
+                TenantContext.getConversationId()
+        );
+        return execute(context, question, requestSource);
+    }
+
+    /**
+     * 使用显式上下文执行自然语言查询。
+     *
+     * @param context Agent 执行上下文
+     * @param question 用户问题
+     * @param requestSource 请求来源
+     * @return 执行结果
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    public SqlExecutionResult execute(
+            AgentExecutionContext context,
+            String question,
+            String requestSource
+    ) {
+        return executeInternal(context, question, requestSource, recoveryPolicy.resolveMaxAttempts());
+    }
+
+    @Override
+    public AgentPluginDescriptor descriptor() {
+        return PLUGIN_DESCRIPTOR;
+    }
+
+    @Override
+    public Class<SqlQueryTask> inputType() {
+        return SqlQueryTask.class;
+    }
+
+    @Override
+    public Class<SqlExecutionResult> outputType() {
+        return SqlExecutionResult.class;
+    }
+
+    @Override
+    public SqlExecutionResult execute(
+            AgentExecutionContext context,
+            AgentRunControl control,
+            SqlQueryTask input
+    ) {
+        control.assertWithinDeadline();
+        int maxAttempts = Math.min(recoveryPolicy.resolveMaxAttempts(), control.maxSqlAttempts());
+        return executeInternal(context, input.question(), input.requestSource(), maxAttempts);
+    }
+
+    private SqlExecutionResult executeInternal(
+            AgentExecutionContext context,
+            String question,
+            String requestSource,
+            int maxAttempts
+    ) {
+        String tenantId = context.tenantId();
         SqlExecuteLogCommand logCommand = new SqlExecuteLogCommand();
         List<ChatTraceStep> trace = new ArrayList<>();
-        logCommand.setRequestId(RequestTraceContext.resolveRequestId());
+        logCommand.setRequestId(context.requestId());
         logCommand.setTenantId(tenantId);
-        logCommand.setUserId(TenantContext.getUserId());
+        logCommand.setUserId(context.userId());
         logCommand.setQuestion(question);
         logCommand.setRequestSource(requestSource);
         LlmTraceContext.clear();
         sqlTaskTracker.start(tenantId);
         appendTrace(trace, TRACE_TYPE_ACTION, "SQL 架构师接收问题", "已接收查询问题，将基于租户上下文、语义字典和历史会话生成 SQL 方案。",
                 TRACE_STATUS_SUCCESS, 1, AgentRole.ARCHITECT, null);
+        RuntimeException primaryFailure = null;
         try {
             TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId)
                     .orElseThrow(TenantDbConfigErrors::missingConfig);
-            return executeWithRetry(config, tenantId, question, logCommand, trace);
-        } catch (Exception ex) {
+            return executeWithRetry(config, tenantId, question, logCommand, trace, maxAttempts);
+        } catch (RuntimeException ex) {
+            primaryFailure = ex;
             fillFailureLog(logCommand, null, ex.getMessage());
             appendTrace(trace, TRACE_TYPE_OBSERVATION, "执行链路中断", "系统在准备执行环境时发生异常，未能进入 SQL 生成流程。",
                     TRACE_STATUS_FAILURE, 1, AgentRole.SYSTEM, null);
             throw ex;
         } finally {
-            finalizeBillingAndAudit(tenantId, logCommand);
-            LlmTraceContext.clear();
-            sqlTaskTracker.finish(tenantId);
+            try {
+                try {
+                    finalizeBillingAndAudit(tenantId, logCommand);
+                } catch (RuntimeException finalizationFailure) {
+                    if (primaryFailure == null) {
+                        throw finalizationFailure;
+                    }
+                    primaryFailure.addSuppressed(finalizationFailure);
+                }
+            } finally {
+                LlmTraceContext.clear();
+                sqlTaskTracker.finish(tenantId);
+            }
         }
     }
 
@@ -123,10 +213,10 @@ public class SmartSqlExecutor {
             String tenantId,
             String question,
             SqlExecuteLogCommand logCommand,
-            List<ChatTraceStep> trace
+            List<ChatTraceStep> trace,
+            int maxAttempts
     ) {
         String recoveryObservation = null;
-        int maxAttempts = recoveryPolicy.resolveMaxAttempts();
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 return executeOnce(config, tenantId, question, recoveryObservation, logCommand, trace, attempt);
@@ -198,40 +288,50 @@ public class SmartSqlExecutor {
         appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveCandidateTitle(attempt), "SQL 架构师已生成候选 SQL，准备交由合规审计员校验。",
                 TRACE_STATUS_SUCCESS, attempt, AgentRole.ARCHITECT, generationCostMs);
 
-        String rewrittenSql;
+        GuardedQueryResult queryResult;
         try {
-            long auditStart = System.currentTimeMillis();
-            rewrittenSql = complianceAuditor.audit(rawSql, config, tenantId);
-            long auditCostMs = System.currentTimeMillis() - auditStart;
-            appendTrace(trace, TRACE_TYPE_OBSERVATION, "合规审计通过", "合规审计员已完成租户隔离改写与安全校验，允许进入数据库执行。",
-                    TRACE_STATUS_SUCCESS, attempt, AgentRole.AUDITOR, auditCostMs);
-        } catch (Exception exception) {
-            fillFailureLog(logCommand, rawSql, exception.getMessage());
-            appendTrace(trace, TRACE_TYPE_OBSERVATION, "合规审计拒绝", "合规审计员拒绝该候选 SQL，系统不会执行数据库查询。",
-                    TRACE_STATUS_FAILURE, attempt, AgentRole.AUDITOR, null);
-            throw new SqlExecutionException(exception.getMessage(), rawSql);
-        }
-        try {
-            appendTrace(trace, TRACE_TYPE_ACTION, resolveExecuteTitle(attempt), "已通过合规审计，正在执行受控 SQL 查询。",
-                    TRACE_STATUS_SUCCESS, attempt, AgentRole.SYSTEM, null);
-            long start = System.currentTimeMillis();
-            List<Map<String, Object>> data = jdbcTemplate.queryForList(rewrittenSql);
-            long costMs = System.currentTimeMillis() - start;
-            logCommand.setExecutedSql(rewrittenSql);
-            logCommand.setExecuteCostMs(costMs);
+            queryResult = guardedQueryExecutor.execute(
+                    new CandidateSql(rawSql),
+                    config,
+                    tenantId,
+                    new GuardedQueryEventSink() {
+                        @Override
+                        public void onAuditApproved(String approvedSql, long auditDurationMs) {
+                            appendTrace(trace, TRACE_TYPE_OBSERVATION, "合规审计通过",
+                                    "合规审计员已完成租户隔离改写与安全校验，允许进入数据库执行。",
+                                    TRACE_STATUS_SUCCESS, attempt, AgentRole.AUDITOR, auditDurationMs);
+                        }
+
+                        @Override
+                        public void onQueryStarted(String approvedSql) {
+                            appendTrace(trace, TRACE_TYPE_ACTION, resolveExecuteTitle(attempt),
+                                    "已通过合规审计，正在执行受控 SQL 查询。",
+                                    TRACE_STATUS_SUCCESS, attempt, AgentRole.SYSTEM, null);
+                        }
+                    }
+            );
+            List<Map<String, Object>> data = queryResult.data();
+            logCommand.setExecutedSql(queryResult.approvedSql());
+            logCommand.setExecuteCostMs(queryResult.queryDurationMs());
             logCommand.setResultRows(data == null ? 0 : data.size());
             logCommand.setSuccess(true);
             logCommand.setErrorMessage(null);
             appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveResultTitle(attempt), "查询成功，返回 " + resolveRowCount(data) + " 行数据。",
-                    TRACE_STATUS_SUCCESS, attempt, AgentRole.SYSTEM, costMs);
+                    TRACE_STATUS_SUCCESS, attempt, AgentRole.SYSTEM, queryResult.queryDurationMs());
             appendTrace(trace, TRACE_TYPE_FINAL, "SQL 执行完成", resolveFinalContent(attempt, data),
                     TRACE_STATUS_SUCCESS, attempt, AgentRole.SYSTEM, null);
-            return SqlExecutionResult.success(rewrittenSql, data, trace);
-        } catch (Exception ex) {
-            fillFailureLog(logCommand, rewrittenSql, ex.getMessage());
+            return SqlExecutionResult.success(queryResult.approvedSql(), data, trace);
+        } catch (GuardedQueryException exception) {
+            if (exception.getStage() == GuardedQueryStage.AUDIT) {
+                fillFailureLog(logCommand, rawSql, exception.getMessage());
+                appendTrace(trace, TRACE_TYPE_OBSERVATION, "合规审计拒绝", "合规审计员拒绝该候选 SQL，系统不会执行数据库查询。",
+                        TRACE_STATUS_FAILURE, attempt, AgentRole.AUDITOR, exception.getAuditDurationMs());
+                throw new SqlExecutionException(exception.getMessage(), rawSql);
+            }
+            fillFailureLog(logCommand, exception.getSql(), exception.getMessage());
             appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveResultTitle(attempt), resolveFailureContent(attempt),
                     TRACE_STATUS_FAILURE, attempt, AgentRole.SYSTEM, null);
-            throw new SqlExecutionException(ex.getMessage(), rewrittenSql);
+            throw new SqlExecutionException(exception.getMessage(), exception.getSql());
         }
     }
 
@@ -291,7 +391,7 @@ public class SmartSqlExecutor {
     }
 
     /**
-     * 结束执行后处理计费与审计日志，避免非核心流程异常反向影响主链路。
+     * 结束执行后处理计费与审计日志。
      *
      * @param tenantId   租户标识
      * @param logCommand 日志对象
@@ -299,17 +399,27 @@ public class SmartSqlExecutor {
      * @date 2026-02-26
      */
     private void finalizeBillingAndAudit(String tenantId, SqlExecuteLogCommand logCommand) {
+        RuntimeException settlementFailure = null;
         try {
             tenantBillingService.charge(tenantId, logCommand);
         } catch (Exception ex) {
             log.error("执行后计费失败: tenantId={}, requestId={}", tenantId,
                     logCommand == null ? null : logCommand.getRequestId(), ex);
+            settlementFailure = new AgentBillingSettlementException("执行后计费失败", ex);
         }
         try {
             sqlExecuteLogService.record(logCommand);
         } catch (Exception ex) {
             log.error("执行日志写入失败: tenantId={}, requestId={}", tenantId,
                     logCommand == null ? null : logCommand.getRequestId(), ex);
+            if (settlementFailure == null) {
+                settlementFailure = new AgentAuditPersistenceException("执行日志写入失败", ex);
+            } else {
+                settlementFailure.addSuppressed(new AgentAuditPersistenceException("执行日志写入失败", ex));
+            }
+        }
+        if (settlementFailure != null) {
+            throw settlementFailure;
         }
     }
 

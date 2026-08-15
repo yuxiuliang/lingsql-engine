@@ -1,6 +1,6 @@
 package com.lingsql.executor;
 
-import com.lingsql.llm.LlmClient;
+import com.lingsql.llm.IModelGateway;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -19,7 +19,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ResultRefiner {
 
-    private final LlmClient llmClient;
+    private final IModelGateway modelGateway;
     private static final String REFINE_FALLBACK_MESSAGE = "生成答复失败，请稍后重试。";
     private static final int MAX_REFINE_ROWS = 20;
     private static final int MAX_REFINE_COLUMNS = 20;
@@ -69,7 +69,7 @@ public class ResultRefiner {
                 "错误原因: " + safe(result.getErrorMessage()) + "\n" +
                 "查询结果: " + dataStr;
         try {
-            return new ResultRefinement(llmClient.chat(REFINER_PROMPT, userPrompt), true,
+            return new ResultRefinement(modelGateway.chat(REFINER_PROMPT, userPrompt), true,
                     System.currentTimeMillis() - start);
         } catch (Exception ex) {
             log.warn("业务分析师生成答复失败，已使用降级答复", ex);

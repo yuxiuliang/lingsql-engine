@@ -2,7 +2,7 @@ package com.lingsql.metadata.service;
 
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
-import com.lingsql.llm.LlmClient;
+import com.lingsql.llm.IModelGateway;
 import com.lingsql.metadata.entity.MetadataExt;
 import com.lingsql.metadata.model.AiSuggestRequest;
 import com.lingsql.metadata.model.AiSuggestResponse;
@@ -34,7 +34,7 @@ import java.util.Optional;
 public class MetadataExtService {
 
     private final MetadataExtRepository metadataExtRepository;
-    private final LlmClient llmClient;
+    private final IModelGateway modelGateway;
     private final ObjectMapper objectMapper;
 
     /**
@@ -195,7 +195,7 @@ public class MetadataExtService {
         String systemPrompt = "你是数据库字段语义解析助手，只输出 JSON 数组，元素格式为 {\"columnName\":\"字段名\",\"comment\":\"中文含义\"}，不要任何额外文字。";
         String userPrompt = buildPrompt(request);
         try {
-            String raw = llmClient.chat(systemPrompt, userPrompt);
+            String raw = modelGateway.chat(systemPrompt, userPrompt);
             List<AiSuggestResponse.SuggestItem> items = objectMapper.readValue(raw,
                     new TypeReference<List<AiSuggestResponse.SuggestItem>>() {
                     });
