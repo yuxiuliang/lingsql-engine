@@ -8,6 +8,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -81,7 +82,7 @@ public class PhysicalBillingResolutionImpl implements IPhysicalBillingResolution
                     "仅 UNKNOWN 物理调用允许裁决，当前状态: " + invocation.getState());
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
         ResolutionAmounts amounts = command.resolutionType() == PhysicalBillingResolutionType.CONFIRMED_USAGE
                 ? settleConfirmedUsage(invocation, command, now)
                 : cancelConfirmedNotBilled(invocation, command, now);
