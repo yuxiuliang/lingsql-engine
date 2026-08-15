@@ -6,8 +6,9 @@ set -euo pipefail
 log_error() { echo "[ERROR] $*" >&2; }
 
 main() {
-  local deploy_base run_dir slot port service release_id active_slot old_service health_url code
+  local deploy_base run_dir script_dir slot port service release_id active_slot old_service health_url code
   deploy_base="${LINGSQL_DEPLOY_BASE:-/opt/lingsql}"
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   command -v curl >/dev/null 2>&1 || { log_error "缺少命令: curl"; exit 1; }
   run_dir="${deploy_base}/run"
   for file in candidate_slot candidate_port candidate_service candidate_release_id candidate_artifact_sha256; do
@@ -22,6 +23,8 @@ main() {
   [[ "${release_id}" =~ ^[A-Za-z0-9._-]+$ ]] || { log_error "候选发布ID非法"; exit 1; }
   [[ -n "${service}" ]] || { log_error "候选服务名为空"; exit 1; }
   [[ -n "${LINGSQL_SWITCH_HOOK:-}" ]] || { log_error "提升候选必须配置 LINGSQL_SWITCH_HOOK"; exit 1; }
+  [[ -n "${EXPECTED_RELEASE_COMMIT:-}" ]] || { log_error "提升候选必须提供 EXPECTED_RELEASE_COMMIT"; exit 1; }
+  [[ -n "${PILOT_CONTROL_TOKEN:-}" ]] || { log_error "提升候选必须提供 PILOT_CONTROL_TOKEN"; exit 1; }
 
   health_url="http://127.0.0.1:${port}${LINGSQL_HEALTH_PATH:-/actuator/health/readiness}"
   code="$(curl -sS -o /dev/null -m 5 -w '%{http_code}' "${health_url}" || true)"
@@ -33,6 +36,8 @@ main() {
   old_service="${LINGSQL_BLUE_SERVICE:-lingsql-blue}"
   [[ "${active_slot}" == "green" ]] && old_service="${LINGSQL_GREEN_SERVICE:-lingsql-green}"
 
+  # 先完整复核，再以不可覆盖方式预留永久收据和本地证据，避免切流后才发现冲突。
+  bash "${script_dir}/release_candidate_receipt.sh" reserve
   bash -lc "${LINGSQL_SWITCH_HOOK} ${slot} ${port}"
   printf '%s' "${slot}" > "${run_dir}/active_slot"
   printf '%s' "${port}" > "${run_dir}/active_port"
@@ -40,6 +45,7 @@ main() {
   if [[ "${LINGSQL_STOP_OLD_SLOT:-false}" == "true" ]] && command -v systemctl >/dev/null 2>&1; then
     systemctl stop "${old_service}"
   fi
+  bash "${script_dir}/release_candidate_receipt.sh" finalize
   rm -f -- "${run_dir}/candidate_slot" "${run_dir}/candidate_port" "${run_dir}/candidate_service" \
     "${run_dir}/candidate_release_id" "${run_dir}/candidate_artifact_sha256"
   echo "[INFO] 候选已提升并切流: release=${release_id}, slot=${slot}, port=${port}"

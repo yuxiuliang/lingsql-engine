@@ -92,6 +92,14 @@ validate_sample_query() {
   fi
   local upper_query="${normalized^^}"
   local forbidden_regex='(^|[[:space:]])(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|LOAD|INTO|OUTFILE|DUMPFILE|CALL|DO|SET|SLEEP|BENCHMARK|LOAD_FILE)([[:space:]()]|$)'
+  if ! [[ "${upper_query}" =~ (^|[[:space:]])FROM[[:space:]] ]]; then
+    log_error "样例指纹查询必须从真实业务表读取数据，禁止使用纯常量 SELECT"
+    exit 1
+  fi
+  if [[ "${upper_query}" == *"INFORMATION_SCHEMA"* ]]; then
+    log_error "样例指纹查询禁止读取 information_schema"
+    exit 1
+  fi
   if [[ "${upper_query}" == *"/*"* || "${upper_query}" == *"--"* || "${upper_query}" == *"#"* \
       || "${upper_query}" =~ ${forbidden_regex} ]]; then
     log_error "样例指纹查询包含禁止的写入或管理关键字"
@@ -160,10 +168,15 @@ sample_fingerprint() {
   local user="$1"
   local password="$2"
   local database="$3"
-  local output
+  local output sample_row_count
   output="$(mysql_query "${user}" "${password}" "${database}" "${SAMPLE_QUERY}")"
   if [[ -z "${output}" ]]; then
     log_error "数据库 ${database} 的样例指纹查询返回为空"
+    return 1
+  fi
+  sample_row_count="$(awk -F '\t' 'NR == 1 {print $1; exit}' <<< "${output}")"
+  if ! [[ "${sample_row_count}" =~ ^[1-9][0-9]*$ ]]; then
+    log_error "数据库 ${database} 的样例指纹首列必须是正整数业务行数"
     return 1
   fi
   printf '%s' "${output}" | sha256sum | awk '{print $1}'

@@ -128,6 +128,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
       - name: Download Artifact
         uses: actions/download-artifact@v8
         with:
@@ -187,6 +192,7 @@ jobs:
         env:
           RELEASE_GATE_BILLING_TOKEN: ${{ secrets.RELEASE_GATE_BILLING_TOKEN }}
           RELEASE_GATE_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
+          RELEASE_GATE_RECEIPT_HMAC_KEY: ${{ secrets.RELEASE_GATE_RECEIPT_HMAC_KEY }}
           PILOT_TENANT_ID: ${{ secrets.RELEASE_GATE_PILOT_TENANT_ID }}
           PILOT_USERNAME: ${{ secrets.RELEASE_GATE_PILOT_USERNAME }}
           PILOT_PASSWORD: ${{ secrets.RELEASE_GATE_PILOT_PASSWORD }}
@@ -194,13 +200,17 @@ jobs:
           BACKUP_RESTORE_RESTORE_PASSWORD: ${{ secrets.RELEASE_GATE_RESTORE_PASSWORD }}
           BACKUP_RESTORE_SAMPLE_QUERY: ${{ secrets.RELEASE_GATE_BACKUP_SAMPLE_QUERY }}
         run: |
-          for name in RELEASE_GATE_BILLING_TOKEN RELEASE_GATE_CONTROL_TOKEN PILOT_TENANT_ID PILOT_USERNAME PILOT_PASSWORD \
+          for name in RELEASE_GATE_BILLING_TOKEN RELEASE_GATE_CONTROL_TOKEN RELEASE_GATE_RECEIPT_HMAC_KEY PILOT_TENANT_ID PILOT_USERNAME PILOT_PASSWORD \
             BACKUP_RESTORE_BACKUP_PASSWORD BACKUP_RESTORE_RESTORE_PASSWORD BACKUP_RESTORE_SAMPLE_QUERY; do
             if [ -z "${!name}" ]; then
               echo "::error::严格发布门禁缺少 secret ${name}。"
               exit 1
             fi
           done
+          if ! [[ "${RELEASE_GATE_RECEIPT_HMAC_KEY}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::RELEASE_GATE_RECEIPT_HMAC_KEY 必须为 64 位小写十六进制密钥。"
+            exit 1
+          fi
 
       - name: Run Required Database Migration Hook
         env:
@@ -244,6 +254,7 @@ jobs:
           PILOT_USERNAME: ${{ secrets.RELEASE_GATE_PILOT_USERNAME }}
           PILOT_PASSWORD: ${{ secrets.RELEASE_GATE_PILOT_PASSWORD }}
           PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
+          CANDIDATE_RECEIPT_HMAC_KEY: ${{ secrets.RELEASE_GATE_RECEIPT_HMAC_KEY }}
           PILOT_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
           PILOT_REPORT_FILE: ./reports/pilot_acceptance.md
           GQ_SUITE_FILE: ${{ vars.RELEASE_GATE_GQ_SUITE_FILE }}
@@ -251,7 +262,16 @@ jobs:
           GQ_COMPARATOR_JAR: ./dist/lingsql-engine.jar
           GQ_PHASE: FIRST
           GQ_OUTPUT_DIR: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}
+          CANDIDATE_GQ_EVIDENCE_FILE: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}/evidence.jsonl
+          CANDIDATE_GQ_REPORT_FILE: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}/report.md
+          CANDIDATE_RUNTIME_REPORT_FILE: ./reports/runtime_fingerprint.md
+          CANDIDATE_PILOT_REPORT_FILE: ./reports/pilot_acceptance.md
+          CANDIDATE_BACKUP_REPORT_FILE: ./reports/backup_restore_acceptance.md
+          CANDIDATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
+          CANDIDATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
           EXPECTED_RELEASE_COMMIT: ${{ github.sha }}
+          EXPECTED_DATA_SNAPSHOT_ID: ${{ vars.LINGSQL_RUNTIME_DATA_SNAPSHOT_ID }}
+          EXPECTED_MODEL_ROUTE_FINGERPRINT: ${{ vars.RELEASE_GATE_MODEL_ROUTE_FINGERPRINT }}
           RUNTIME_FINGERPRINT_REPORT_FILE: ./reports/runtime_fingerprint.md
           LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
           BACKUP_RESTORE_MYSQL_HOST: ${{ vars.RELEASE_GATE_MYSQL_HOST }}
@@ -276,13 +296,32 @@ jobs:
           export BILLING_READINESS_URL="${BASE_URL}/api/v1/admin/billing/readiness/snapshot"
           ./scripts/ops/runtime_fingerprint_guard.sh
           ./scripts/ops/golden_question_acceptance.sh
+          # 40 题可能持续较长时间，结束后必须再次证明请求仍命中同一候选提交。
+          ./scripts/ops/runtime_fingerprint_guard.sh
           ./scripts/ops/release_gate.sh
+          ./scripts/ops/runtime_fingerprint_guard.sh
+          bash ./scripts/ops/release_candidate_receipt.sh create
 
       - name: Promote Candidate
         id: promote_candidate
         env:
           LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
           LINGSQL_SWITCH_HOOK: ${{ vars.LINGSQL_SWITCH_HOOK }}
+          PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
+          CANDIDATE_RECEIPT_HMAC_KEY: ${{ secrets.RELEASE_GATE_RECEIPT_HMAC_KEY }}
+          PILOT_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
+          EXPECTED_RELEASE_COMMIT: ${{ github.sha }}
+          EXPECTED_DATA_SNAPSHOT_ID: ${{ vars.LINGSQL_RUNTIME_DATA_SNAPSHOT_ID }}
+          EXPECTED_MODEL_ROUTE_FINGERPRINT: ${{ vars.RELEASE_GATE_MODEL_ROUTE_FINGERPRINT }}
+          GQ_SUITE_FILE: ${{ vars.RELEASE_GATE_GQ_SUITE_FILE }}
+          GQ_EXPECTED_SUITE_SHA256: ${{ vars.RELEASE_GATE_GQ_SUITE_SHA256 }}
+          CANDIDATE_GQ_EVIDENCE_FILE: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}/evidence.jsonl
+          CANDIDATE_GQ_REPORT_FILE: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}/report.md
+          CANDIDATE_RUNTIME_REPORT_FILE: ./reports/runtime_fingerprint.md
+          CANDIDATE_PILOT_REPORT_FILE: ./reports/pilot_acceptance.md
+          CANDIDATE_BACKUP_REPORT_FILE: ./reports/backup_restore_acceptance.md
+          CANDIDATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
+          CANDIDATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
         run: ./scripts/ops/release_candidate_promote.sh
 
       - name: Post Promote Smoke And Auto Rollback
@@ -303,6 +342,21 @@ jobs:
         env:
           LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
           LINGSQL_CANDIDATE_ABORT_HOOK: ${{ vars.LINGSQL_CANDIDATE_ABORT_HOOK }}
+          PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
+          CANDIDATE_RECEIPT_HMAC_KEY: ${{ secrets.RELEASE_GATE_RECEIPT_HMAC_KEY }}
+          PILOT_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
+          EXPECTED_RELEASE_COMMIT: ${{ github.sha }}
+          EXPECTED_DATA_SNAPSHOT_ID: ${{ vars.LINGSQL_RUNTIME_DATA_SNAPSHOT_ID }}
+          EXPECTED_MODEL_ROUTE_FINGERPRINT: ${{ vars.RELEASE_GATE_MODEL_ROUTE_FINGERPRINT }}
+          GQ_SUITE_FILE: ${{ vars.RELEASE_GATE_GQ_SUITE_FILE }}
+          GQ_EXPECTED_SUITE_SHA256: ${{ vars.RELEASE_GATE_GQ_SUITE_SHA256 }}
+          CANDIDATE_GQ_EVIDENCE_FILE: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}/evidence.jsonl
+          CANDIDATE_GQ_REPORT_FILE: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}/report.md
+          CANDIDATE_RUNTIME_REPORT_FILE: ./reports/runtime_fingerprint.md
+          CANDIDATE_PILOT_REPORT_FILE: ./reports/pilot_acceptance.md
+          CANDIDATE_BACKUP_REPORT_FILE: ./reports/backup_restore_acceptance.md
+          CANDIDATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
+          CANDIDATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
         run: ./scripts/ops/release_candidate_abort.sh
 
       - name: Upload Gate Report
