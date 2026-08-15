@@ -48,6 +48,14 @@ public class BillingCommercialReadinessView {
     private long ledgerFailed;
 
     /**
+     * 超时未结算的遗留账本事件数量。
+     *
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    private long stalePendingCount;
+
+    /**
      * 账本失败率，范围 [0,1]。
      *
      * @author 余炘洋

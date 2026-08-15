@@ -22,6 +22,14 @@ public class SqlExecuteLogView {
     private Long id;
 
     /**
+     * 请求ID。
+     *
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    private String requestId;
+
+    /**
      * 租户ID。
      *
      * @author 余炘洋

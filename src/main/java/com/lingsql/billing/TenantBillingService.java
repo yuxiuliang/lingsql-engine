@@ -20,12 +20,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 租户计费服务。
@@ -50,7 +52,6 @@ public class TenantBillingService {
     private final BillingPolicy billingPolicy;
     private final TenantBillingOverrideRepository tenantBillingOverrideRepository;
     private final BillingLedgerService billingLedgerService;
-    private final BillingBalanceService billingBalanceService;
     private final TenantLifecycleService tenantLifecycleService;
 
     /**
@@ -74,8 +75,7 @@ public class TenantBillingService {
             return BillingCheckResult.deny(tenantLifecycleService.resolveDenyMessage(lifecycle));
         }
         long balance = resolveBalance(tenant.getQuotaBalance());
-        long cachedBalance = billingBalanceService.getAvailableBalance(tenantId, balance);
-        if (cachedBalance <= 0) {
+        if (balance <= 0) {
             return BillingCheckResult.deny(MESSAGE_UPGRADE);
         }
         BillingPolicySnapshot snapshot = billingPolicy.currentSnapshot();
@@ -124,30 +124,19 @@ public class TenantBillingService {
         }
         long reserved = resolveReservedCost(command.getReservedCostAmount());
         if (reserved <= 0) {
-            return BillingChargeResult.skip();
-        }
-        TenantBillingOverride override = tenantBillingOverrideRepository
-                .findByTenantIdAndStatus(tenantId, OVERRIDE_ACTIVE_STATUS)
-                .orElse(null);
-        List<BillingChargeItem> chargeItems = buildChargeItems(tokenUsage, tenant, override);
-        if (chargeItems.isEmpty()) {
-            return BillingChargeResult.skip();
-        }
-        long costAmount = chargeItems.stream().mapToLong(BillingChargeItem::costAmount).sum();
-        if (costAmount <= 0) {
-            return BillingChargeResult.skip();
+            throw new BizException(ErrorCode.BILLING_INVALID, "模型调用缺少有效预扣记录，请人工核对账本");
         }
         String requestId = resolveRequestId(command);
         int closeSeq = command.nextBillingEventSeq();
-        boolean closeRecorded = billingLedgerService.recordCloseEvents(requestId, tenantId, closeSeq, chargeItems);
-        if (!closeRecorded) {
-            billingBalanceService.refundBalanceRequired(tenantId, reserved);
-            command.setReservedCostAmount(0L);
-            command.setCostAmount(0L);
-            throw new BizException(ErrorCode.BILLING_INVALID, "计费账本结算失败，请稍后重试");
-        }
+        BillingChargeResult closeResult = billingLedgerService.closeAppliedReservation(
+                requestId,
+                tenantId,
+                closeSeq,
+                tokenUsage,
+                tenant.getQuotaBalance()
+        );
+        long costAmount = closeResult.costAmount();
         command.setCostAmount(costAmount);
-        command.setBillingVersion(chargeItems.getFirst().policyVersion());
         return BillingChargeResult.success(costAmount, reserved, reserved - costAmount);
     }
 
@@ -197,21 +186,58 @@ public class TenantBillingService {
             return;
         }
         long balance = resolveBalance(tenant.getQuotaBalance());
-        BillingChargeResult result = billingBalanceService.reserveBalance(tenantId, deltaCost, balance);
-        if (!result.charged()) {
-            throw new BizException(ErrorCode.BILLING_INVALID, "余额不足，请升级套餐");
-        }
         String requestId = resolveRequestId(command);
         int eventSeq = command.nextBillingEventSeq();
-        boolean recorded = billingLedgerService.recordReserveEvents(requestId, tenantId, eventSeq, deltaItems);
-        if (!recorded) {
-            billingBalanceService.refundBalance(tenantId, deltaCost);
-            throw new BizException(ErrorCode.BILLING_INVALID, "账本写入失败，请稍后重试");
+        BillingChargeResult result = billingLedgerService.reserveAppliedBalance(
+                requestId,
+                tenantId,
+                eventSeq,
+                deltaItems,
+                balance
+        );
+        if (!result.charged()) {
+            throw new BizException(ErrorCode.BILLING_INVALID, "余额不足，请升级套餐");
         }
         applyReservedUsage(command, deltaUsage);
         command.setReservedCostAmount(totalCost);
         command.setCostAmount(totalCost);
         command.setBillingVersion(totalItems.getFirst().policyVersion());
+    }
+
+    /**
+     * 对工作流中不经过 SQL 执行器的单次模型调用完成幂等计费。
+     *
+     * @param tenantId 租户ID
+     * @param workflowRequestId 工作流请求ID
+     * @param stage 调用阶段
+     * @param modelName 模型名称
+     * @param tokenCount Token 总量
+     * @return 计费结果
+     */
+    public BillingChargeResult chargeModelUsage(String tenantId,
+                                                 String workflowRequestId,
+                                                 String stage,
+                                                 String modelName,
+                                                 Integer tokenCount) {
+        if (!StringUtils.hasText(tenantId)
+                || !StringUtils.hasText(workflowRequestId)
+                || !StringUtils.hasText(stage)
+                || tokenCount == null
+                || tokenCount <= 0) {
+            return BillingChargeResult.skip();
+        }
+        String invocationKey = tenantId.trim() + ":" + workflowRequestId.trim() + ":" + stage.trim();
+        String billingRequestId = UUID.nameUUIDFromBytes(invocationKey.getBytes(StandardCharsets.UTF_8))
+                .toString()
+                .replace("-", "");
+        SqlExecuteLogCommand command = new SqlExecuteLogCommand();
+        command.setRequestId(billingRequestId);
+        command.setTenantId(tenantId.trim());
+        command.setModelName(normalizeModelName(modelName));
+        command.setTokenCount(tokenCount);
+        command.addModelTokens(modelName, tokenCount);
+        reserveCost(tenantId, command);
+        return charge(tenantId, command);
     }
 
     /**

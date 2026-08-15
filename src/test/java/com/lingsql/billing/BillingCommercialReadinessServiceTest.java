@@ -49,7 +49,7 @@ class BillingCommercialReadinessServiceTest {
         assertEquals(200L, view.getLedgerTotal());
         assertEquals(2L, view.getLedgerFailed());
         assertEquals(1L, view.getOpenReconcileCount());
-        assertEquals(4, view.getChecks().size());
+        assertEquals(6, view.getChecks().size());
     }
 
     @Test

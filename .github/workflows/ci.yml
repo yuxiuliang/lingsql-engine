@@ -135,6 +135,8 @@ jobs:
             "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1 AND version = '20260815.02';")" = "1"
           test "$(docker compose exec -T mysql mysql -N -B -uroot -pci-root-password lingsql_legacy_ci -e \
             "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1 AND version = '20260815.03';")" = "1"
+          test "$(docker compose exec -T mysql mysql -N -B -uroot -pci-root-password lingsql_legacy_ci -e \
+            "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1 AND version = '20260815.04';")" = "1"
 
       - name: Stop Migration Stack
         if: always()

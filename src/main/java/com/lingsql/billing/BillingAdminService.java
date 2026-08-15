@@ -1,14 +1,15 @@
 package com.lingsql.billing;
 
-import tools.jackson.databind.ObjectMapper;
 import com.lingsql.billing.entity.BillingPolicyVersion;
 import com.lingsql.billing.entity.TenantBillingOverride;
-import com.lingsql.common.exception.BizException;
-import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.billing.model.BillingLedgerEvidenceView;
 import com.lingsql.billing.model.BillingPolicyVersionRequest;
 import com.lingsql.billing.model.TenantBillingOverrideRequest;
+import com.lingsql.billing.repository.BillingLedgerEventRepository;
 import com.lingsql.billing.repository.BillingPolicyVersionRepository;
 import com.lingsql.billing.repository.TenantBillingOverrideRepository;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
@@ -20,6 +21,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Locale;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 计费配置管理服务。
@@ -38,6 +40,7 @@ public class BillingAdminService {
     private final BillingPolicyVersionRepository policyRepository;
     private final TenantBillingOverrideRepository overrideRepository;
     private final BillingOverrideService billingOverrideService;
+    private final BillingLedgerEventRepository ledgerEventRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -173,6 +176,43 @@ public class BillingAdminService {
      */
     public TenantBillingOverride upsertOverride(String tenantId, TenantBillingOverrideRequest request) {
         return billingOverrideService.saveTenantOverride(tenantId, request);
+    }
+
+    /**
+     * 查询一组真实请求对应的账本证据。
+     *
+     * @param tenantId 租户ID
+     * @param requestIds 请求ID
+     * @return 账本证据
+     */
+    public BillingLedgerEvidenceView ledgerEvidence(String tenantId, List<String> requestIds) {
+        if (!StringUtils.hasText(tenantId) || requestIds == null || requestIds.isEmpty()) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户ID和请求ID不能为空");
+        }
+        List<String> normalized = requestIds.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .filter(value -> value.length() <= 64)
+                .distinct()
+                .limit(20)
+                .toList();
+        if (normalized.isEmpty()) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "请求ID格式不正确");
+        }
+        BillingLedgerEventRepository.LedgerEvidenceProjection evidence =
+                ledgerEventRepository.findLedgerEvidence(tenantId.trim(), normalized);
+        return new BillingLedgerEvidenceView(
+                normalized.size(),
+                projectionValue(evidence == null ? null : evidence.getMatchedRequestCount()),
+                projectionValue(evidence == null ? null : evidence.getEventCount()),
+                projectionValue(evidence == null ? null : evidence.getReserveCount()),
+                projectionValue(evidence == null ? null : evidence.getCloseCount()),
+                projectionValue(evidence == null ? null : evidence.getReserveAmount())
+        );
+    }
+
+    private long projectionValue(Long value) {
+        return value == null ? 0L : Math.max(0L, value);
     }
 
     private void applyPolicyRequest(BillingPolicyVersion entity, BillingPolicyVersionRequest request, boolean isCreate) {

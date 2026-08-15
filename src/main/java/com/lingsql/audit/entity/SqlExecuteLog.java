@@ -32,6 +32,15 @@ public class SqlExecuteLog {
     private Long id;
 
     /**
+     * 请求ID，用于关联账本、验收请求和执行审计。
+     *
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    @Column(name = "request_id", length = 64)
+    private String requestId;
+
+    /**
      * 租户ID。
      *
      * @author 余炘洋

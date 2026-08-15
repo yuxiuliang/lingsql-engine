@@ -272,6 +272,8 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
                 ? agentService.generateSql(tenantId, question)
                 : agentService.generateSqlWithRetry(tenantId, question, reason);
         long generationCostMs = System.currentTimeMillis() - generationStart;
+        applyModelTrace(logCommand);
+        tenantBillingService.reserveCost(tenantId, logCommand);
 
         if (rawSql == null || rawSql.isBlank() || rawSql.toUpperCase().startsWith("ERROR")) {
             String failureMessage = "ERROR:NO_SCHEMA_MATCH".equalsIgnoreCase(rawSql)
@@ -283,8 +285,6 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
             throw new SqlExecutionException(failureMessage, rawSql);
         }
         logCommand.setAiSql(rawSql);
-        applyModelTrace(logCommand);
-        tenantBillingService.reserveCost(tenantId, logCommand);
         appendTrace(trace, TRACE_TYPE_OBSERVATION, resolveCandidateTitle(attempt), "SQL 架构师已生成候选 SQL，准备交由合规审计员校验。",
                 TRACE_STATUS_SUCCESS, attempt, AgentRole.ARCHITECT, generationCostMs);
 
@@ -373,21 +373,25 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
         if (traceInfo == null) {
             return;
         }
-        logCommand.setModelProvider(traceInfo.getProviderName());
-        logCommand.setModelName(traceInfo.getModelName());
-        logCommand.setModelVersion(traceInfo.getModelVersion());
-        Integer tokens = traceInfo.getTokenCount();
-        if (tokens == null || tokens <= 0) {
-            return;
+        try {
+            logCommand.setModelProvider(traceInfo.getProviderName());
+            logCommand.setModelName(traceInfo.getModelName());
+            logCommand.setModelVersion(traceInfo.getModelVersion());
+            Integer tokens = traceInfo.getTokenCount();
+            if (tokens == null || tokens <= 0) {
+                return;
+            }
+            logCommand.addModelTokens(traceInfo.getModelName(), tokens);
+            Integer current = logCommand.getTokenCount();
+            if (current == null) {
+                logCommand.setTokenCount(tokens);
+                return;
+            }
+            long total = (long) current + tokens;
+            logCommand.setTokenCount(total > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) total);
+        } finally {
+            LlmTraceContext.clear();
         }
-        logCommand.addModelTokens(traceInfo.getModelName(), tokens);
-        Integer current = logCommand.getTokenCount();
-        if (current == null) {
-            logCommand.setTokenCount(tokens);
-            return;
-        }
-        long total = (long) current + tokens;
-        logCommand.setTokenCount(total > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) total);
     }
 
     /**

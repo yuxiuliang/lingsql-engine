@@ -59,7 +59,8 @@ public class BillingReconcileLogService {
         if (!StringUtils.hasText(requestId) || diffAmount <= 0) {
             return;
         }
-        Optional<BillingReconcileLog> last = repository.findTopByRequestIdOrderByCreateTimeDesc(requestId);
+        Optional<BillingReconcileLog> last = repository
+                .findTopByTenantIdAndRequestIdOrderByCreateTimeDesc(tenantId, requestId);
         if (last.isPresent()) {
             BillingReconcileLog existing = last.get();
             if (isSame(existing, reserveTotal, closeTotal, diffAmount, latestTime)) {

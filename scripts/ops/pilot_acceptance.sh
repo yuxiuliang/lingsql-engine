@@ -84,6 +84,21 @@ load_billing_snapshot() {
   jq -c '.data' <<< "${response}"
 }
 
+load_ledger_evidence() {
+  local token="$1"
+  local tenant_id="$2"
+  local request_ids="$3"
+  local tenant_encoded request_ids_encoded response
+  tenant_encoded="$(jq -rn --arg v "${tenant_id}" '$v|@uri')"
+  request_ids_encoded="$(jq -rn --arg v "${request_ids}" '$v|@uri')"
+  response="$(api_get "/api/v1/admin/billing/ledger/evidence?tenantId=${tenant_encoded}&requestIds=${request_ids_encoded}" "${token}")"
+  if [[ "$(jq -r '.code' <<< "${response}")" != "200" ]]; then
+    log_error "控制账号无法读取本次请求的计费账本证据。"
+    exit 2
+  fi
+  jq -c '.data' <<< "${response}"
+}
+
 main() {
   require_cmd curl
   require_cmd jq
@@ -117,7 +132,8 @@ main() {
   tmp_dir="$(mktemp -d)"
   trap "rm -r -- '${tmp_dir}'" EXIT
 
-  local question response sql row_count conversation_id expected_conversation_id
+  local question response sql row_count conversation_id expected_conversation_id request_id
+  local -a request_ids=()
   local passed=0
   local index=0
   local started_at
@@ -136,7 +152,10 @@ main() {
     sql="$(jq -r '.data.sql // empty' <<< "${response}")"
     row_count="$(jq -r '(.data.data // []) | length' <<< "${response}")"
     conversation_id="$(jq -r '.data.conversationId // empty' <<< "${response}")"
+    request_id="$(jq -r '.requestId // empty' <<< "${response}")"
     require_value "第 ${index} 条问数的会话 ID" "${conversation_id}"
+    require_value "第 ${index} 条问数的请求 ID" "${request_id}"
+    request_ids+=("${request_id}")
     if [[ -z "${expected_conversation_id:-}" ]]; then
       expected_conversation_id="${conversation_id}"
     elif [[ "${conversation_id}" != "${expected_conversation_id}" ]]; then
@@ -158,6 +177,7 @@ main() {
   shopt -u nocasematch
 
   local audit_total audit_increment billing_snapshot ledger_total ledger_increment billing_ready
+  local request_ids_csv ledger_evidence matched_request_count evidence_event_count reserve_count close_count
   audit_total="$(load_audit_total "${control_token}" "${PILOT_TENANT_ID}" "${user_id}")"
   audit_increment=$((audit_total - baseline_audit_total))
   if [[ "${audit_increment}" -lt 3 ]]; then
@@ -175,8 +195,19 @@ main() {
   done
   billing_ready="$(jq -r '.ready // false' <<< "${billing_snapshot}")"
   ledger_increment=$((ledger_total - baseline_ledger_total))
-  if [[ "${ledger_increment}" -le 0 || "${billing_ready}" != "true" ]]; then
-    log_error "本次请求没有产生计费账本增量或计费就绪检查未通过。"
+  request_ids_csv="$(IFS=,; echo "${request_ids[*]}")"
+  ledger_evidence="$(load_ledger_evidence "${control_token}" "${PILOT_TENANT_ID}" "${request_ids_csv}")"
+  matched_request_count="$(jq -r '.matchedRequestCount // 0' <<< "${ledger_evidence}")"
+  evidence_event_count="$(jq -r '.eventCount // 0' <<< "${ledger_evidence}")"
+  reserve_count="$(jq -r '.reserveCount // 0' <<< "${ledger_evidence}")"
+  close_count="$(jq -r '.closeCount // 0' <<< "${ledger_evidence}")"
+  if [[ "${ledger_increment}" -lt 6
+      || "${matched_request_count}" -ne 3
+      || "${evidence_event_count}" -lt 6
+      || "${reserve_count}" -lt 3
+      || "${close_count}" -lt 3
+      || "${billing_ready}" != "true" ]]; then
+    log_error "本次三个请求未形成可关联的 RESERVE/CLOSE 账本闭环，或计费就绪检查未通过。"
     exit 2
   fi
 
@@ -191,6 +222,8 @@ main() {
 - 真实问数通过: ${passed}/3
 - 本次新增 SQL 审计日志: ${audit_increment}
 - 本次新增计费账本事件: ${ledger_increment}
+- 关联请求数: ${matched_request_count}/3
+- 关联 RESERVE/CLOSE: ${reserve_count}/${close_count}
 - 计费就绪: ${billing_ready}
 - 验收结论: PASS
 

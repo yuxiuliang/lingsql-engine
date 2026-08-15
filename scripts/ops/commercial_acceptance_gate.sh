@@ -62,14 +62,7 @@ main() {
     true
   fi >> "${tmp_status}"
 
-  # 1) 商业闭环：计费商用验收快照
-  if run_step "商业闭环-计费验收" bash "${SCRIPT_DIR}/billing_readiness_guard.sh"; then
-    true
-  else
-    true
-  fi >> "${tmp_status}"
-
-  # 2) 业务闭环：登录、三条真实问数、SQL 审计与计费账本增量
+  # 1) 业务闭环：先产生本次登录、真实问数、SQL 审计与计费证据
   if is_true "${COMMERCIAL_REQUIRE_PILOT}"; then
     if run_step "业务闭环-真实问数" bash "${SCRIPT_DIR}/pilot_acceptance.sh"; then
       true
@@ -81,7 +74,21 @@ main() {
     echo "业务闭环-真实问数|SKIP" >> "${tmp_status}"
   fi
 
-  # 3) 可靠性：容量基线 + SLO
+  # 2) 商业闭环：基于刚产生的真实业务流量检查计费商用验收快照
+  if run_step "商业闭环-计费验收" bash "${SCRIPT_DIR}/billing_readiness_guard.sh"; then
+    true
+  else
+    true
+  fi >> "${tmp_status}"
+
+  # 3) 审计闭环：必须读取运行实例，静态配置存在不能证明 UNKNOWN/DEAD 为零
+  if run_step "审计闭环-持久投递健康" bash "${SCRIPT_DIR}/audit_delivery_guard.sh"; then
+    true
+  else
+    true
+  fi >> "${tmp_status}"
+
+  # 4) 可靠性：容量基线 + SLO
   if run_step "可靠性-容量基线" bash "${SCRIPT_DIR}/reliability_baseline.sh"; then
     true
   else
@@ -104,14 +111,14 @@ main() {
     fi
   fi
 
-  # 4) 合规安全：配置与最小权限复核
+  # 5) 合规安全：配置与最小权限复核
   if run_step "合规安全-门禁检查" bash "${SCRIPT_DIR}/security_compliance_guard.sh"; then
     true
   else
     true
   fi >> "${tmp_status}"
 
-  # 5) 运维值守：P1 演练闭环
+  # 6) 运维值守：P1 演练闭环
   if run_step "运维值守-P1演练" bash "${SCRIPT_DIR}/p1_incident_drill.sh"; then
     true
   else

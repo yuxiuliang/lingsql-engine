@@ -1,6 +1,8 @@
 package com.lingsql.executor;
 
 import com.lingsql.llm.IModelGateway;
+import com.lingsql.llm.LlmTraceContext;
+import com.lingsql.llm.LlmTraceInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -69,11 +71,23 @@ public class ResultRefiner {
                 "错误原因: " + safe(result.getErrorMessage()) + "\n" +
                 "查询结果: " + dataStr;
         try {
-            return new ResultRefinement(modelGateway.chat(REFINER_PROMPT, userPrompt), true,
-                    System.currentTimeMillis() - start);
+            LlmTraceContext.clear();
+            String answer = modelGateway.chat(REFINER_PROMPT, userPrompt);
+            LlmTraceInfo trace = LlmTraceContext.get();
+            return new ResultRefinement(
+                    answer,
+                    true,
+                    System.currentTimeMillis() - start,
+                    trace == null ? null : trace.getProviderName(),
+                    trace == null ? null : trace.getModelName(),
+                    trace == null ? null : trace.getModelVersion(),
+                    trace == null ? null : trace.getTokenCount()
+            );
         } catch (Exception ex) {
             log.warn("业务分析师生成答复失败，已使用降级答复", ex);
             return new ResultRefinement(REFINE_FALLBACK_MESSAGE, false, System.currentTimeMillis() - start);
+        } finally {
+            LlmTraceContext.clear();
         }
     }
 

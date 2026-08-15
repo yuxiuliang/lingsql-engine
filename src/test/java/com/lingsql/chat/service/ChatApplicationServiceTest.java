@@ -4,6 +4,7 @@ import com.lingsql.agent.orchestration.ControlledAgentOrchestratorImpl;
 import com.lingsql.agent.orchestration.AgentRunControl;
 import com.lingsql.agent.orchestration.SqlQueryTask;
 import com.lingsql.agent.plugin.AgentPluginExecutor;
+import com.lingsql.billing.TenantBillingService;
 import com.lingsql.chat.entity.ChatHistory;
 import com.lingsql.chat.model.ChatRequest;
 import com.lingsql.chat.model.ChatResult;
@@ -65,7 +66,11 @@ class ChatApplicationServiceTest {
                 .thenReturn(history);
 
         ChatApplicationService service = new ChatApplicationService(
-                new ControlledAgentOrchestratorImpl(pluginExecutor, resultRefiner),
+                new ControlledAgentOrchestratorImpl(
+                        pluginExecutor,
+                        resultRefiner,
+                        Mockito.mock(TenantBillingService.class)
+                ),
                 chatHistoryService,
                 chatMemoryService
         );
@@ -108,7 +113,11 @@ class ChatApplicationServiceTest {
                 .thenReturn(history);
 
         ChatApplicationService service = new ChatApplicationService(
-                new ControlledAgentOrchestratorImpl(pluginExecutor, resultRefiner),
+                new ControlledAgentOrchestratorImpl(
+                        pluginExecutor,
+                        resultRefiner,
+                        Mockito.mock(TenantBillingService.class)
+                ),
                 chatHistoryService,
                 chatMemoryService
         );
@@ -137,7 +146,11 @@ class ChatApplicationServiceTest {
         ChatMemoryService chatMemoryService = Mockito.mock(ChatMemoryService.class);
 
         ChatApplicationService service = new ChatApplicationService(
-                new ControlledAgentOrchestratorImpl(pluginExecutor, resultRefiner),
+                new ControlledAgentOrchestratorImpl(
+                        pluginExecutor,
+                        resultRefiner,
+                        Mockito.mock(TenantBillingService.class)
+                ),
                 chatHistoryService,
                 chatMemoryService
         );

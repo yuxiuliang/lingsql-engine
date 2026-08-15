@@ -65,6 +65,7 @@ public class SqlExecuteLogService {
         }
         try {
             SqlExecuteLog logEntity = new SqlExecuteLog();
+            logEntity.setRequestId(command.getRequestId());
             logEntity.setTenantId(command.getTenantId());
             logEntity.setUserId(command.getUserId());
             logEntity.setQuestion(command.getQuestion());
@@ -359,6 +360,7 @@ public class SqlExecuteLogService {
     private SqlExecuteLogView toView(SqlExecuteLog logEntity) {
         SqlExecuteLogView view = new SqlExecuteLogView();
         view.setId(logEntity.getId());
+        view.setRequestId(logEntity.getRequestId());
         view.setTenantId(logEntity.getTenantId());
         view.setUserId(logEntity.getUserId());
         view.setQuestion(logEntity.getQuestion());

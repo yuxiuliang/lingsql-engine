@@ -30,6 +30,50 @@ public interface BillingLedgerEventRepository extends JpaRepository<BillingLedge
     boolean existsByRequestIdAndEventSeq(String requestId, Integer eventSeq);
 
     /**
+     * 查询指定请求序号的完整账本事件，用于校验幂等重放内容。
+     *
+     * @param requestId 请求ID
+     * @param eventSeq 事件序号
+     * @return 账本事件
+     */
+    List<BillingLedgerEvent> findByTenantIdAndRequestIdAndEventSeqOrderByModelNameAsc(
+            String tenantId,
+            String requestId,
+            Integer eventSeq
+    );
+
+    /**
+     * 查询请求的指定类型账本事件。
+     *
+     * @param requestId 请求ID
+     * @param eventType 事件类型
+     * @return 账本事件
+     */
+    List<BillingLedgerEvent> findByTenantIdAndRequestIdAndEventTypeOrderByIdAsc(
+            String tenantId,
+            String requestId,
+            Integer eventType
+    );
+
+    /**
+     * 锁定一批遗留待结算事件，避免多实例重复应用余额副作用。
+     *
+     * @param status 待结算状态
+     * @param limit 批量上限
+     * @return 已加行锁的事件
+     */
+    @Query(value = """
+            SELECT *
+              FROM t_lingsql_engine_billing_ledger
+             WHERE status = :status
+             ORDER BY id ASC
+             LIMIT :limit
+               FOR UPDATE SKIP LOCKED
+            """, nativeQuery = true)
+    List<BillingLedgerEvent> findPendingForUpdate(@Param("status") Integer status,
+                                                   @Param("limit") Integer limit);
+
+    /**
      * 查询待结算账本事件。
      *
      * @param status   状态
@@ -81,8 +125,8 @@ public interface BillingLedgerEventRepository extends JpaRepository<BillingLedge
                    MAX(create_time) AS latestTime
               FROM t_lingsql_engine_billing_ledger
              WHERE create_time >= :since
-             GROUP BY request_id
-            HAVING SUM(CASE WHEN event_type = 2 THEN IFNULL(cost_amount, 0) ELSE 0 END) > 0
+             GROUP BY tenant_id, request_id
+            HAVING SUM(CASE WHEN event_type = 0 THEN IFNULL(cost_amount, 0) ELSE 0 END) > 0
              ORDER BY latestTime DESC
             """, nativeQuery = true)
     List<LedgerReconcileProjection> findReconcileCandidates(@Param("since") LocalDateTime since, Pageable pageable);
@@ -109,6 +153,35 @@ public interface BillingLedgerEventRepository extends JpaRepository<BillingLedge
     long countByCreateTimeAfterAndStatus(LocalDateTime since, Integer status);
 
     /**
+     * 统计指定状态且超过截止时间的账本事件。
+     *
+     * @param status 事件状态
+     * @param createTime 截止时间
+     * @return 事件数量
+     */
+    long countByStatusAndCreateTimeBefore(Integer status, LocalDateTime createTime);
+
+    /**
+     * 汇总指定租户和请求集合的账本验收证据。
+     *
+     * @param tenantId 租户ID
+     * @param requestIds 请求ID集合
+     * @return 验收投影
+     */
+    @Query(value = """
+            SELECT COUNT(*) AS eventCount,
+                   COUNT(DISTINCT request_id) AS matchedRequestCount,
+                   SUM(CASE WHEN event_type = 0 THEN 1 ELSE 0 END) AS reserveCount,
+                   SUM(CASE WHEN event_type = 2 THEN 1 ELSE 0 END) AS closeCount,
+                   SUM(CASE WHEN event_type = 0 THEN IFNULL(cost_amount, 0) ELSE 0 END) AS reserveAmount
+              FROM t_lingsql_engine_billing_ledger
+             WHERE tenant_id = :tenantId
+               AND request_id IN (:requestIds)
+            """, nativeQuery = true)
+    LedgerEvidenceProjection findLedgerEvidence(@Param("tenantId") String tenantId,
+                                                 @Param("requestIds") List<String> requestIds);
+
+    /**
      * 账本对账投影。
      *
      * @author 余炘洋
@@ -124,5 +197,17 @@ public interface BillingLedgerEventRepository extends JpaRepository<BillingLedge
         Long getCloseTotal();
 
         LocalDateTime getLatestTime();
+    }
+
+    interface LedgerEvidenceProjection {
+        Long getEventCount();
+
+        Long getMatchedRequestCount();
+
+        Long getReserveCount();
+
+        Long getCloseCount();
+
+        Long getReserveAmount();
     }
 }

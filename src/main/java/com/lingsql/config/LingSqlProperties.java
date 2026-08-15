@@ -308,20 +308,36 @@ public class LingSqlProperties {
         private long ledgerSettleIntervalMs = 5000L;
 
         /**
-         * 计费幂等 Key 的 TTL。
-         *
-         * @author 余炘洋
-         * @date 2026-01-29
-         */
-        private Duration chargedKeyTtl = Duration.ofDays(3);
-
-        /**
          * 对账扫描窗口。
          *
          * @author 余炘洋
          * @date 2026-01-29
          */
         private Duration reconcileWindow = Duration.ofHours(24);
+
+        /**
+         * RESERVE 缺少 CLOSE 时的自动恢复等待时间。
+         *
+         * @author 余炘洋
+         * @date 2026-08-15
+         */
+        private Duration closeRecoveryDelay = Duration.ofMinutes(10);
+
+        /**
+         * 待结算账本允许的最长停留时间。
+         *
+         * @author 余炘洋
+         * @date 2026-08-15
+         */
+        private Duration pendingTimeout = Duration.ofMinutes(10);
+
+        /**
+         * 商用就绪窗口内要求的最低真实账本事件数。
+         *
+         * @author 余炘洋
+         * @date 2026-08-15
+         */
+        private int readinessMinLedgerEvents = 2;
 
         /**
          * 对账扫描间隔(毫秒)。

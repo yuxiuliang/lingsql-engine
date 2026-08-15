@@ -6,7 +6,6 @@ import com.lingsql.config.LingSqlProperties;
 import com.lingsql.tenant.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,10 +46,7 @@ public class BillingLedgerSettlementService {
     @Transactional
     public void settleLedger() {
         int batchSize = resolveBatchSize();
-        List<BillingLedgerEvent> events = ledgerRepository.findByStatusOrderByIdAsc(
-                STATUS_PENDING,
-                PageRequest.of(0, batchSize)
-        );
+        List<BillingLedgerEvent> events = ledgerRepository.findPendingForUpdate(STATUS_PENDING, batchSize);
         if (events == null || events.isEmpty()) {
             return;
         }

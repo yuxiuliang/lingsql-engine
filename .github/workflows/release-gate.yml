@@ -79,11 +79,12 @@ jobs:
       - name: Validate Gate Credentials
         env:
           RELEASE_GATE_BILLING_TOKEN: ${{ secrets.RELEASE_GATE_BILLING_TOKEN }}
+          RELEASE_GATE_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
           PILOT_TENANT_ID: ${{ secrets.RELEASE_GATE_PILOT_TENANT_ID }}
           PILOT_USERNAME: ${{ secrets.RELEASE_GATE_PILOT_USERNAME }}
           PILOT_PASSWORD: ${{ secrets.RELEASE_GATE_PILOT_PASSWORD }}
         run: |
-          for name in RELEASE_GATE_BILLING_TOKEN PILOT_TENANT_ID PILOT_USERNAME PILOT_PASSWORD; do
+          for name in RELEASE_GATE_BILLING_TOKEN RELEASE_GATE_CONTROL_TOKEN PILOT_TENANT_ID PILOT_USERNAME PILOT_PASSWORD; do
             if [ -z "${!name}" ]; then
               echo "::error::严格发布门禁缺少 secret ${name}。"
               exit 1
@@ -108,6 +109,7 @@ jobs:
           PILOT_TENANT_ID: ${{ secrets.RELEASE_GATE_PILOT_TENANT_ID }}
           PILOT_USERNAME: ${{ secrets.RELEASE_GATE_PILOT_USERNAME }}
           PILOT_PASSWORD: ${{ secrets.RELEASE_GATE_PILOT_PASSWORD }}
+          PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
           PILOT_REPORT_FILE: ./reports/pilot_acceptance.md
           DRILL_ID: ${{ inputs.p1_drill_id }}
           DETECTED_AT: ${{ inputs.p1_detected_at }}

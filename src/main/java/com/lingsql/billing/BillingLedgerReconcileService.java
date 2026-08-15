@@ -26,6 +26,7 @@ public class BillingLedgerReconcileService {
     private final BillingLedgerEventRepository repository;
     private final LingSqlProperties properties;
     private final BillingReconcileLogService reconcileLogService;
+    private final BillingLedgerService billingLedgerService;
 
     /**
      * 定时对账，检测预扣与 CLOSE 差异。
@@ -44,9 +45,17 @@ public class BillingLedgerReconcileService {
             return;
         }
         long threshold = resolveThreshold();
+        Duration closeRecoveryDelay = resolveCloseRecoveryDelay();
+        LocalDateTime now = LocalDateTime.now();
         for (BillingLedgerEventRepository.LedgerReconcileProjection record : records) {
             long reserve = valueOrZero(record.getReserveTotal());
             long close = valueOrZero(record.getCloseTotal());
+            if (close == 0L && !isRecoveryDue(record.getLatestTime(), closeRecoveryDelay, now)) {
+                continue;
+            }
+            if (close == 0L && recoverMissingClose(record)) {
+                continue;
+            }
             long diff = Math.abs(reserve - close);
             if (diff <= threshold) {
                 continue;
@@ -86,6 +95,39 @@ public class BillingLedgerReconcileService {
             return 0L;
         }
         return Math.max(0L, billing.getReconcileDiffThreshold());
+    }
+
+    private Duration resolveCloseRecoveryDelay() {
+        LingSqlProperties.Billing billing = properties.getBilling();
+        if (billing == null || billing.getCloseRecoveryDelay() == null) {
+            return Duration.ofMinutes(10);
+        }
+        return billing.getCloseRecoveryDelay();
+    }
+
+    private boolean isRecoveryDue(LocalDateTime latestTime, Duration delay, LocalDateTime now) {
+        if (latestTime == null) {
+            return true;
+        }
+        return !latestTime.plus(delay).isAfter(now);
+    }
+
+    private boolean recoverMissingClose(BillingLedgerEventRepository.LedgerReconcileProjection record) {
+        try {
+            boolean recovered = billingLedgerService.recoverMissingClose(
+                    record.getRequestId(),
+                    record.getTenantId()
+            );
+            if (recovered) {
+                log.info("已从持久 RESERVE 账本恢复缺失 CLOSE: requestId={}, tenantId={}",
+                        record.getRequestId(), record.getTenantId());
+            }
+            return recovered;
+        } catch (Exception ex) {
+            log.error("恢复缺失 CLOSE 失败: requestId={}, tenantId={}",
+                    record.getRequestId(), record.getTenantId(), ex);
+            return false;
+        }
     }
 
     private long valueOrZero(Long value) {

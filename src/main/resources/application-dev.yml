@@ -91,8 +91,10 @@ lingsql:
   billing:
     ledger-batch-size: 200
     ledger-settle-interval-ms: 5000
-    charged-key-ttl: 72h
     reconcile-window: 24h
+    close-recovery-delay: ${LINGSQL_BILLING_CLOSE_RECOVERY_DELAY:10m}
+    pending-timeout: ${LINGSQL_BILLING_PENDING_TIMEOUT:10m}
+    readiness-min-ledger-events: ${LINGSQL_BILLING_READINESS_MIN_LEDGER_EVENTS:2}
     reconcile-interval-ms: 60000
     reconcile-batch-size: 200
     reconcile-diff-threshold: 0

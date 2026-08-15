@@ -3,6 +3,7 @@ package com.lingsql.agent.orchestration;
 import com.lingsql.agent.collaboration.AgentRole;
 import com.lingsql.agent.plugin.AgentPluginException;
 import com.lingsql.agent.plugin.AgentPluginExecutor;
+import com.lingsql.billing.TenantBillingService;
 import com.lingsql.chat.model.ChatTraceStep;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
@@ -47,6 +48,7 @@ public class ControlledAgentOrchestratorImpl implements IControlledAgentOrchestr
 
     private final AgentPluginExecutor pluginExecutor;
     private final ResultRefiner resultRefiner;
+    private final TenantBillingService tenantBillingService;
 
     @Override
     public AgentRunResult run(AgentRunCommand command) {
@@ -89,6 +91,13 @@ public class ControlledAgentOrchestratorImpl implements IControlledAgentOrchestr
         try {
             runControl.assertWithinDeadline();
             refinement = resultRefiner.refineWithMetadata(command.question().trim(), publicResult);
+            tenantBillingService.chargeModelUsage(
+                    command.tenantId(),
+                    command.requestId(),
+                    AgentRole.ANALYST.name(),
+                    refinement.modelName(),
+                    refinement.tokenCount()
+            );
             runControl.assertWithinDeadline();
         } catch (Exception exception) {
             log.error("Agent 分析阶段执行失败: executionId={}, requestId={}, tenantId={}, userId={}",

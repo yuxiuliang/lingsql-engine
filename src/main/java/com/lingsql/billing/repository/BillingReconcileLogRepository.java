@@ -26,7 +26,10 @@ public interface BillingReconcileLogRepository
      * @author 余炘洋
      * @date 2026-01-29
      */
-    Optional<BillingReconcileLog> findTopByRequestIdOrderByCreateTimeDesc(String requestId);
+    Optional<BillingReconcileLog> findTopByTenantIdAndRequestIdOrderByCreateTimeDesc(
+            String tenantId,
+            String requestId
+    );
 
     /**
      * 标记对账日志为已处理。

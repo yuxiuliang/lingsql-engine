@@ -5,20 +5,21 @@ import com.lingsql.billing.BillingAdminService;
 import com.lingsql.billing.BillingCommercialReadinessService;
 import com.lingsql.billing.BillingReconcileLogService;
 import com.lingsql.billing.entity.BillingPolicyVersion;
-import com.lingsql.billing.model.BillingCommercialReadinessView;
 import com.lingsql.billing.entity.TenantBillingOverride;
+import com.lingsql.billing.model.BillingCommercialReadinessView;
+import com.lingsql.billing.model.BillingLedgerEvidenceView;
+import com.lingsql.billing.model.BillingPolicyVersionRequest;
 import com.lingsql.billing.model.BillingReconcileLogQuery;
 import com.lingsql.billing.model.BillingReconcileLogView;
 import com.lingsql.billing.model.BillingReconcileResolveRequest;
-import com.lingsql.billing.model.BillingPolicyVersionRequest;
 import com.lingsql.billing.model.TenantBillingOverrideRequest;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.common.result.PageResult;
 import com.lingsql.rbac.security.RbacSecurityUtils;
 import com.lingsql.rbac.security.RbacUserSession;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,8 +28,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -282,6 +283,25 @@ public class BillingAdminController {
             return ApiResponse.forbidden("无权限访问");
         }
         return ApiResponse.success(billingCommercialReadinessService.snapshot(windowHours));
+    }
+
+    /**
+     * 查询真实请求对应的计费账本验收证据。
+     *
+     * @param tenantId 租户ID
+     * @param requestIds 请求ID集合
+     * @return 账本验收证据
+     */
+    @GetMapping("/ledger/evidence")
+    @PreAuthorize("hasAuthority('ADMIN:BILLING:READ')")
+    public ApiResponse<BillingLedgerEvidenceView> ledgerEvidence(
+            @RequestParam String tenantId,
+            @RequestParam List<String> requestIds
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return ApiResponse.success(billingAdminService.ledgerEvidence(tenantId, requestIds));
     }
 
     private boolean isSysAdmin() {
