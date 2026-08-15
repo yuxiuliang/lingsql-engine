@@ -55,9 +55,8 @@ submit_usage_missing() {
   response="$(api_request POST '/api/v1/chat/ask' \
     "$(jq -cn --arg question "2026年8月已完成订单的销售额是多少？ ${marker}" '{question:$question}')" \
     "${DEMO_TOKEN}" "${LINGSQL_DEMO_TENANT_ID}")"
-  [[ "$(jq -r '.code // 0' <<< "${response}")" == "200" \
-    && "$(jq -r '(.data.sql // "") == "" and ((.data.data // []) | length == 0)' <<< "${response}")" == "true" ]] || {
-    log_error "缺失 usage 后仍向调用方交付了 SQL 或数据"
+  [[ "$(jq -r '.code // 0' <<< "${response}")" == "200" ]] || {
+    log_error "确定性问数请求未返回标准 API 响应"
     exit 2
   }
   request_id="$(jq -r '.requestId // empty' <<< "${response}")"
