@@ -83,7 +83,7 @@ submit_usage_missing() {
 load_unknown_invocation() {
   local request_id="$1" row="" attempt
   for attempt in $(seq 1 20); do
-    row="$(mysql_query "SELECT CONCAT_WS(CHAR(9), invocation_id, state, failure_code, max_billable_tokens, reserved_amount) FROM t_lingsql_engine_billing_invocation WHERE tenant_id='${LINGSQL_DEMO_TENANT_ID}' AND workflow_request_id='${request_id}' ORDER BY id;")"
+    row="$(mysql_query "SELECT invocation_id, state, failure_code, max_billable_tokens, reserved_amount FROM t_lingsql_engine_billing_invocation WHERE tenant_id='${LINGSQL_DEMO_TENANT_ID}' AND workflow_request_id='${request_id}' ORDER BY id;")"
     if [[ -n "${row}" ]]; then
       break
     fi
