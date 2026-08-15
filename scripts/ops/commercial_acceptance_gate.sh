@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# LingSQL 商用验收总门禁脚本（含工程基线的五块能力）
+# LingSQL 商用验收总门禁脚本（含真实问数闭环与工程基线）
 # 用法:
 #   BASE_URL=http://127.0.0.1:8000 \
 #   PROMETHEUS_URL=http://127.0.0.1:9090 \
@@ -9,12 +9,14 @@
 #
 # 可选环境变量:
 #   COMMERCIAL_REQUIRE_SLO=true
+#   COMMERCIAL_REQUIRE_PILOT=true
 #   COMMERCIAL_REPORT_FILE=./reports/commercial_acceptance.md
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMMERCIAL_REQUIRE_SLO="${COMMERCIAL_REQUIRE_SLO:-true}"
+COMMERCIAL_REQUIRE_PILOT="${COMMERCIAL_REQUIRE_PILOT:-true}"
 COMMERCIAL_REPORT_FILE="${COMMERCIAL_REPORT_FILE:-./reports/commercial_acceptance.md}"
 
 log_info() {
@@ -37,7 +39,7 @@ is_true() {
 run_step() {
   local name="$1"
   shift
-  if "$@"; then
+  if "$@" >&2; then
     echo "${name}|PASS"
     return 0
   fi
@@ -67,7 +69,19 @@ main() {
     true
   fi >> "${tmp_status}"
 
-  # 2) 可靠性：容量基线 + SLO
+  # 2) 业务闭环：登录、三条真实问数、SQL 审计与计费账本增量
+  if is_true "${COMMERCIAL_REQUIRE_PILOT}"; then
+    if run_step "业务闭环-真实问数" bash "${SCRIPT_DIR}/pilot_acceptance.sh"; then
+      true
+    else
+      true
+    fi >> "${tmp_status}"
+  else
+    log_warn "COMMERCIAL_REQUIRE_PILOT=false，已跳过真实问数门禁"
+    echo "业务闭环-真实问数|SKIP" >> "${tmp_status}"
+  fi
+
+  # 3) 可靠性：容量基线 + SLO
   if run_step "可靠性-容量基线" bash "${SCRIPT_DIR}/reliability_baseline.sh"; then
     true
   else
@@ -90,14 +104,14 @@ main() {
     fi
   fi
 
-  # 3) 合规安全：配置与最小权限复核
+  # 4) 合规安全：配置与最小权限复核
   if run_step "合规安全-门禁检查" bash "${SCRIPT_DIR}/security_compliance_guard.sh"; then
     true
   else
     true
   fi >> "${tmp_status}"
 
-  # 4) 运维值守：P1 演练闭环
+  # 5) 运维值守：P1 演练闭环
   if run_step "运维值守-P1演练" bash "${SCRIPT_DIR}/p1_incident_drill.sh"; then
     true
   else

@@ -84,18 +84,17 @@
 ./scripts/ops/commercial_acceptance_gate.sh
 ```
 
-在 GitHub 手动工作流中，`release-gate.yml` 与 `release-deploy.yml` 现已支持以下商用验收输入：
+`release-gate.yml` 与 `release-deploy.yml` 只能从远端 `master` 手动执行。正式流程不再提供关闭冒烟、SLO、计费、真实问数、商用总门禁或自动回滚的输入；缺少证据时必须失败。
 
-- `run_commercial_gate`：是否执行商用四块门禁。
-- `billing_readiness_url`：计费验收接口地址（可留空并基于 `base_url` 自动拼接）。
-- `allow_skip_billing_readiness`：未配置计费接口时是否允许跳过（默认 `false`，严格模式）。
-- `commercial_require_slo`：商用门禁内未配置 Prometheus 时是否阻断。
+触发时必须填写 `base_url`、真实 `prometheus_url`、发布标签（部署流程）以及一份真实 P1 演练的编号、发现时间、响应时间和缓解时间。`billing_readiness_url` 可留空并由 `base_url` 拼接。
 
-严格模式下（`run_commercial_gate=true` 且 `allow_skip_billing_readiness=false`）：
+仓库或目标 Environment 必须配置：
 
-- 必须在仓库 Secrets 配置 `RELEASE_GATE_BILLING_TOKEN`。
-- `billing_readiness_url` 与 `base_url` 不能同时为空，否则工作流会在门禁前直接失败。
-- 若未配置该 Secret，工作流会在发布门禁前直接失败，避免静默跳过计费验收。
+- `RELEASE_GATE_BILLING_TOKEN`：可读取计费快照和 SQL 审计的短期验收 Token。
+- `RELEASE_GATE_PILOT_TENANT_ID`、`RELEASE_GATE_PILOT_USERNAME`、`RELEASE_GATE_PILOT_PASSWORD`：专用验证租户与账号；该账号须具备问数、读取自身 SQL 审计和计费验收快照的最小权限，不得使用真实客户个人账号。
+- `RELEASE_NOTIFY_*`、`LINGSQL_DEPLOY_BASE`、`LINGSQL_SWITCH_HOOK`：按部署拓扑配置的通知与切换参数。
+
+发布制品先执行前端依赖审计与生产构建，把管理后台写入 Spring Boot 静态资源，再执行 Schema 漂移检查及 Maven 测试；工作流会检查最终 JAR 确实包含后台首页。门禁会完成登录、三条真实问数、SQL 审计增量、计费账本增量、最少 100 个非 Actuator 请求的 SLO 证据和 P1 演练校验；任何 `FAIL` 或 `SKIP` 都阻断发布。验收账号、模型、数据源或 Prometheus 尚未准备好时，应先在 UAT 完成配置，不能临时关闭门禁。
 
 流程包含：
 

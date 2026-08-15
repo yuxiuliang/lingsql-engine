@@ -14,48 +14,33 @@ on:
         type: string
       prometheus_url:
         description: "Prometheus 地址（用于发布门禁）"
-        required: false
-        default: "http://127.0.0.1:9090"
+        required: true
         type: string
       release_tag:
         description: "发布版本标签（如 v2026.02.28.1）"
         required: true
         type: string
-      run_release_gate:
-        description: "是否执行发布前门禁（冒烟 + SLO）"
-        required: true
-        default: true
-        type: boolean
-      block_on_slo_breach:
-        description: "SLO 预算耗尽时是否阻断发布"
-        required: true
-        default: true
-        type: boolean
-      run_commercial_gate:
-        description: "是否执行商用验收总门禁（计费/可靠性/合规/值守）"
-        required: true
-        default: true
-        type: boolean
       billing_readiness_url:
         description: "计费验收接口地址（留空则基于 base_url 自动拼接）"
         required: false
         default: ""
         type: string
-      allow_skip_billing_readiness:
-        description: "未配置计费验收接口时是否允许跳过"
+      p1_drill_id:
+        description: "本次引用的真实 P1 演练编号"
         required: true
-        default: false
-        type: boolean
-      commercial_require_slo:
-        description: "商用总门禁中未配置 Prometheus 时是否阻断"
+        type: string
+      p1_detected_at:
+        description: "P1 演练发现时间（ISO-8601）"
         required: true
-        default: false
-        type: boolean
-      auto_rollback_on_smoke_fail:
-        description: "发布后冒烟失败时是否自动回滚"
+        type: string
+      p1_acked_at:
+        description: "P1 演练响应确认时间（ISO-8601）"
         required: true
-        default: true
-        type: boolean
+        type: string
+      p1_mitigated_at:
+        description: "P1 演练缓解完成时间（ISO-8601）"
+        required: true
+        type: string
 
 jobs:
   build-artifact:
@@ -67,6 +52,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Validate Release Source
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/master" ]; then
+            echo "::error::正式发布只能从远端 master 执行，当前引用为 ${GITHUB_REF}。"
+            exit 1
+          fi
+
       - name: Setup Java 25
         uses: actions/setup-java@v5
         with:
@@ -74,8 +66,36 @@ jobs:
           java-version: "25"
           cache: maven
 
-      - name: Build Backend Package
-        run: mvn -B -ntp clean package -DskipTests -DskipITs
+      - name: Setup Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web_src/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: web_src
+        run: npm ci
+
+      - name: Audit Frontend Dependencies
+        working-directory: web_src
+        run: ../scripts/ops/npm_audit_with_fallback.sh
+
+      - name: Build Admin UI Into Backend Resources
+        working-directory: web_src
+        run: npm run build
+
+      - name: Schema Drift Guard
+        run: bash scripts/ops/schema_drift_guard.sh
+
+      - name: Build And Test Backend Package
+        run: mvn -B -ntp clean package -DskipITs
+
+      - name: Verify Admin UI In Release Package
+        run: |
+          ARTIFACT_FILE="$(ls -1 target/lingsql-engine-*.jar | grep -v '\.original$' | head -n 1)"
+          test -n "${ARTIFACT_FILE}"
+          jar tf "${ARTIFACT_FILE}" | grep -q 'BOOT-INF/classes/static/admin/index.html'
 
       - name: Prepare Artifact
         run: |
@@ -110,51 +130,76 @@ jobs:
       - name: Prepare Scripts
         run: chmod +x scripts/ops/*.sh
 
-      - name: Validate Billing Readiness Endpoint
-        if: ${{ inputs.run_release_gate && inputs.run_commercial_gate && !inputs.allow_skip_billing_readiness }}
+      - name: Validate Strict Gate Inputs
         env:
           BASE_URL: ${{ inputs.base_url }}
+          PROMETHEUS_URL: ${{ inputs.prometheus_url }}
           BILLING_READINESS_URL: ${{ inputs.billing_readiness_url }}
+          DRILL_ID: ${{ inputs.p1_drill_id }}
+          DETECTED_AT: ${{ inputs.p1_detected_at }}
+          ACKED_AT: ${{ inputs.p1_acked_at }}
+          MITIGATED_AT: ${{ inputs.p1_mitigated_at }}
         run: |
           BASE_URL_TRIMMED="$(printf '%s' "${BASE_URL}" | xargs)"
           BILLING_URL_TRIMMED="$(printf '%s' "${BILLING_READINESS_URL}" | xargs)"
           if [ -z "${BILLING_URL_TRIMMED}" ] && [ -z "${BASE_URL_TRIMMED}" ]; then
-            echo "::error::已启用严格计费门禁，但 billing_readiness_url 与 base_url 同时为空，无法确定计费验收地址。"
+            echo "::error::billing_readiness_url 与 base_url 不能同时为空。"
             exit 1
           fi
+          for name in PROMETHEUS_URL DRILL_ID DETECTED_AT ACKED_AT MITIGATED_AT; do
+            if [ -z "$(printf '%s' "${!name}" | xargs)" ]; then
+              echo "::error::严格发布门禁缺少 ${name}。"
+              exit 1
+            fi
+          done
 
-      - name: Validate Billing Gate Token
-        if: ${{ inputs.run_release_gate && inputs.run_commercial_gate && !inputs.allow_skip_billing_readiness }}
+      - name: Validate Gate Credentials
         env:
           RELEASE_GATE_BILLING_TOKEN: ${{ secrets.RELEASE_GATE_BILLING_TOKEN }}
+          PILOT_TENANT_ID: ${{ secrets.RELEASE_GATE_PILOT_TENANT_ID }}
+          PILOT_USERNAME: ${{ secrets.RELEASE_GATE_PILOT_USERNAME }}
+          PILOT_PASSWORD: ${{ secrets.RELEASE_GATE_PILOT_PASSWORD }}
         run: |
-          if [ -z "${RELEASE_GATE_BILLING_TOKEN}" ]; then
-            echo "::error::已启用严格计费门禁（allow_skip_billing_readiness=false），但未配置 secret RELEASE_GATE_BILLING_TOKEN。"
-            exit 1
-          fi
+          for name in RELEASE_GATE_BILLING_TOKEN PILOT_TENANT_ID PILOT_USERNAME PILOT_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::严格发布门禁缺少 secret ${name}。"
+              exit 1
+            fi
+          done
 
       - name: Pre Release Gate
-        if: ${{ inputs.run_release_gate }}
         env:
           BASE_URL: ${{ inputs.base_url }}
           PROMETHEUS_URL: ${{ inputs.prometheus_url }}
           RELEASE_GATE_ENABLE_SMOKE: "true"
           RELEASE_GATE_ENABLE_SLO: "true"
-          RELEASE_GATE_ENABLE_COMMERCIAL: ${{ inputs.run_commercial_gate }}
-          RELEASE_GATE_BLOCK_ON_SLO_BREACH: ${{ inputs.block_on_slo_breach }}
+          RELEASE_GATE_ENABLE_COMMERCIAL: "true"
+          RELEASE_GATE_BLOCK_ON_SLO_BREACH: "true"
           RELEASE_GATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
           RELEASE_GATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
           BILLING_READINESS_URL: ${{ inputs.billing_readiness_url }}
-          BILLING_ALLOW_SKIP: ${{ inputs.allow_skip_billing_readiness }}
+          BILLING_ALLOW_SKIP: "false"
           BILLING_AUTH_TOKEN: ${{ secrets.RELEASE_GATE_BILLING_TOKEN }}
-          COMMERCIAL_REQUIRE_SLO: ${{ inputs.commercial_require_slo }}
+          COMMERCIAL_REQUIRE_SLO: "true"
+          COMMERCIAL_REQUIRE_PILOT: "true"
+          SLO_WINDOW: "30d"
+          SLO_TARGET: "99.9"
+          SLO_MIN_REQUESTS: "100"
+          PILOT_TENANT_ID: ${{ secrets.RELEASE_GATE_PILOT_TENANT_ID }}
+          PILOT_USERNAME: ${{ secrets.RELEASE_GATE_PILOT_USERNAME }}
+          PILOT_PASSWORD: ${{ secrets.RELEASE_GATE_PILOT_PASSWORD }}
+          PILOT_REPORT_FILE: ./reports/pilot_acceptance.md
+          DRILL_ID: ${{ inputs.p1_drill_id }}
+          DETECTED_AT: ${{ inputs.p1_detected_at }}
+          ACKED_AT: ${{ inputs.p1_acked_at }}
+          MITIGATED_AT: ${{ inputs.p1_mitigated_at }}
         run: ./scripts/ops/release_gate.sh
 
       - name: Deploy And Auto Rollback
         env:
           BASE_URL: ${{ inputs.base_url }}
           RELEASE_POST_SMOKE_ENABLED: "true"
-          RELEASE_AUTO_ROLLBACK_ON_SMOKE_FAIL: ${{ inputs.auto_rollback_on_smoke_fail }}
+          RELEASE_AUTO_ROLLBACK_ON_SMOKE_FAIL: "true"
           RELEASE_NOTIFY_ENABLED: "true"
           RELEASE_NOTIFY_SCRIPT: ./scripts/ops/notify_release_event.sh
           RELEASE_NOTIFY_WEBHOOK_URL: ${{ secrets.RELEASE_NOTIFY_WEBHOOK_URL }}
