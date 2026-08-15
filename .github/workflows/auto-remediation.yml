@@ -50,15 +50,12 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Prepare Scripts
-        run: chmod +x scripts/ops/*.sh
-
       - name: Run Auto Remediation Script
         id: remediate
         continue-on-error: true
         env:
           AUTO_REMEDIATE_ALLOW_NPM_AUDIT_FIX: "true"
-        run: ./scripts/ops/github_auto_remediate.sh
+        run: bash scripts/ops/github_auto_remediate.sh
 
       - name: Create Remediation Pull Request
         id: create-pr

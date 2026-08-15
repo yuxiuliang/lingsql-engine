@@ -39,6 +39,6 @@ if ! mvn -v >/dev/null 2>&1; then
   echo "[auto-remediate] Maven 环境不可用，请检查 JAVA_HOME/JDK 配置" >&2
   exit 2
 fi
-"${repo_root}/scripts/ops/github_guard.sh"
+bash "${repo_root}/scripts/ops/github_guard.sh"
 
 log_info "自动修复执行完成"
