@@ -20,7 +20,17 @@ concurrency:
 jobs:
   merge-when-green:
     name: Merge Dependabot PR When Gates Are Green
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'dependabot/') }}
+    if: >-
+      ${{
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        startsWith(github.event.workflow_run.head_branch, 'dependabot/') &&
+        (
+          contains(github.event.workflow_run.head_branch, '/maven-minor-patch-') ||
+          contains(github.event.workflow_run.head_branch, '/npm-minor-patch-') ||
+          contains(github.event.workflow_run.head_branch, '/actions-minor-patch-')
+        )
+      }}
     runs-on: ubuntu-latest
     steps:
       - name: Resolve Dependabot PR Number
