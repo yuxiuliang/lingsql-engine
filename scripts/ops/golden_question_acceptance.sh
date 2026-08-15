@@ -270,7 +270,7 @@ run_security_case() {
     >> "${EVIDENCE_FILE}"
 }
 
-collect_batch_evidence() {
+collect_business_batch_evidence() {
   local request_ids_json request_ids_csv tenant_encoded ledger_response request_details
   local requested matched workflows invocations settled unknown pending cancelled reserves closes
   local reserve_amount close_amount refund_amount complete_requests unbalanced conserved evidence_ok=true
@@ -490,10 +490,12 @@ main() {
   fi
   BUSINESS_RUN_COUNT=0
   while IFS= read -r case_json; do [[ -n "${case_json}" ]] || continue; run_business_case "${case_json}"; BUSINESS_RUN_COUNT=$((BUSINESS_RUN_COUNT+1)); done <<< "${run_cases_json}"
+  # 计费会话只证明业务题的双角色调用与余额守恒。安全题只有 SQL 架构师调用，
+  # 必须在会话关闭后独立执行，避免其正常账本事件被误判为业务批次外事件。
+  sleep "${GQ_EVIDENCE_SETTLE_SECONDS}"
+  collect_business_batch_evidence
   security_cases_json="$(jq -c '.securityCases[]' "${GQ_SUITE_FILE}")"
   while IFS= read -r case_json; do [[ -n "${case_json}" ]] || continue; run_security_case "${case_json}"; done <<< "${security_cases_json}"
-  sleep "${GQ_EVIDENCE_SETTLE_SECONDS}"
-  collect_batch_evidence
   if build_report; then log_info "40题正式验收自动门禁通过，待双方签字: ${REPORT_FILE}"; else log_error "40题正式验收自动门禁未通过: ${REPORT_FILE}"; exit 2; fi
 }
 
