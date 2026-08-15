@@ -192,6 +192,17 @@ public class ControlledAgentOrchestratorImpl implements IControlledAgentOrchestr
             if (current instanceof AgentAuditPersistenceException) {
                 return AgentFailureCode.AUDIT_PERSIST_FAILED;
             }
+            if (current instanceof BizException bizException) {
+                AgentFailureCode securityFailure = switch (bizException.getErrorCode()) {
+                    case SECURITY_WRITE_BLOCKED -> AgentFailureCode.SECURITY_WRITE_BLOCKED;
+                    case SECURITY_TENANT_SCOPE_BLOCKED -> AgentFailureCode.SECURITY_TENANT_SCOPE_BLOCKED;
+                    case SECURITY_ALLOWLIST_BLOCKED -> AgentFailureCode.SECURITY_ALLOWLIST_BLOCKED;
+                    default -> null;
+                };
+                if (securityFailure != null) {
+                    return securityFailure;
+                }
+            }
             if (current instanceof AgentPluginException pluginException) {
                 AgentFailureCode classified = switch (pluginException.getReason()) {
                     case POLICY_DENIED -> AgentFailureCode.PLUGIN_POLICY_DENIED;

@@ -70,7 +70,64 @@ class SqlGuardrailTest {
                 )
         );
 
-        assertEquals(ErrorCode.SECURITY_VIOLATION, ex.getErrorCode());
+        assertEquals(ErrorCode.SECURITY_TENANT_SCOPE_BLOCKED, ex.getErrorCode());
+    }
+
+    @Test
+    void candidateCheckerShouldRejectWriteBeforeRewrite() {
+        LingSqlProperties properties = createProperties(100);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        SqlSecurityChecker checker = new SqlSecurityChecker(properties, metadataExtService);
+
+        BizException ex = assertThrows(
+                BizException.class,
+                () -> checker.checkCandidate(
+                        "DELETE FROM orders WHERE tenant_id = 'TENANT_A'",
+                        createTenantConfig("LOGICAL", "tenant_id"),
+                        "TENANT_A"
+                )
+        );
+
+        assertEquals(ErrorCode.SECURITY_WRITE_BLOCKED, ex.getErrorCode());
+    }
+
+    @Test
+    void candidateCheckerShouldRejectExplicitCrossTenantCondition() {
+        LingSqlProperties properties = createProperties(100);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        Mockito.when(metadataExtService.resolveIsolationField(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        SqlSecurityChecker checker = new SqlSecurityChecker(properties, metadataExtService);
+
+        BizException ex = assertThrows(
+                BizException.class,
+                () -> checker.checkCandidate(
+                        "SELECT order_id FROM orders WHERE tenant_id = 'OTHER'",
+                        createTenantConfig("LOGICAL", "tenant_id"),
+                        "TENANT_A"
+                )
+        );
+
+        assertEquals(ErrorCode.SECURITY_TENANT_SCOPE_BLOCKED, ex.getErrorCode());
+    }
+
+    @Test
+    void candidateCheckerShouldAllowMissingTenantConditionForControlledRewrite() {
+        LingSqlProperties properties = createProperties(100);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        Mockito.when(metadataExtService.resolveIsolationField(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        SqlSecurityChecker checker = new SqlSecurityChecker(properties, metadataExtService);
+
+        try {
+            checker.checkCandidate(
+                    "SELECT order_id FROM orders WHERE amount > 0",
+                    createTenantConfig("LOGICAL", "tenant_id"),
+                    "TENANT_A"
+            );
+        } catch (Exception ex) {
+            fail("候选 SQL 缺少租户条件时应交由受控改写补齐: " + ex.getMessage());
+        }
     }
 
     @Test
@@ -150,7 +207,7 @@ class SqlGuardrailTest {
                 )
         );
 
-        assertEquals(ErrorCode.SECURITY_VIOLATION, ex.getErrorCode());
+        assertEquals(ErrorCode.SECURITY_TENANT_SCOPE_BLOCKED, ex.getErrorCode());
     }
 
     @Test

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# LingSQL 商用验收总门禁脚本（含真实问数闭环与工程基线）
+# LingSQL 付费试点技术放行门禁脚本（含真实问数闭环与工程基线）
 # 用法:
 #   BASE_URL=http://127.0.0.1:8000 \
 #   PROMETHEUS_URL=http://127.0.0.1:9090 \
@@ -53,7 +53,7 @@ main() {
   tmp_status="$(mktemp)"
   trap "rm -f '${tmp_status}'" EXIT
 
-  log_info "开始执行商用验收总门禁"
+  log_info "开始执行付费试点技术放行门禁"
 
   # 0) 工程基线：Schema 漂移检查
   if run_step "工程基线-Schema漂移" bash "${SCRIPT_DIR}/schema_drift_guard.sh"; then
@@ -138,7 +138,7 @@ main() {
   skip_count="$(awk -F'|' '$2=="SKIP"{c++} END {print c+0}' "${tmp_status}")"
 
   cat > "${COMMERCIAL_REPORT_FILE}" <<EOF
-# LingSQL 商用验收总报告
+# LingSQL 付费试点技术放行报告
 
 - 执行时间: $(date -Iseconds)
 - PASS: ${pass_count}
@@ -147,14 +147,18 @@ main() {
 
 ## 检查结果
 $(awk -F'|' '{printf "- %s: %s\n", $1, $2}' "${tmp_status}")
+
+## 结论边界
+
+本报告只证明候选版本的工程、三问业务闭环、计费、审计、可靠性、安全、备份恢复和值守技术门禁，不替代冻结 40 题正式验收、客户签字、合同生效或银行到账证明。
 EOF
 
-  log_info "商用验收报告已写入: ${COMMERCIAL_REPORT_FILE}"
+  log_info "付费试点技术放行报告已写入: ${COMMERCIAL_REPORT_FILE}"
   if [[ "${fail_count}" -gt 0 || "${skip_count}" -gt 0 ]]; then
-    log_error "商用验收存在失败或跳过项，请按报告逐项整改。"
+    log_error "付费试点技术放行存在失败或跳过项，请按报告逐项整改。"
     exit 2
   fi
-  log_info "商用验收通过。"
+  log_info "付费试点技术放行通过；40 题与双方签字仍须单独完成。"
 }
 
 main "$@"

@@ -150,6 +150,8 @@ jobs:
           LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
           LINGSQL_SWITCH_HOOK: ${{ vars.LINGSQL_SWITCH_HOOK }}
           RELEASE_GATE_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
+          RELEASE_GATE_GQ_SUITE_FILE: ${{ vars.RELEASE_GATE_GQ_SUITE_FILE }}
+          RELEASE_GATE_GQ_SUITE_SHA256: ${{ vars.RELEASE_GATE_GQ_SUITE_SHA256 }}
           BACKUP_RESTORE_MYSQL_HOST: ${{ vars.RELEASE_GATE_MYSQL_HOST }}
           BACKUP_RESTORE_MYSQL_PORT: ${{ vars.RELEASE_GATE_MYSQL_PORT }}
           BACKUP_RESTORE_SOURCE_DB: ${{ vars.RELEASE_GATE_BACKUP_SOURCE_DB }}
@@ -164,7 +166,7 @@ jobs:
             exit 1
           fi
           for name in PROMETHEUS_URL DRILL_ID DETECTED_AT ACKED_AT MITIGATED_AT LINGSQL_MIGRATION_HOOK \
-            LINGSQL_DEPLOY_BASE LINGSQL_SWITCH_HOOK RELEASE_GATE_CONTROL_TENANT_ID \
+            LINGSQL_DEPLOY_BASE LINGSQL_SWITCH_HOOK RELEASE_GATE_CONTROL_TENANT_ID RELEASE_GATE_GQ_SUITE_FILE RELEASE_GATE_GQ_SUITE_SHA256 \
             BACKUP_RESTORE_MYSQL_HOST BACKUP_RESTORE_MYSQL_PORT BACKUP_RESTORE_SOURCE_DB \
             BACKUP_RESTORE_BACKUP_DIR BACKUP_RESTORE_BACKUP_USER BACKUP_RESTORE_RESTORE_USER; do
             if [ -z "$(printf '%s' "${!name}" | xargs)" ]; then
@@ -172,6 +174,14 @@ jobs:
               exit 1
             fi
           done
+          if [ ! -f "${RELEASE_GATE_GQ_SUITE_FILE}" ]; then
+            echo "::error::冻结 40 题 Suite 不存在或不是文件。"
+            exit 1
+          fi
+          if ! [[ "${RELEASE_GATE_GQ_SUITE_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::冻结 40 题 Suite SHA-256 配置不合法。"
+            exit 1
+          fi
 
       - name: Validate Gate Credentials
         env:
@@ -236,6 +246,11 @@ jobs:
           PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
           PILOT_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
           PILOT_REPORT_FILE: ./reports/pilot_acceptance.md
+          GQ_SUITE_FILE: ${{ vars.RELEASE_GATE_GQ_SUITE_FILE }}
+          GQ_EXPECTED_SUITE_SHA256: ${{ vars.RELEASE_GATE_GQ_SUITE_SHA256 }}
+          GQ_COMPARATOR_JAR: ./dist/lingsql-engine.jar
+          GQ_PHASE: FIRST
+          GQ_OUTPUT_DIR: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}
           EXPECTED_RELEASE_COMMIT: ${{ github.sha }}
           RUNTIME_FINGERPRINT_REPORT_FILE: ./reports/runtime_fingerprint.md
           LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
@@ -260,6 +275,7 @@ jobs:
           export BASE_URL="http://127.0.0.1:${CANDIDATE_PORT}"
           export BILLING_READINESS_URL="${BASE_URL}/api/v1/admin/billing/readiness/snapshot"
           ./scripts/ops/runtime_fingerprint_guard.sh
+          ./scripts/ops/golden_question_acceptance.sh
           ./scripts/ops/release_gate.sh
 
       - name: Promote Candidate
@@ -294,5 +310,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: release-deploy-gate-reports
-          path: reports/
+          path: |
+            reports/release_gate_slo.md
+            reports/commercial_acceptance.md
+            reports/golden-question-*/report.md
           if-no-files-found: ignore
+          retention-days: 7

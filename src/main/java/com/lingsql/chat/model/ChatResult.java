@@ -1,5 +1,6 @@
 package com.lingsql.chat.model;
 
+import com.lingsql.agent.orchestration.AgentFailureCode;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
@@ -63,4 +64,12 @@ public class ChatResult {
      * @date 2026-04-10
      */
     private String conversationId;
+
+    /**
+     * 结构化失败分类，成功时为空。
+     *
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    private AgentFailureCode failureCode;
 }

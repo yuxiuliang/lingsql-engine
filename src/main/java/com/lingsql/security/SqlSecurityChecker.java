@@ -51,6 +51,38 @@ public class SqlSecurityChecker {
     private final MetadataExtService metadataExtService;
 
     /**
+     * 在任何自动改写前校验模型生成的候选 SQL。
+     *
+     * <p>该阶段用于保留原始安全意图：写操作、越权租户条件和白名单访问不能被后续改写掩盖。
+     * 缺少租户条件本身不在此处拒绝，由改写器统一补齐后再执行完整校验。</p>
+     *
+     * @param sql 候选 SQL
+     * @param config 租户数据源配置
+     * @param tenantId 当前租户标识
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    public void checkCandidate(String sql, TenantDbConfig config, String tenantId) {
+        try {
+            Statement statement = CCJSqlParserUtil.parse(sql);
+            if (!(statement instanceof Select select)) {
+                throw new BizException(ErrorCode.SECURITY_WRITE_BLOCKED, "安全警告：禁止执行非查询类 SQL 语句！");
+            }
+            PlainSelect plainSelect = select.getPlainSelect();
+            if (plainSelect == null) {
+                throw new BizException(ErrorCode.SQL_INVALID, "安全警告：仅支持单条 SELECT 查询");
+            }
+            validateCandidateTenantCondition(config, plainSelect, tenantId);
+            validateTables(statement, config);
+            validateColumns(plainSelect, config);
+        } catch (BizException ex) {
+            throw ex;
+        } catch (Exception exception) {
+            throw new BizException(ErrorCode.SQL_INVALID, "SQL 解析失败或包含非法指令: " + exception.getMessage(), exception);
+        }
+    }
+
+    /**
      * 校验 SQL 是否安全。
      *
      * @param sql      SQL 文本
@@ -63,7 +95,7 @@ public class SqlSecurityChecker {
         try {
             Statement statement = CCJSqlParserUtil.parse(sql);
             if (!(statement instanceof Select select)) {
-                throw new BizException(ErrorCode.SQL_INVALID, "安全警告：禁止执行非查询类 SQL 语句！");
+                throw new BizException(ErrorCode.SECURITY_WRITE_BLOCKED, "安全警告：禁止执行非查询类 SQL 语句！");
             }
 
             PlainSelect plainSelect = select.getPlainSelect();
@@ -118,17 +150,17 @@ public class SqlSecurityChecker {
             return;
         }
         if (!StringUtils.hasText(tenantId)) {
-            throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：租户上下文缺失");
+            throw new BizException(ErrorCode.SECURITY_TENANT_SCOPE_BLOCKED, "安全警告：租户上下文缺失");
         }
         Expression where = plainSelect == null ? null : plainSelect.getWhere();
         if (where == null) {
-            throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：逻辑隔离模式缺少 tenant 条件");
+            throw new BizException(ErrorCode.SECURITY_TENANT_SCOPE_BLOCKED, "安全警告：逻辑隔离模式缺少 tenant 条件");
         }
         List<TableRef> tableRefs = collectTableRefs(plainSelect);
         if (tableRefs.isEmpty()) {
             String columnName = config.resolveLogicColumn();
             if (!containsEqualsCondition(where, columnName, tenantId, null)) {
-                throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：逻辑隔离模式 tenant 条件不合法");
+                throw new BizException(ErrorCode.SECURITY_TENANT_SCOPE_BLOCKED, "安全警告：逻辑隔离模式 tenant 条件不合法");
             }
             return;
         }
@@ -136,9 +168,87 @@ public class SqlSecurityChecker {
             String columnName = metadataExtService.resolveIsolationField(tenantId, ref.tableName())
                     .orElse(config.resolveLogicColumn());
             if (!containsEqualsCondition(where, columnName, tenantId, null, ref.qualifier(), ref.tableName())) {
-                throw new BizException(ErrorCode.SECURITY_VIOLATION,
+                throw new BizException(ErrorCode.SECURITY_TENANT_SCOPE_BLOCKED,
                         "安全警告：逻辑隔离模式 tenant 条件不合法，表=" + ref.tableName());
             }
+        }
+    }
+
+    /**
+     * 拒绝候选 SQL 中显式声明的越权租户条件。
+     *
+     * @param config 租户数据源配置
+     * @param plainSelect 候选查询
+     * @param tenantId 当前租户标识
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    private void validateCandidateTenantCondition(
+            TenantDbConfig config,
+            PlainSelect plainSelect,
+            String tenantId
+    ) {
+        if (!config.isLogicalIsolation() || plainSelect.getWhere() == null) {
+            return;
+        }
+        if (!StringUtils.hasText(tenantId)) {
+            throw new BizException(ErrorCode.SECURITY_TENANT_SCOPE_BLOCKED, "安全警告：租户上下文缺失");
+        }
+        ColumnCollector collector = new ColumnCollector();
+        plainSelect.getWhere().accept(collector);
+        Set<String> referencedColumns = collector.getColumns();
+        List<TableRef> tableRefs = collectTableRefs(plainSelect);
+        if (tableRefs.isEmpty()) {
+            rejectMismatchedCandidateTenantCondition(
+                    plainSelect.getWhere(),
+                    referencedColumns,
+                    config.resolveLogicColumn(),
+                    tenantId,
+                    null,
+                    null
+            );
+            return;
+        }
+        for (TableRef ref : tableRefs) {
+            String columnName = metadataExtService.resolveIsolationField(tenantId, ref.tableName())
+                    .orElse(config.resolveLogicColumn());
+            boolean unqualifiedSingleTableCondition = tableRefs.size() == 1
+                    && !referencedColumns.contains(
+                            (ref.qualifier() + "." + normalizeColumnName(columnName)).toLowerCase(Locale.ROOT)
+                    );
+            rejectMismatchedCandidateTenantCondition(
+                    plainSelect.getWhere(),
+                    referencedColumns,
+                    columnName,
+                    tenantId,
+                    unqualifiedSingleTableCondition ? null : ref.qualifier(),
+                    unqualifiedSingleTableCondition ? null : ref.tableName()
+            );
+        }
+    }
+
+    private void rejectMismatchedCandidateTenantCondition(
+            Expression where,
+            Set<String> referencedColumns,
+            String columnName,
+            String tenantId,
+            String qualifier,
+            String tableName
+    ) {
+        String normalizedColumn = normalizeColumnName(columnName);
+        boolean referencesIsolationColumn = referencedColumns.contains(normalizedColumn)
+                || Pattern.compile(
+                        "(?:\\b\\w+\\.)?" + Pattern.quote(normalizedColumn) + "\\b",
+                        Pattern.CASE_INSENSITIVE
+                ).matcher(where.toString().replace("`", "")).find();
+        if (!StringUtils.hasText(normalizedColumn) || !referencesIsolationColumn) {
+            return;
+        }
+        if (!containsEqualsCondition(where, columnName, tenantId, null, qualifier, tableName)) {
+            throw new BizException(
+                    ErrorCode.SECURITY_TENANT_SCOPE_BLOCKED,
+                    "安全警告：候选 SQL 包含越权租户条件"
+            );
         }
     }
 
@@ -295,7 +405,7 @@ public class SqlSecurityChecker {
         Set<String> tables = finder.getTables(statement);
         for (String table : tables) {
             if (!allowed.contains(table.toLowerCase())) {
-                throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：访问未授权表 " + table);
+                throw new BizException(ErrorCode.SECURITY_ALLOWLIST_BLOCKED, "安全警告：访问未授权表 " + table);
             }
         }
     }
@@ -317,10 +427,10 @@ public class SqlSecurityChecker {
             Expression expression = item.getExpression();
             if (expression instanceof AllColumns || expression instanceof AllTableColumns) {
                 if (!sensitiveColumns.isEmpty()) {
-                    throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：禁止使用 * 查询敏感字段");
+                    throw new BizException(ErrorCode.SECURITY_ALLOWLIST_BLOCKED, "安全警告：禁止使用 * 查询敏感字段");
                 }
                 if (!whiteColumns.isEmpty()) {
-                    throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：字段白名单开启时禁止使用 *");
+                    throw new BizException(ErrorCode.SECURITY_ALLOWLIST_BLOCKED, "安全警告：字段白名单开启时禁止使用 *");
                 }
                 continue;
             }
@@ -349,10 +459,10 @@ public class SqlSecurityChecker {
 
         for (String column : collector.getColumns()) {
             if (!whiteColumns.isEmpty() && !whiteColumns.contains(column)) {
-                throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：字段未在白名单内 " + column);
+                throw new BizException(ErrorCode.SECURITY_ALLOWLIST_BLOCKED, "安全警告：字段未在白名单内 " + column);
             }
             if (sensitiveColumns.contains(column)) {
-                throw new BizException(ErrorCode.SECURITY_VIOLATION, "安全警告：访问敏感字段 " + column);
+                throw new BizException(ErrorCode.SECURITY_ALLOWLIST_BLOCKED, "安全警告：访问敏感字段 " + column);
             }
         }
     }

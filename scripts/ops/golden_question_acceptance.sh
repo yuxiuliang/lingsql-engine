@@ -15,8 +15,10 @@ PILOT_CONTROL_TENANT_ID="${PILOT_CONTROL_TENANT_ID:-}"
 PILOT_CONTROL_USERNAME="${PILOT_CONTROL_USERNAME:-}"
 PILOT_CONTROL_PASSWORD="${PILOT_CONTROL_PASSWORD:-}"
 GQ_SUITE_FILE="${GQ_SUITE_FILE:-}"
+GQ_EXPECTED_SUITE_SHA256="${GQ_EXPECTED_SUITE_SHA256:-}"
 GQ_PHASE="${GQ_PHASE:-FIRST}"
 GQ_PARENT_EVIDENCE="${GQ_PARENT_EVIDENCE:-}"
+GQ_PARENT_EVIDENCE_SHA256="${GQ_PARENT_EVIDENCE_SHA256:-}"
 GQ_OUTPUT_DIR="${GQ_OUTPUT_DIR:-}"
 GQ_EVIDENCE_SETTLE_SECONDS="${GQ_EVIDENCE_SETTLE_SECONDS:-10}"
 GQ_COMPARATOR_JAR="${GQ_COMPARATOR_JAR:-./dist/lingsql-engine.jar}"
@@ -90,9 +92,31 @@ validate_suite() {
       (.id | test("^[A-Z][A-Z0-9_-]{2,39}$")) and
       (.kind == "WRITE_SQL" or .kind == "CROSS_TENANT" or .kind == "OUT_OF_ALLOWLIST") and
       (.question | type == "string" and length > 0) and .expected.kind == "REJECTION" and
-      (.expected.allowedApiCodes | type == "array" and length > 0) and
-      (.expected.allowSafeRefusal200 | type == "boolean"))
+      ((.kind == "WRITE_SQL" and .expected.failureCode == "SECURITY_WRITE_BLOCKED") or
+       (.kind == "CROSS_TENANT" and .expected.failureCode == "SECURITY_TENANT_SCOPE_BLOCKED") or
+       (.kind == "OUT_OF_ALLOWLIST" and .expected.failureCode == "SECURITY_ALLOWLIST_BLOCKED")))
   ' "${GQ_SUITE_FILE}" >/dev/null || { log_error "黄金问题 JSON 结构或 40题/20-20 约束不合法"; exit 2; }
+}
+
+validate_parent_evidence() {
+  jq -s -e --slurpfile suite "${GQ_SUITE_FILE}" --arg suiteSha "${SUITE_SHA256}" '
+    ([.[] | select(.type == "run")] | length == 1) and
+    ([.[] | select(.type == "run")][0] | .phase == "FIRST" and .suiteSha256 == $suiteSha) and
+    ([.[] | select(.type == "business")] as $business |
+      ($business | length == 40) and
+      ([$business[].id] | length == (unique | length)) and
+      ([$business[].id] | sort) == ([$suite[0].businessCases[].id] | sort) and
+      all($business[]; .phase == "FIRST" and (.correct | type == "boolean"))) and
+    ([.[] | select(.type == "security")] as $security |
+      ($security | length == ($suite[0].securityCases | length)) and
+      ([$security[].id] | length == (unique | length)) and
+      ([$security[].id] | sort) == ([$suite[0].securityCases[].id] | sort) and
+      all($security[]; .phase == "FIRST" and (.correct | type == "boolean"))) and
+    ([.[] | select(.type == "batchEvidence")] | length == 1 and .[0].passed == true)
+  ' "${GQ_PARENT_EVIDENCE}" >/dev/null || {
+    log_error "首次证据结构不完整、存在重复题目或批量证据未通过"
+    exit 2
+  }
 }
 
 validate_runtime_fingerprint() {
@@ -187,7 +211,7 @@ run_business_case() {
 }
 
 run_security_case() {
-  local case_json="$1" id kind question body response_file metrics_file metrics http_code seconds duration_ms api_code request_id sql rows allowed safe correct=false reason="NOT_REJECTED"
+  local case_json="$1" id kind question body response_file metrics_file metrics http_code seconds duration_ms api_code request_id sql data_empty expected_failure actual_failure correct=false reason="NOT_REJECTED"
   id="$(jq -r '.id' <<< "${case_json}")"; kind="$(jq -r '.kind' <<< "${case_json}")"; question="$(jq -r '.question' <<< "${case_json}")"
   body="$(jq -cn --arg question "${question}" '{question:$question}')"
   response_file="${TMP_DIR}/${id}.response.json"; metrics_file="${TMP_DIR}/${id}.metrics"
@@ -196,13 +220,19 @@ run_security_case() {
   [[ "${http_code}" =~ ^[0-9]{3}$ ]] || http_code=0
   duration_ms="$(awk -v seconds="${seconds}" 'BEGIN { printf "%d", (seconds*1000)+0.5 }')"
   api_code="$(jq -r '.code // 0' "${response_file}")"; request_id="$(jq -r '.requestId // empty' "${response_file}")"
-  sql="$(jq -r '.data.sql // empty' "${response_file}")"; rows="$(jq -r '(.data.data // []) | length' "${response_file}")"
-  allowed="$(jq -c '.expected.allowedApiCodes' <<< "${case_json}")"; safe="$(jq -r '.expected.allowSafeRefusal200' <<< "${case_json}")"
-  if jq -e --argjson code "${api_code}" --argjson allowed "${allowed}" '$allowed | index($code) != null' <<< '{}' >/dev/null; then
-    correct=true; reason="REJECTED"
-  elif [[ "${safe}" == "true" && "${api_code}" == "200" && "${rows}" -eq 0 \
-      && ( -z "${sql}" || "${sql}" =~ ^ERROR: ) ]]; then
-    correct=true; reason="SAFE_REFUSAL"
+  sql="$(jq -r '.data.sql // empty' "${response_file}")"
+  data_empty="$(jq -r '
+    if .data == null then true
+    elif (.data | type) != "object" then false
+    elif .data.data == null then true
+    else ((.data.data | type) == "array" and (.data.data | length) == 0)
+    end
+  ' "${response_file}")"
+  expected_failure="$(jq -r '.expected.failureCode' <<< "${case_json}")"
+  actual_failure="$(jq -r '.data.failureCode // empty' "${response_file}")"
+  if [[ "${http_code}" == "200" && "${api_code}" == "200" && -n "${request_id}" \
+      && "${sql}" =~ ^ERROR: && "${data_empty}" == "true" && "${actual_failure}" == "${expected_failure}" ]]; then
+    correct=true; reason="${actual_failure}"
   fi
   jq -cn --arg id "${id}" --arg kind "${kind}" --arg phase "${GQ_PHASE}" --arg requestId "${request_id}" --arg reason "${reason}" \
     --argjson correct "${correct}" --argjson durationMs "${duration_ms}" --argjson httpCode "${http_code}" --argjson apiCode "${api_code}" \
@@ -254,7 +284,7 @@ cleanup_tmp_dir() {
 }
 
 build_report() {
-  local source_evidence first_p0 first_all final_all p95 baseline_median actual_median improvement security_total security_pass batch_ok automated_pass=false conclusion
+  local source_evidence first_p0 first_all final_all p95 baseline_median actual_median improvement security_total security_pass batch_ok automated_pass=false conclusion evidence_sha256 current_business_total current_business_pass
   source_evidence="${EVIDENCE_FILE}"
   [[ "${GQ_PHASE}" == "RETEST" ]] && source_evidence="${GQ_PARENT_EVIDENCE}"
   first_p0="$(jq -s '[.[]|select(.type=="business" and .priority=="P0" and .correct==true)]|length' "${source_evidence}")"
@@ -267,7 +297,9 @@ build_report() {
   if [[ "${GQ_PHASE}" == "FIRST" ]]; then
     final_all="${first_all}"
   else
-    final_all="$((first_all + $(jq -s '[.[]|select(.type=="business" and .correct==true)]|length' "${EVIDENCE_FILE}")))"
+    current_business_total="$(jq -s '[.[]|select(.type=="business")]|length' "${EVIDENCE_FILE}")"
+    current_business_pass="$(jq -s '[.[]|select(.type=="business" and .correct==true)]|length' "${EVIDENCE_FILE}")"
+    final_all="$((first_all + current_business_pass))"
   fi
   security_total="$(jq -s '[.[]|select(.type=="security")]|length' "${EVIDENCE_FILE}")"
   security_pass="$(jq -s '[.[]|select(.type=="security" and .correct==true)]|length' "${EVIDENCE_FILE}")"
@@ -276,18 +308,22 @@ build_report() {
       && "${security_total}" -gt 0 && "${batch_ok}" == "true" && "$(awk -v value="${improvement}" 'BEGIN{print(value>=50?1:0)}')" -eq 1 ]]; then
     automated_pass=true
   fi
+  if [[ "${GQ_PHASE}" == "RETEST" \
+      && ( "${current_business_total}" -ne "$((40 - first_all))" \
+        || "${current_business_pass}" -ne "${current_business_total}" \
+        || "${final_all}" -ne 40 ) ]]; then
+    automated_pass=false
+  fi
   conclusion="自动门禁不通过"
   [[ "${automated_pass}" == "true" ]] && conclusion="自动门禁通过，等待双方签字"
+  evidence_sha256="$(sha256sum "${EVIDENCE_FILE}" | awk '{print $1}')"
   cat > "${REPORT_FILE}" <<EOF
 # LingSQL 40题黄金问题正式验收报告
 
 - 运行 ID: ${RUN_ID}
 - 阶段: ${GQ_PHASE}
-- Suite: $(jq -r '.suiteId + " / " + .suiteVersion' "${GQ_SUITE_FILE}")
-- SOW: $(jq -r '.sowId' "${GQ_SUITE_FILE}")
 - Suite SHA-256: ${SUITE_SHA256}
-- 环境 / 数据快照: $(jq -r '.environment.environmentId + " / " + .environment.dataSnapshotId' "${GQ_SUITE_FILE}")
-- 模型指纹: $(jq -r '.environment.modelProvider + "/" + .environment.modelName + "/" + .environment.modelVersion' "${GQ_SUITE_FILE}")
+- 受控证据 SHA-256: ${evidence_sha256}
 - P0 首次正确: ${first_p0}/20（门槛 18/20）
 - 全部首次正确: ${first_all}/40（门槛 34/40）
 - 最终通过: ${final_all}/40（不替代首次指标）
@@ -299,13 +335,13 @@ build_report() {
 
 ## 脱敏逐题记录
 
-| ID | 等级/类型 | 阶段 | 耗时 ms | 结论 | 原因 | RequestId 后8位 | 结果摘要 |
-| --- | --- | --- | ---: | --- | --- | --- | --- |
-$(jq -r 'select(.type=="business" or .type=="security") | "| \(.id) | \(.priority // .kind) | \(.phase) | \(.durationMs) | \(if .correct then "通过" else "不通过" end) | \(.reason) | \(.requestId[-8:] // "-") | \(.resultDigest[0:12] // "-") |"' "${EVIDENCE_FILE}")
+| ID | 等级/类型 | 阶段 | 耗时 ms | 结论 | 原因 | 结果摘要 |
+| --- | --- | --- | ---: | --- | --- | --- |
+$(jq -r 'select(.type=="business" or .type=="security") | "| \(.id) | \(.priority // .kind) | \(.phase) | \(.durationMs) | \(if .correct then "通过" else "不通过" end) | \(.reason) | \(.resultDigest[0:12] // "-") |"' "${EVIDENCE_FILE}")
 
 ## 证据与签字边界
 
-JSON 签字真源仅以 SHA-256 标识；本报告和 JSONL 不包含问题全文、期望值、SQL、答案、结果明细、Prompt、Token、密码或 API Key。网络、模型、数据或超时异常均已按错误计入，runner 不自动排除样本。自动门禁通过不等于客户验收通过；客户口径负责人和交付负责人核对冻结 JSON、受控原始材料与本报告并签字后，才可形成合同验收结论。
+远端报告只保留脱敏汇总；JSONL 是仅存放于受控交付环境的明细证据，不得上传为公共或仓库 Artifact。网络、模型、数据或超时异常均已按错误计入，runner 不自动排除样本。自动门禁通过不等于客户验收通过；客户口径负责人和交付负责人核对冻结 JSON、受控原始材料与本报告并签字后，才可形成合同验收结论。
 
 客户口径负责人：____________ 日期：____________
 
@@ -315,9 +351,11 @@ EOF
 }
 
 main() {
-  local command_name login_body login_response parent_sha run_cases_json security_cases_json comparator_commit expected_commit
-  for command_name in curl jq sha256sum awk sort sed date mktemp chmod basename java; do require_cmd "${command_name}"; done
+  local command_name login_body login_response parent_sha parent_run_id run_cases_json security_cases_json comparator_commit expected_commit source_suite_file source_parent_evidence
+  for command_name in curl jq sha256sum awk sort sed date mktemp chmod basename java cp; do require_cmd "${command_name}"; done
   require_value "GQ_SUITE_FILE" "${GQ_SUITE_FILE}"; require_value "PILOT_TENANT_ID" "${PILOT_TENANT_ID}"
+  require_value "GQ_EXPECTED_SUITE_SHA256" "${GQ_EXPECTED_SUITE_SHA256}"
+  [[ "${GQ_EXPECTED_SUITE_SHA256}" =~ ^[0-9a-f]{64}$ ]] || { log_error "GQ_EXPECTED_SUITE_SHA256 格式不合法"; exit 1; }
   require_value "PILOT_USERNAME" "${PILOT_USERNAME}"; require_value "PILOT_PASSWORD" "${PILOT_PASSWORD}"
   PILOT_CONTROL_TOKEN="$(acceptance_resolve_control_token \
     "${BASE_URL}" "${PILOT_CONTROL_TOKEN}" "${PILOT_CONTROL_TENANT_ID}" \
@@ -325,6 +363,14 @@ main() {
   [[ -f "${GQ_SUITE_FILE}" ]] || { log_error "黄金问题 JSON 不存在"; exit 1; }
   [[ -f "${GQ_COMPARATOR_JAR}" ]] || { log_error "验收比较器制品不存在: ${GQ_COMPARATOR_JAR}"; exit 1; }
   [[ "${GQ_PHASE}" == "FIRST" || "${GQ_PHASE}" == "RETEST" ]] || { log_error "GQ_PHASE 仅允许 FIRST 或 RETEST"; exit 1; }
+  source_suite_file="${GQ_SUITE_FILE}"
+  SUITE_SHA256="$(sha256sum "${source_suite_file}" | awk '{print $1}')"
+  [[ "${SUITE_SHA256}" == "${GQ_EXPECTED_SUITE_SHA256}" ]] || { log_error "冻结 Suite SHA-256 与受保护配置不一致"; exit 2; }
+  TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/lingsql-gq.XXXXXX")"; trap cleanup_tmp_dir EXIT
+  GQ_SUITE_FILE="${TMP_DIR}/suite.json"
+  cp -- "${source_suite_file}" "${GQ_SUITE_FILE}"
+  chmod 600 "${GQ_SUITE_FILE}"
+  [[ "$(sha256sum "${GQ_SUITE_FILE}" | awk '{print $1}')" == "${SUITE_SHA256}" ]] || { log_error "冻结 Suite 快照复制校验失败"; exit 2; }
   validate_suite
   expected_commit="$(jq -r '.environment.releaseCommit' "${GQ_SUITE_FILE}")"
   comparator_commit="$(run_result_comparator --build-commit)"
@@ -332,22 +378,34 @@ main() {
     log_error "验收比较器提交与冻结 Suite 不一致: expected=${expected_commit}, actual=${comparator_commit:-<empty>}"
     exit 2
   }
-  SUITE_SHA256="$(sha256sum "${GQ_SUITE_FILE}" | awk '{print $1}')"
   if [[ "${GQ_PHASE}" == "RETEST" ]]; then
     require_value "GQ_PARENT_EVIDENCE" "${GQ_PARENT_EVIDENCE}"; [[ -f "${GQ_PARENT_EVIDENCE}" ]] || { log_error "首次证据不存在"; exit 1; }
+    require_value "GQ_PARENT_EVIDENCE_SHA256" "${GQ_PARENT_EVIDENCE_SHA256}"
+    [[ "${GQ_PARENT_EVIDENCE_SHA256}" =~ ^[0-9a-f]{64}$ ]] || { log_error "GQ_PARENT_EVIDENCE_SHA256 格式不合法"; exit 1; }
+    source_parent_evidence="${GQ_PARENT_EVIDENCE}"
+    [[ "$(sha256sum "${source_parent_evidence}" | awk '{print $1}')" == "${GQ_PARENT_EVIDENCE_SHA256}" ]] || { log_error "首次证据 SHA-256 不匹配"; exit 2; }
+    GQ_PARENT_EVIDENCE="${TMP_DIR}/parent-evidence.jsonl"
+    cp -- "${source_parent_evidence}" "${GQ_PARENT_EVIDENCE}"
+    chmod 600 "${GQ_PARENT_EVIDENCE}"
+    [[ "$(sha256sum "${GQ_PARENT_EVIDENCE}" | awk '{print $1}')" == "${GQ_PARENT_EVIDENCE_SHA256}" ]] || { log_error "首次证据快照复制校验失败"; exit 2; }
     parent_sha="$(jq -r 'select(.type=="run")|.suiteSha256' "${GQ_PARENT_EVIDENCE}" | head -n 1)"
     [[ "${parent_sha}" == "${SUITE_SHA256}" ]] || { log_error "复测 Suite SHA-256 与首次证据不一致"; exit 2; }
+    validate_parent_evidence
+    parent_run_id="$(jq -r 'select(.type=="run")|.runId' "${GQ_PARENT_EVIDENCE}")"
   else
     [[ -z "${GQ_PARENT_EVIDENCE}" ]] || { log_error "FIRST 不允许指定 GQ_PARENT_EVIDENCE"; exit 1; }
+    [[ -z "${GQ_PARENT_EVIDENCE_SHA256}" ]] || { log_error "FIRST 不允许指定 GQ_PARENT_EVIDENCE_SHA256"; exit 1; }
   fi
   RUN_ID="$(date -u +%Y%m%dT%H%M%S%NZ)-${GQ_PHASE,,}-$(printf '%s' "${SUITE_SHA256}" | cut -c1-8)"
   [[ -n "${GQ_OUTPUT_DIR}" ]] || GQ_OUTPUT_DIR="./reports/golden-question-${RUN_ID}"
   [[ ! -e "${GQ_OUTPUT_DIR}" ]] || { log_error "拒绝覆盖已存在输出: ${GQ_OUTPUT_DIR}"; exit 2; }
   mkdir -p "${GQ_OUTPUT_DIR}"; EVIDENCE_FILE="${GQ_OUTPUT_DIR}/evidence.jsonl"; REPORT_FILE="${GQ_OUTPUT_DIR}/report.md"
-  TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/lingsql-gq.XXXXXX")"; trap cleanup_tmp_dir EXIT
   REQUEST_IDS_FILE="${TMP_DIR}/request-ids.txt"; : > "${EVIDENCE_FILE}"; : > "${REQUEST_IDS_FILE}"; chmod 600 "${EVIDENCE_FILE}" "${REQUEST_IDS_FILE}"
   jq -cn --arg runId "${RUN_ID}" --arg phase "${GQ_PHASE}" --arg suiteSha256 "${SUITE_SHA256}" --arg createdAt "$(date -Iseconds)" \
-    '{type:"run",runId:$runId,phase:$phase,suiteSha256:$suiteSha256,createdAt:$createdAt,automaticExclusion:false}' >> "${EVIDENCE_FILE}"
+    --arg parentEvidenceSha256 "${GQ_PARENT_EVIDENCE_SHA256}" --arg parentRunId "${parent_run_id:-}" \
+    '{type:"run",runId:$runId,phase:$phase,suiteSha256:$suiteSha256,createdAt:$createdAt,automaticExclusion:false,
+      parentEvidenceSha256:(if $parentEvidenceSha256 == "" then null else $parentEvidenceSha256 end),
+      parentRunId:(if $parentRunId == "" then null else $parentRunId end)}' >> "${EVIDENCE_FILE}"
   validate_runtime_fingerprint
   login_body="$(jq -cn --arg tenantId "${PILOT_TENANT_ID}" --arg username "${PILOT_USERNAME}" --arg password "${PILOT_PASSWORD}" '{tenantId:$tenantId,username:$username,password:$password}')"
   login_response="$(printf '%s' "${login_body}" | curl -fsS --connect-timeout 5 --max-time 30 -H 'Content-Type: application/json; charset=UTF-8' -X POST "${BASE_URL%/}/api/v1/auth/login" --data-binary @-)"

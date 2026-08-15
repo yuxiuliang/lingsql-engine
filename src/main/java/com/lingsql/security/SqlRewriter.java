@@ -69,7 +69,7 @@ public class SqlRewriter {
             Select select = (Select) CCJSqlParserUtil.parse(sql);
             PlainSelect plainSelect = select.getPlainSelect();
             if (plainSelect == null) {
-                throw new BizException(ErrorCode.SQL_INVALID, "仅支持单条 SELECT 查询");
+                throw new BizException(ErrorCode.SECURITY_WRITE_BLOCKED, "仅支持单条 SELECT 查询");
             }
 
             injectLimit(plainSelect);

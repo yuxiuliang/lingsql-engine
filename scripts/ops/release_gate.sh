@@ -93,7 +93,7 @@ run_commercial_gate() {
   if [[ -n "${RELEASE_GATE_COMMERCIAL_REPORT_FILE}" ]]; then
     export COMMERCIAL_REPORT_FILE="${RELEASE_GATE_COMMERCIAL_REPORT_FILE}"
   fi
-  log_info "开始执行商用验收总门禁"
+  log_info "开始执行付费试点技术放行门禁"
   ./scripts/ops/commercial_acceptance_gate.sh
 }
 

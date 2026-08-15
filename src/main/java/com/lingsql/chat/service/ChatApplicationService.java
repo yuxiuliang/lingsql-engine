@@ -82,7 +82,8 @@ public class ChatApplicationService {
                 runResult.sql(),
                 history.getId(),
                 runResult.trace(),
-                conversationId
+                conversationId,
+                runResult.failureCode()
         );
     }
 

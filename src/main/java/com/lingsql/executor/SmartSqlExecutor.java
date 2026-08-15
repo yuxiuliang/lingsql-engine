@@ -19,6 +19,8 @@ import com.lingsql.agent.plugin.IAgentPlugin;
 import com.lingsql.audit.model.SqlExecuteLogCommand;
 import com.lingsql.audit.service.SqlExecuteLogService;
 import com.lingsql.chat.model.ChatTraceStep;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.trace.RequestTraceContext;
 import com.lingsql.context.TenantContext;
 import com.lingsql.datasource.TenantDbConfigErrors;
@@ -321,6 +323,12 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
                 fillFailureLog(logCommand, rawSql, exception.getMessage());
                 appendTrace(trace, TRACE_TYPE_OBSERVATION, "合规审计拒绝", "合规审计员拒绝该候选 SQL，系统不会执行数据库查询。",
                         TRACE_STATUS_FAILURE, attempt, AgentRole.AUDITOR, exception.getAuditDurationMs());
+                if (exception.getCause() instanceof BizException bizException
+                        && (bizException.getErrorCode() == ErrorCode.SECURITY_WRITE_BLOCKED
+                        || bizException.getErrorCode() == ErrorCode.SECURITY_TENANT_SCOPE_BLOCKED
+                        || bizException.getErrorCode() == ErrorCode.SECURITY_ALLOWLIST_BLOCKED)) {
+                    throw bizException;
+                }
                 throw new SqlExecutionException(exception.getMessage(), rawSql);
             }
             fillFailureLog(logCommand, exception.getSql(), exception.getMessage());

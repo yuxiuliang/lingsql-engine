@@ -75,6 +75,8 @@ jobs:
           BACKUP_RESTORE_BACKUP_USER: ${{ vars.RELEASE_GATE_BACKUP_USER }}
           BACKUP_RESTORE_RESTORE_USER: ${{ vars.RELEASE_GATE_RESTORE_USER }}
           RELEASE_GATE_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
+          RELEASE_GATE_GQ_SUITE_FILE: ${{ vars.RELEASE_GATE_GQ_SUITE_FILE }}
+          RELEASE_GATE_GQ_SUITE_SHA256: ${{ vars.RELEASE_GATE_GQ_SUITE_SHA256 }}
         run: |
           BASE_URL_TRIMMED="$(printf '%s' "${BASE_URL}" | xargs)"
           BILLING_URL_TRIMMED="$(printf '%s' "${BILLING_READINESS_URL}" | xargs)"
@@ -83,6 +85,7 @@ jobs:
             exit 1
           fi
           for name in PROMETHEUS_URL DRILL_ID DETECTED_AT ACKED_AT MITIGATED_AT RELEASE_GATE_CONTROL_TENANT_ID \
+            RELEASE_GATE_GQ_SUITE_FILE RELEASE_GATE_GQ_SUITE_SHA256 \
             BACKUP_RESTORE_MYSQL_HOST BACKUP_RESTORE_MYSQL_PORT BACKUP_RESTORE_SOURCE_DB \
             BACKUP_RESTORE_BACKUP_DIR BACKUP_RESTORE_BACKUP_USER BACKUP_RESTORE_RESTORE_USER; do
             if [ -z "$(printf '%s' "${!name}" | xargs)" ]; then
@@ -90,6 +93,29 @@ jobs:
               exit 1
             fi
           done
+          if [ ! -f "${RELEASE_GATE_GQ_SUITE_FILE}" ]; then
+            echo "::error::冻结 40 题 Suite 不存在或不是文件。"
+            exit 1
+          fi
+          if ! [[ "${RELEASE_GATE_GQ_SUITE_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::冻结 40 题 Suite SHA-256 配置不合法。"
+            exit 1
+          fi
+          DERIVED_BILLING_URL="${BASE_URL_TRIMMED%/}/api/v1/admin/billing/readiness/snapshot"
+          if [ -n "${BILLING_URL_TRIMMED}" ] && [ "${BILLING_URL_TRIMMED}" != "${DERIVED_BILLING_URL}" ]; then
+            echo "::error::billing_readiness_url 必须与 base_url 指向同一实例。"
+            exit 1
+          fi
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Build Acceptance Comparator
+        run: mvn -B -ntp -DskipTests package -Dlingsql.build.commit="${GITHUB_SHA}"
 
       - name: Validate Gate Credentials
         env:
@@ -119,6 +145,27 @@ jobs:
           RUNTIME_FINGERPRINT_REPORT_FILE: ./reports/runtime_fingerprint.md
         run: ./scripts/ops/runtime_fingerprint_guard.sh
 
+      - name: Run Frozen 40 Question Acceptance
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          GQ_SUITE_FILE: ${{ vars.RELEASE_GATE_GQ_SUITE_FILE }}
+          GQ_EXPECTED_SUITE_SHA256: ${{ vars.RELEASE_GATE_GQ_SUITE_SHA256 }}
+          GQ_PHASE: FIRST
+          GQ_OUTPUT_DIR: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}
+          PILOT_TENANT_ID: ${{ secrets.RELEASE_GATE_PILOT_TENANT_ID }}
+          PILOT_USERNAME: ${{ secrets.RELEASE_GATE_PILOT_USERNAME }}
+          PILOT_PASSWORD: ${{ secrets.RELEASE_GATE_PILOT_PASSWORD }}
+          PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
+          PILOT_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
+        run: |
+          GQ_COMPARATOR_JAR="$(find ./target -maxdepth 1 -type f -name 'lingsql-engine-*.jar' ! -name '*.original' | head -n 1)"
+          if [ -z "${GQ_COMPARATOR_JAR}" ]; then
+            echo "::error::未找到黄金问题比较器 JAR。"
+            exit 1
+          fi
+          export GQ_COMPARATOR_JAR
+          ./scripts/ops/golden_question_acceptance.sh
+
       - name: Run Release Gate
         env:
           BASE_URL: ${{ inputs.base_url }}
@@ -129,7 +176,6 @@ jobs:
           RELEASE_GATE_BLOCK_ON_SLO_BREACH: "true"
           RELEASE_GATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
           RELEASE_GATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
-          BILLING_READINESS_URL: ${{ inputs.billing_readiness_url }}
           BILLING_ALLOW_SKIP: "false"
           BILLING_AUTH_TOKEN: ${{ secrets.RELEASE_GATE_BILLING_TOKEN }}
           COMMERCIAL_REQUIRE_SLO: "true"
@@ -158,7 +204,9 @@ jobs:
           SLO_WINDOW: "30d"
           SLO_TARGET: "99.9"
           SLO_MIN_REQUESTS: "100"
-        run: ./scripts/ops/release_gate.sh
+        run: |
+          export BILLING_READINESS_URL="${BASE_URL%/}/api/v1/admin/billing/readiness/snapshot"
+          ./scripts/ops/release_gate.sh
 
       - name: Upload SLO Report
         if: always()
@@ -173,5 +221,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: release-gate-commercial-reports
-          path: reports/
+          path: |
+            reports/commercial_acceptance.md
+            reports/golden-question-*/report.md
           if-no-files-found: ignore
+          retention-days: 7

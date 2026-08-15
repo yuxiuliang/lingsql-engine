@@ -79,6 +79,7 @@ public class SqlGuardedQueryExecutor {
         long auditStart = System.currentTimeMillis();
         ApprovedSql approvedSql;
         try {
+            sqlSecurityChecker.checkCandidate(candidateSql.value(), config, tenantId);
             String rewrittenSql = sqlRewriter.rewrite(candidateSql.value(), config, tenantId);
             sqlSecurityChecker.check(rewrittenSql, config, tenantId);
             approvedSql = new ApprovedSql(rewrittenSql);
