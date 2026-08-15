@@ -733,6 +733,8 @@ LINGSQL_SWITCH_HOOK="/opt/lingsql/scripts/ops/switch_traffic.sh" \
 | `LINGSQL_STOP_OLD_SLOT` | `false` | 发布成功后是否停止旧槽位 |
 | `LINGSQL_START_CMD_TEMPLATE` | 空 | 非 systemd 场景启动模板 |
 
+每个槽位必须使用独立运行身份文件：`/opt/lingsql/blue/runtime.env` 与 `/opt/lingsql/green/runtime.env`。对应 systemd unit 必须通过 `EnvironmentFile=` 消费精确槽位路径；自定义启动模板必须包含并导入 `{runtime_env}`。文件由发布脚本原子生成，仅包含制品 Git SHA、槽位和发布 ID，禁止使用全局 `systemctl set-environment`，以免并发发布污染另一槽位。应用会把这三项写为 Micrometer 公共标签 `build_commit`、`slot`、`release_id`。
+
 `switch_traffic.sh` 默认写入 `NGINX_UPSTREAM_CONF=/etc/nginx/conf.d/lingsql-upstream.conf`，并执行 `nginx -t + reload`。如生产环境使用网关/Ingress，请替换为自有切流命令并通过 `LINGSQL_SWITCH_HOOK` 接入。
 
 ### 7.5 回滚与冒烟验收自动化
@@ -800,6 +802,8 @@ RELEASE_GATE_SLO_REPORT_FILE=./reports/release_gate_slo.md \
 - 冒烟门禁失败：直接阻断发布。
 - SLO 门禁失败：直接阻断发布。
 - SLO 预算耗尽（`BREACHED`）时，是否阻断由 `RELEASE_GATE_BLOCK_ON_SLO_BREACH` 决定（生产建议为 `true`）。
+
+严格候选发布不得用滚动 30 天全局流量证明新版本。工作流先生成在线服务历史 SLO，再对候选隔离端口的运行指纹接口发出带 Bearer Token 和 `X-Tenant-Id` 的受控请求，最后按 `build_commit`、`slot`、`release_id` 查询并核验 Prometheus 返回序列。Prometheus 必须抓取蓝绿两个端口；候选查询禁止覆盖 PromQL。受控负载报告和候选 SLO 报告均不得包含 Token，候选 SLO 会记录受控负载报告 SHA-256 并进入候选收据。
 
 GitHub Actions 已提供手动门禁工作流：`.github/workflows/release-gate.yml`。建议在每次生产发布前先执行该工作流，门禁通过后再执行蓝绿发布。
 

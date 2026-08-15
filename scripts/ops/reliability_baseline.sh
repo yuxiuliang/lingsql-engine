@@ -11,6 +11,8 @@
 #   SLA_SUCCESS_RATE=99
 #   SLA_P95_MS=800
 #   REPORT_FILE=./reports/reliability_baseline.md
+#   ACCESS_TOKEN=***              # 可选：Bearer Token，仅通过临时 curl 配置传递
+#   TENANT_ID=tenant-id           # 可选：X-Tenant-Id
 
 set -euo pipefail
 
@@ -22,6 +24,8 @@ TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-5}"
 SLA_SUCCESS_RATE="${SLA_SUCCESS_RATE:-99}"
 SLA_P95_MS="${SLA_P95_MS:-800}"
 REPORT_FILE="${REPORT_FILE:-}"
+ACCESS_TOKEN="${ACCESS_TOKEN:-}"
+TENANT_ID="${TENANT_ID:-}"
 
 log_info() {
   echo "[INFO] $*"
@@ -78,24 +82,42 @@ main() {
   validate_positive_number "SLA_P95_MS" "${SLA_P95_MS}"
 
   local url="${BASE_URL%/}${TARGET_PATH}"
-  local tmp_file sorted_file
+  local tmp_file sorted_file curl_config_file
   tmp_file="$(mktemp)"
   sorted_file="$(mktemp)"
-  trap "rm -f '${tmp_file}' '${sorted_file}'" EXIT
+  curl_config_file="$(mktemp)"
+  chmod 600 "${curl_config_file}"
+  trap "rm -f '${tmp_file}' '${sorted_file}' '${curl_config_file}'" EXIT
+
+  if [[ -n "${ACCESS_TOKEN}" ]]; then
+    [[ "${ACCESS_TOKEN}" =~ ^[A-Za-z0-9._~+/=-]+$ ]] || {
+      log_error "ACCESS_TOKEN 包含不允许写入 HTTP Header 的字符"
+      exit 1
+    }
+    printf 'header = "Authorization: Bearer %s"\n' "${ACCESS_TOKEN}" >> "${curl_config_file}"
+  fi
+  if [[ -n "${TENANT_ID}" ]]; then
+    [[ "${TENANT_ID}" =~ ^[A-Za-z0-9._-]{1,128}$ ]] || {
+      log_error "TENANT_ID 格式非法"
+      exit 1
+    }
+    printf 'header = "X-Tenant-Id: %s"\n' "${TENANT_ID}" >> "${curl_config_file}"
+  fi
 
   log_info "开始执行可靠性基线压测: url=${url}, requests=${TOTAL_REQUESTS}, concurrency=${CONCURRENCY}"
   seq "${TOTAL_REQUESTS}" | xargs -P "${CONCURRENCY}" -I{} bash -c '
     url="$1"
     timeout="$2"
     start_ms="$(date +%s%3N)"
-    code="$(curl -s -m "${timeout}" -o /dev/null -w "%{http_code}" "${url}" || true)"
+    curl_config="$3"
+    code="$(curl --config "${curl_config}" -s -m "${timeout}" -o /dev/null -w "%{http_code}" "${url}" || true)"
     if [[ -z "${code}" ]]; then
       code="000"
     fi
     end_ms="$(date +%s%3N)"
     elapsed=$((end_ms - start_ms))
     echo "${elapsed},${code}"
-  ' _ "${url}" "${TIMEOUT_SECONDS}" > "${tmp_file}"
+  ' _ "${url}" "${TIMEOUT_SECONDS}" "${curl_config_file}" > "${tmp_file}"
 
   local total success fail success_rate avg_ms p95_ms max_ms min_ms
   total="$(wc -l < "${tmp_file}" | tr -d ' ')"

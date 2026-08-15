@@ -259,11 +259,22 @@ jobs:
           MIGRATION_OLD_VERSION_SMOKE_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/old-version-smoke.json
         run: bash scripts/ops/migration_release_guard.sh
 
+      - name: Verify Historical Service SLO
+        env:
+          PROMETHEUS_URL: ${{ inputs.prometheus_url }}
+          SLO_EVIDENCE_MODE: HISTORICAL
+          SLO_WINDOW: 30d
+          SLO_TARGET: "99.9"
+          SLO_MIN_REQUESTS: "100"
+          REPORT_FILE: ./reports/historical_service_slo.md
+        run: bash scripts/ops/slo_error_budget_report.sh
+
       - name: Prepare Isolated Candidate
         id: prepare_candidate
         env:
           LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
           LINGSQL_TRAFFIC_SWITCH_ENABLED: "false"
+          LINGSQL_RELEASE_BUILD_COMMIT: ${{ github.sha }}
         run: |
           ./scripts/ops/release_blue_green.sh ./dist/lingsql-engine.jar "${{ inputs.release_tag }}"
           EXPECTED_SHA="$(sha256sum ./dist/lingsql-engine.jar | awk '{print $1}')"
@@ -277,18 +288,24 @@ jobs:
           RELEASE_GATE_ENABLE_SLO: "true"
           RELEASE_GATE_ENABLE_COMMERCIAL: "true"
           RELEASE_GATE_BLOCK_ON_SLO_BREACH: "true"
-          RELEASE_GATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
+          RELEASE_GATE_SLO_REPORT_FILE: ./reports/candidate_slo.md
           RELEASE_GATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
           BILLING_ALLOW_SKIP: "false"
           BILLING_AUTH_TOKEN: ${{ secrets.RELEASE_GATE_BILLING_TOKEN }}
           COMMERCIAL_REQUIRE_SLO: "true"
           COMMERCIAL_REQUIRE_PILOT: "true"
-          SLO_WINDOW: "30d"
+          SLO_EVIDENCE_MODE: CANDIDATE
+          SLO_WINDOW: "15m"
           SLO_TARGET: "99.9"
-          SLO_MIN_REQUESTS: "100"
+          SLO_MIN_REQUESTS: "200"
+          SLO_CONTROLLED_LOAD_REPORT_FILE: ./reports/candidate_controlled_load.md
+          SLO_CONTROLLED_LOAD_PATH: /api/v1/admin/runtime/fingerprint
+          SLO_SCRAPE_SETTLE_SECONDS: "20"
           PILOT_TENANT_ID: ${{ secrets.RELEASE_GATE_PILOT_TENANT_ID }}
           PILOT_USERNAME: ${{ secrets.RELEASE_GATE_PILOT_USERNAME }}
           PILOT_PASSWORD: ${{ secrets.RELEASE_GATE_PILOT_PASSWORD }}
+          RELEASE_GATE_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
+          CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
           PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
           CANDIDATE_RECEIPT_HMAC_KEY: ${{ secrets.RELEASE_GATE_RECEIPT_HMAC_KEY }}
           PILOT_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
@@ -304,7 +321,7 @@ jobs:
           CANDIDATE_PILOT_REPORT_FILE: ./reports/pilot_acceptance.md
           CANDIDATE_BACKUP_REPORT_FILE: ./reports/backup_restore_acceptance.md
           CANDIDATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
-          CANDIDATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
+          CANDIDATE_SLO_REPORT_FILE: ./reports/candidate_slo.md
           CANDIDATE_MIGRATION_RECEIPT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/receipt.json
           CANDIDATE_OLD_VERSION_SMOKE_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/old-version-smoke.json
           EXPECTED_RELEASE_COMMIT: ${{ github.sha }}
@@ -330,9 +347,18 @@ jobs:
           MITIGATED_AT: ${{ inputs.p1_mitigated_at }}
         run: |
           CANDIDATE_PORT="$(tr -d '[:space:]' < "${LINGSQL_DEPLOY_BASE}/run/candidate_port")"
+          CANDIDATE_SLOT="$(tr -d '[:space:]' < "${LINGSQL_DEPLOY_BASE}/run/candidate_slot")"
+          CANDIDATE_RELEASE_ID="$(tr -d '[:space:]' < "${LINGSQL_DEPLOY_BASE}/run/candidate_release_id")"
           export BASE_URL="http://127.0.0.1:${CANDIDATE_PORT}"
           export BILLING_READINESS_URL="${BASE_URL}/api/v1/admin/billing/readiness/snapshot"
+          export SLO_EXPECTED_BUILD_COMMIT="${GITHUB_SHA}"
+          export SLO_EXPECTED_SLOT="${CANDIDATE_SLOT}"
+          export SLO_EXPECTED_RELEASE_ID="${CANDIDATE_RELEASE_ID}"
+          export SLO_EXPECTED_CANDIDATE_BASE_URL="${BASE_URL}"
           ./scripts/ops/runtime_fingerprint_guard.sh
+          ACCESS_TOKEN="${RELEASE_GATE_CONTROL_TOKEN}" TENANT_ID="${CONTROL_TENANT_ID}" \
+            REPORT_FILE="${SLO_CONTROLLED_LOAD_REPORT_FILE}" TARGET_PATH="${SLO_CONTROLLED_LOAD_PATH}" \
+            TOTAL_REQUESTS="${SLO_MIN_REQUESTS}" CONCURRENCY=20 bash ./scripts/ops/reliability_baseline.sh
           ./scripts/ops/golden_question_acceptance.sh
           # 40 题可能持续较长时间，结束后必须再次证明请求仍命中同一候选提交。
           ./scripts/ops/runtime_fingerprint_guard.sh
@@ -359,7 +385,7 @@ jobs:
           CANDIDATE_PILOT_REPORT_FILE: ./reports/pilot_acceptance.md
           CANDIDATE_BACKUP_REPORT_FILE: ./reports/backup_restore_acceptance.md
           CANDIDATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
-          CANDIDATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
+          CANDIDATE_SLO_REPORT_FILE: ./reports/candidate_slo.md
           CANDIDATE_MIGRATION_RECEIPT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/receipt.json
           CANDIDATE_OLD_VERSION_SMOKE_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/old-version-smoke.json
         run: ./scripts/ops/release_candidate_promote.sh
@@ -396,7 +422,7 @@ jobs:
           CANDIDATE_PILOT_REPORT_FILE: ./reports/pilot_acceptance.md
           CANDIDATE_BACKUP_REPORT_FILE: ./reports/backup_restore_acceptance.md
           CANDIDATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
-          CANDIDATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
+          CANDIDATE_SLO_REPORT_FILE: ./reports/candidate_slo.md
           CANDIDATE_MIGRATION_RECEIPT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/receipt.json
           CANDIDATE_OLD_VERSION_SMOKE_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/old-version-smoke.json
         run: ./scripts/ops/release_candidate_abort.sh
@@ -407,7 +433,9 @@ jobs:
         with:
           name: release-deploy-gate-reports
           path: |
-            reports/release_gate_slo.md
+            reports/historical_service_slo.md
+            reports/candidate_slo.md
+            reports/candidate_controlled_load.md
             reports/commercial_acceptance.md
             reports/migration-*/compatibility.json
             reports/migration-*/backup-restore.md

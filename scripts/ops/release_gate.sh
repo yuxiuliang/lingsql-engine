@@ -107,11 +107,12 @@ main() {
     failed=1
   fi
 
-  if ! run_slo_gate; then
+  # 商用门禁先产生候选受控负载，随后才能生成候选专属 SLO 证据。
+  if ! run_commercial_gate; then
     failed=1
   fi
 
-  if ! run_commercial_gate; then
+  if ! run_slo_gate; then
     failed=1
   fi
 

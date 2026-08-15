@@ -20,7 +20,8 @@
 #   LINGSQL_SWITCH_HOOK=""           # 可选：流量切换 hook，入参 <slot> <port>
 #   LINGSQL_STOP_OLD_SLOT=false      # 可选：发布成功后是否停止旧槽位
 #   LINGSQL_TRAFFIC_SWITCH_ENABLED=true # false 时只准备隔离候选，不切流
-#   LINGSQL_START_CMD_TEMPLATE=""    # 可选：无 systemd 时启用，支持变量 {slot} {port} {artifact} {slot_dir}
+#   LINGSQL_START_CMD_TEMPLATE=""    # 可选：无 systemd 时启用，必须消费 {runtime_env}
+#   LINGSQL_RELEASE_BUILD_COMMIT=""  # 正式候选必须提供40位小写 Git SHA
 
 set -euo pipefail
 
@@ -50,10 +51,12 @@ render_template() {
   local port="$3"
   local artifact="$4"
   local slot_dir="$5"
+  local runtime_env="$6"
   template="${template//\{slot\}/${slot}}"
   template="${template//\{port\}/${port}}"
   template="${template//\{artifact\}/${artifact}}"
   template="${template//\{slot_dir\}/${slot_dir}}"
+  template="${template//\{runtime_env\}/${runtime_env}}"
   echo "${template}"
 }
 
@@ -68,8 +71,16 @@ start_slot_service() {
   local port="$3"
   local artifact="$4"
   local slot_dir="$5"
+  local runtime_env="$6"
 
   if command -v systemctl >/dev/null 2>&1 && service_exists "${service_name}"; then
+    local environment_files
+    environment_files="$(systemctl show "${service_name}.service" --property=EnvironmentFiles --value)"
+    if ! grep -F -- "${runtime_env}" <<< "${environment_files}" >/dev/null; then
+      log_error "systemd 服务 ${service_name} 未声明候选运行身份文件: ${runtime_env}"
+      log_error "请为该槽位配置 EnvironmentFile 后再发布"
+      exit 1
+    fi
     log_info "重启服务: ${service_name}"
     systemctl restart "${service_name}"
     if ! systemctl is-active --quiet "${service_name}"; then
@@ -84,11 +95,33 @@ start_slot_service() {
     log_error "请先配置启动方式后重试"
     exit 1
   fi
+  if [[ "${LINGSQL_START_CMD_TEMPLATE}" != *"{runtime_env}"* ]]; then
+    log_error "LINGSQL_START_CMD_TEMPLATE 必须显式消费 {runtime_env}，禁止候选以无身份标签方式启动"
+    exit 1
+  fi
 
   local start_cmd
-  start_cmd="$(render_template "${LINGSQL_START_CMD_TEMPLATE}" "${slot}" "${port}" "${artifact}" "${slot_dir}")"
+  start_cmd="$(render_template "${LINGSQL_START_CMD_TEMPLATE}" "${slot}" "${port}" "${artifact}" "${slot_dir}" "${runtime_env}")"
   log_info "执行自定义启动命令: ${start_cmd}"
   bash -lc "${start_cmd}"
+}
+
+write_runtime_identity() {
+  local target_file="$1"
+  local build_commit="$2"
+  local slot="$3"
+  local release_id="$4"
+  local temp_file
+  temp_file="$(mktemp "$(dirname "${target_file}")/.runtime-env.XXXXXX")"
+  trap 'rm -f -- "${temp_file:-}"' RETURN
+  {
+    printf 'LINGSQL_RUNTIME_BUILD_COMMIT=%s\n' "${build_commit}"
+    printf 'LINGSQL_RUNTIME_SLOT=%s\n' "${slot}"
+    printf 'LINGSQL_RUNTIME_RELEASE_ID=%s\n' "${release_id}"
+  } > "${temp_file}"
+  chmod 444 "${temp_file}"
+  mv -f -- "${temp_file}" "${target_file}"
+  trap - RETURN
 }
 
 stop_slot_service_if_needed() {
@@ -185,6 +218,7 @@ main() {
   require_cmd cp
   require_cmd date
   require_cmd sha256sum
+  require_cmd mktemp
 
   local deploy_base="${LINGSQL_DEPLOY_BASE:-/opt/lingsql}"
   local run_dir="${deploy_base}/run"
@@ -242,22 +276,29 @@ main() {
   safe_tag="$(echo "${release_tag}" | tr -cs '[:alnum:]._-' '_')"
   local release_id
   release_id="$(date +%Y%m%d_%H%M%S)_${safe_tag}"
+  local build_commit="${LINGSQL_RELEASE_BUILD_COMMIT:-UNSET}"
+  if [[ "${build_commit}" != "UNSET" && ! "${build_commit}" =~ ^[0-9a-f]{40}$ ]]; then
+    log_error "LINGSQL_RELEASE_BUILD_COMMIT 必须为40位小写 Git SHA"
+    exit 1
+  fi
   local release_dir="${releases_dir}/${release_id}"
   local artifact_name
   artifact_name="$(basename "${artifact_path}")"
   local release_artifact="${release_dir}/lingsql-engine.jar"
   local slot_artifact="${target_dir}/app.jar"
+  local runtime_env="${target_dir}/runtime.env"
 
   mkdir -p "${release_dir}" "${target_dir}"
   cp "${artifact_path}" "${release_artifact}"
   cp "${release_artifact}" "${slot_artifact}"
   echo "${release_id}" > "${target_dir}/release_id"
+  write_runtime_identity "${runtime_env}" "${build_commit}" "${target_slot}" "${release_id}"
 
   log_info "当前活跃槽位: ${active_slot}"
   log_info "目标发布槽位: ${target_slot}"
   log_info "发布目录: ${release_dir}"
 
-  start_slot_service "${target_slot}" "${target_service}" "${target_port}" "${slot_artifact}" "${target_dir}"
+  start_slot_service "${target_slot}" "${target_service}" "${target_port}" "${slot_artifact}" "${target_dir}" "${runtime_env}"
   wait_for_health "${target_slot}" "${target_port}" "${health_path}" "${health_retries}" "${health_interval}"
 
   if [[ "${LINGSQL_TRAFFIC_SWITCH_ENABLED:-true}" != "true" ]]; then

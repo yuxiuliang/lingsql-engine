@@ -10,3 +10,6 @@ spring:
 lingsql:
   runtime:
     data-snapshot-id: ${LINGSQL_RUNTIME_DATA_SNAPSHOT_ID:UNSET}
+    build-commit: ${LINGSQL_RUNTIME_BUILD_COMMIT:UNSET}
+    slot: ${LINGSQL_RUNTIME_SLOT:UNSET}
+    release-id: ${LINGSQL_RUNTIME_RELEASE_ID:UNSET}
