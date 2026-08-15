@@ -63,9 +63,9 @@ open_acceptance_session() {
 }
 
 submit_usage_missing() {
-  local marker="$1" response request_id
+  local question="$1" response request_id
   response="$(api_request POST '/api/v1/chat/ask' \
-    "$(jq -cn --arg question "2026年8月已完成订单的销售额是多少？ ${marker}" '{question:$question}')" \
+    "$(jq -cn --arg question "${question}" '{question:$question}')" \
     "${DEMO_TOKEN}" "${LINGSQL_DEMO_TENANT_ID}")"
   [[ "$(jq -r '.code // 0' <<< "${response}")" == "200" ]] || {
     log_error "确定性问数请求未返回标准 API 响应"
@@ -172,8 +172,8 @@ main() {
   require_value "计费验收会话 ID" "${session_id}"
   arm_usage_missing_fault || { log_error "无法武装确定性缺失 usage 故障"; exit 2; }
 
-  request_usage="$(submit_usage_missing '[CI_UNKNOWN_USAGE_SETTLE]')"
-  request_cancel="$(submit_usage_missing '[CI_UNKNOWN_USAGE_CANCEL]')"
+  request_usage="$(submit_usage_missing '2026年8月已完成订单的销售额是多少？')"
+  request_cancel="$(submit_usage_missing '按商品统计2026年8月已完成订单的销售额。')"
   invocation_usage="$(load_unknown_invocation "${request_usage}")"
   invocation_cancel="$(load_unknown_invocation "${request_cancel}")"
 
