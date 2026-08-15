@@ -6,6 +6,7 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-}"
 PILOT_CONTROL_TOKEN="${PILOT_CONTROL_TOKEN:-}"
 PILOT_CONTROL_TENANT_ID="${PILOT_CONTROL_TENANT_ID:-sys_tenant}"
+MODEL_ROUTE_TENANT_ID="${MODEL_ROUTE_TENANT_ID:-${PILOT_CONTROL_TENANT_ID}}"
 EXPECTED_RELEASE_COMMIT="${EXPECTED_RELEASE_COMMIT:-}"
 EXPECTED_DATA_SNAPSHOT_ID="${EXPECTED_DATA_SNAPSHOT_ID:-}"
 EXPECTED_MODEL_ROUTE_FINGERPRINT="${EXPECTED_MODEL_ROUTE_FINGERPRINT:-}"
@@ -20,11 +21,13 @@ main() {
   command -v jq >/dev/null 2>&1 || { log_error "缺少命令: jq"; exit 1; }
   require_value "BASE_URL" "${BASE_URL}"
   require_value "PILOT_CONTROL_TOKEN" "${PILOT_CONTROL_TOKEN}"
+  require_value "MODEL_ROUTE_TENANT_ID" "${MODEL_ROUTE_TENANT_ID}"
   require_value "EXPECTED_RELEASE_COMMIT" "${EXPECTED_RELEASE_COMMIT}"
 
-  response="$(curl -fsS --connect-timeout 5 --max-time 30 \
+  response="$(curl -fsS --get --connect-timeout 5 --max-time 30 \
     -H "Authorization: Bearer ${PILOT_CONTROL_TOKEN}" \
     -H "X-Tenant-Id: ${PILOT_CONTROL_TENANT_ID}" \
+    --data-urlencode "modelTenantId=${MODEL_ROUTE_TENANT_ID}" \
     "${BASE_URL%/}/api/v1/admin/runtime/fingerprint")"
   [[ "$(jq -r '.code // 0' <<< "${response}")" == "200" ]] || { log_error "读取运行指纹失败"; exit 2; }
   actual_commit="$(jq -r '.data.commit // empty' <<< "${response}")"
@@ -58,6 +61,7 @@ main() {
 - 构建时间: $(jq -r '.data.buildTime // ""' <<< "${response}")
 - Flyway Schema: ${schema_version}
 - 数据快照: ${actual_snapshot}
+- 模型授权租户: ${MODEL_ROUTE_TENANT_ID}
 - 模型路由 SHA-256: ${actual_model_route}
 - 激活模型数量: ${model_count}
 - 结论: PASS

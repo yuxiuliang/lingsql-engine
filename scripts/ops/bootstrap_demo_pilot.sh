@@ -115,7 +115,7 @@ reconcile_demo_datasource() {
 }
 
 ensure_model_ready() {
-  local list_response model_id model_response probe_response enable_response model_body
+  local list_response model_id model_response probe_response enable_response route_body route_response model_body
   list_response="$(api_get '/api/v1/admin/config/model' "${CONTROL_TOKEN}" "${LINGSQL_ADMIN_TENANT_ID}")"
   require_api_success "读取模型配置" "${list_response}"
   if [[ -n "${LINGSQL_DEMO_MODEL_PROVIDER}" && -n "${LINGSQL_DEMO_MODEL_NAME}" && -n "${LINGSQL_DEMO_MODEL_BASE_URL}" ]]; then
@@ -149,6 +149,11 @@ ensure_model_ready() {
   [[ "$(jq -r '.data.status // empty' <<< "${probe_response}")" == "HEALTHY" ]] || { log_error "模型实际调用验证未通过"; exit 2; }
   enable_response="$(api_post "/api/v1/admin/model/enable/${model_id}" '{}' "${CONTROL_TOKEN}" "${LINGSQL_ADMIN_TENANT_ID}")"
   require_api_success "启用已验证模型" "${enable_response}"
+  route_body="$(jq -cn --argjson modelConfigId "${model_id}" \
+    '[{modelConfigId:$modelConfigId,priority:1,weight:100}]')"
+  route_response="$(api_put "/api/v1/admin/tenant-model-routes/${LINGSQL_DEMO_TENANT_ID}" \
+    "${route_body}" "${CONTROL_TOKEN}" "${LINGSQL_ADMIN_TENANT_ID}")"
+  require_api_success "授权演示租户使用已验证模型" "${route_response}"
   log_info "模型已实际验证并启用: ${model_id}"
 }
 
@@ -195,6 +200,7 @@ main() {
     BASE_URL="${BASE_URL}" \
     PILOT_CONTROL_TOKEN="${CONTROL_TOKEN}" \
     PILOT_CONTROL_TENANT_ID="${LINGSQL_ADMIN_TENANT_ID}" \
+    MODEL_ROUTE_TENANT_ID="${LINGSQL_DEMO_TENANT_ID}" \
     EXPECTED_RELEASE_COMMIT="${EXPECTED_RELEASE_COMMIT}" \
     EXPECTED_DATA_SNAPSHOT_ID="${EXPECTED_DATA_SNAPSHOT_ID:-}" \
     RUNTIME_FINGERPRINT_REPORT_FILE="${RUNTIME_FINGERPRINT_REPORT_FILE:-${ROOT_DIR}/reports/runtime_fingerprint.md}" \

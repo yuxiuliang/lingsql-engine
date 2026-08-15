@@ -44,9 +44,10 @@ load_candidate() {
 
 validate_runtime_fingerprint() {
   local response actual_commit actual_snapshot actual_model_route schema_version model_count canonical
-  response="$(curl -fsS --connect-timeout 5 --max-time 30 \
+  response="$(curl -fsS --get --connect-timeout 5 --max-time 30 \
     -H "Authorization: Bearer ${PILOT_CONTROL_TOKEN}" \
     -H "X-Tenant-Id: ${PILOT_CONTROL_TENANT_ID}" \
+    --data-urlencode "modelTenantId=${MODEL_ROUTE_TENANT_ID}" \
     "http://127.0.0.1:${PORT}/api/v1/admin/runtime/fingerprint")"
   [[ "$(jq -r '.code // 0' <<< "${response}")" == "200" ]] || {
     log_error "读取候选运行指纹失败"
@@ -250,6 +251,7 @@ main() {
   PILOT_CONTROL_TOKEN="${PILOT_CONTROL_TOKEN:-}"
   CANDIDATE_RECEIPT_HMAC_KEY="${CANDIDATE_RECEIPT_HMAC_KEY:-}"
   PILOT_CONTROL_TENANT_ID="${PILOT_CONTROL_TENANT_ID:-sys_tenant}"
+  MODEL_ROUTE_TENANT_ID="${MODEL_ROUTE_TENANT_ID:-${PILOT_CONTROL_TENANT_ID}}"
   EXPECTED_RELEASE_COMMIT="${EXPECTED_RELEASE_COMMIT:-}"
   EXPECTED_DATA_SNAPSHOT_ID="${EXPECTED_DATA_SNAPSHOT_ID:-}"
   EXPECTED_MODEL_ROUTE_FINGERPRINT="${EXPECTED_MODEL_ROUTE_FINGERPRINT:-}"
@@ -272,6 +274,7 @@ main() {
   command -v curl >/dev/null 2>&1 || { log_error "缺少命令: curl"; exit 1; }
   command -v node >/dev/null 2>&1 || { log_error "缺少命令: node"; exit 1; }
   require_value "PILOT_CONTROL_TOKEN" "${PILOT_CONTROL_TOKEN}"
+  require_value "MODEL_ROUTE_TENANT_ID" "${MODEL_ROUTE_TENANT_ID}"
   require_value "CANDIDATE_RECEIPT_HMAC_KEY" "${CANDIDATE_RECEIPT_HMAC_KEY}"
   [[ "${CANDIDATE_RECEIPT_HMAC_KEY}" =~ ^[0-9a-f]{64}$ ]] || { log_error "CANDIDATE_RECEIPT_HMAC_KEY 必须为 64 位小写十六进制密钥"; exit 1; }
   require_value "EXPECTED_RELEASE_COMMIT" "${EXPECTED_RELEASE_COMMIT}"

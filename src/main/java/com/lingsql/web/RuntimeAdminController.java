@@ -10,6 +10,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * @author 余炘洋
  * @date 2026-08-15
+ * @modify 余炘洋 2026-08-16 要求明确指定模型授权租户
  */
 @RestController
 @RequestMapping("/api/v1/admin/runtime")
@@ -32,10 +34,10 @@ public class RuntimeAdminController {
      */
     @GetMapping("/fingerprint")
     @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
-    public ApiResponse<RuntimeFingerprintView> fingerprint() {
+    public ApiResponse<RuntimeFingerprintView> fingerprint(@RequestParam String modelTenantId) {
         if (!SecureTenantResolver.isSysAdmin(RbacSecurityUtils.currentSession())) {
             throw new AccessDeniedException("无权限访问");
         }
-        return ApiResponse.success(runtimeFingerprintService.load());
+        return ApiResponse.success(runtimeFingerprintService.load(modelTenantId));
     }
 }

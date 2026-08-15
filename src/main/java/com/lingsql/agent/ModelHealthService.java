@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author 余炘洋
  * @date 2026-01-22
+ * @modify 余炘洋 2026-08-16 支持租户路由权重降权
  */
 @Slf4j
 @Component
@@ -67,6 +68,20 @@ public class ModelHealthService {
             return 0;
         }
         int baseWeight = config.getWeight() == null ? DEFAULT_WEIGHT : config.getWeight();
+        return resolveWeight(config, baseWeight);
+    }
+
+    /**
+     * 按租户路由权重计算模型的当前有效权重。
+     *
+     * @param config 模型配置
+     * @param baseWeight 租户内基础权重
+     * @return 熔断和失败降权后的权重
+     */
+    public int resolveWeight(AiModelConfig config, int baseWeight) {
+        if (config == null || config.getId() == null || baseWeight <= 0) {
+            return 0;
+        }
         ModelHealth health = healthMap.get(config.getId());
         if (health == null) {
             return baseWeight;

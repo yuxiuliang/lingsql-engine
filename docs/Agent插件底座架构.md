@@ -330,7 +330,7 @@ MCP Client 连接配置属于平台资产，包含服务器身份、传输、认
 
 ### 9.3 计费、审计与补偿
 
-每次物理模型调用已经产生独立 `invocationId` 和资金状态，记录 tenant/workflow/caller/stage/route/provider/model、实际模型配置 ID、调用时模型版本、选择时完整启用路由配置指纹、Prompt 摘要、最大与实际 Token、冻结价格、预留/实际/退款金额和终态；不保存 Prompt、模型原文、密钥或客户结果。路由器在同一次数据库读取上返回模型选择和路由指纹，模型网关显式传给计费模块，禁止从 ThreadLocal 或事后当前配置反推。余额预留、`RESERVED -> DISPATCHED`、实际结算和差额退款均以 MySQL 为事实源，Redis 只作为可重建投影。
+每次物理模型调用已经产生独立 `invocationId` 和资金状态，记录 tenant/workflow/caller/stage/route/provider/model、实际模型配置 ID、调用时模型版本、选择时租户授权路由指纹、Prompt 摘要、最大与实际 Token、冻结价格、预留/实际/退款金额和终态；不保存 Prompt、模型原文、密钥或客户结果。`TenantModelRouting` 先按租户读取显式授权，只保留全局启用且最近真实探测为 `HEALTHY` 的物理模型，再冻结不可变 `ModelRoutePlan`。主模型和备用模型只能从该计划选择，不得在备用阶段重新查询全局池；未授权租户失败关闭。模型网关将计划指纹显式传给计费模块，禁止从 ThreadLocal 或事后当前配置反推。余额预留、`RESERVED -> DISPATCHED`、实际结算和差额退款均以 MySQL 为事实源，Redis 只作为可重建投影。
 
 模型网关是深模块：业务侧只提交显式 `ModelCallCommand` 并接收 `ModelCallResult`；内部适配器才执行一次指定模型的物理调用。主模型与备用模型不能共享资金事件。只有本地配置准备阶段明确尚未出站时才能换备用模型；一旦进入 `DISPATCHED`，异常只能进入 `UNKNOWN`，不能自动退款或继续用同一资金事件重试。
 
@@ -414,7 +414,7 @@ MCP Client 连接配置属于平台资产，包含服务器身份、传输、认
 
 ### 已实现
 
-- Spring AI 2.0 模型网关和原有模型路由/熔断兼容。
+- Spring AI 2.0 模型网关、租户显式授权路由和模型熔断。
 - 无 API Key 的内网 OpenAI-compatible Java 传输兼容。
 - `AgentExecutionContext` 显式上下文。
 - `IControlledAgentOrchestrator` 固定状态流入口。
@@ -428,6 +428,7 @@ MCP Client 连接配置属于平台资产，包含服务器身份、传输、认
 - `UNKNOWN` 管理端裁决 API：外部证据摘要、操作人、唯一不可变裁决记录、同请求幂等重放和冲突拒绝均已落地；确定性全栈场景覆盖“确认用量”和“确认未计费”两条路径。
 - 计费验收会话可冻结租户 MySQL 余额与账本水位，对精确请求集合校验调用终态、已应用账本、区间归因和余额守恒，并签发不可变验收回执。
 - 每次物理调用冻结实际 `modelConfigId`、模型版本和路由指纹；账本证据与 40 题验收可据此核对候选运行指纹，历史缺失身份的调用不会被伪造回填。
+- 租户模型授权路由：物理模型和租户授权分离；每租户独立优先级/权重，未授权默认拒绝，主备调用复用同一不可变计划，运行指纹按被验收租户生成。
 
 ### 下一阶段
 

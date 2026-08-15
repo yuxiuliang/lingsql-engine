@@ -16,6 +16,7 @@ import java.util.List;
  *
  * @author 余炘洋
  * @date 2026-08-15
+ * @modify 余炘洋 2026-08-16 禁止删除仍被租户授权引用的模型
  */
 @Service
 @RequiredArgsConstructor
@@ -23,6 +24,7 @@ public class ModelConfigService {
 
     private final AiModelConfigRepository repository;
     private final ModelHealthService healthService;
+    private final TenantModelRouting tenantModelRouting;
 
     public List<AiModelConfig> list() {
         return repository.findAll();
@@ -58,6 +60,9 @@ public class ModelConfigService {
 
     @Transactional
     public void delete(Long id) {
+        if (tenantModelRouting.hasRouteForModel(id)) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "模型仍被租户授权路由引用，禁止删除");
+        }
         repository.deleteById(id);
         healthService.resetHealth(id);
     }

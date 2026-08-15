@@ -15,7 +15,7 @@
 * **🧠 元数据与语义能力**：已内置 Schema 扫描、语义字典、Join 规则和会话记忆；版本化语义上下文、通用 RAG 知识库和 Aviator 指标计算仍在规划中。
 * **🔌 插件化 Agent 底座**：已建立类型安全 Java 插件 SPI、注册中心、统一执行网关，以及白名单、系统调用来源、成本等级、调用次数和启动/返回 deadline 防护；可信 JAR、租户级授权、全链路可取消超时与 MCP 远程插件仍按安全路线逐步开放。
 * **📦 可追溯供应链**：发布包生成前后端 CycloneDX SBOM、第三方许可证索引和绑定 Git commit/JAR 哈希的供应链 Manifest；开源许可与第三方组件边界见 [LICENSE](LICENSE) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-* **⚖️ Spring AI 模型网关**：基于 Spring AI 2.0 对接 OpenAI 兼容模型，数据库化管理 OpenAI/Qwen/DeepSeek 等模型配置，并保留权重路由、故障熔断和 Token 追踪。
+* **⚖️ Spring AI 模型网关**：基于 Spring AI 2.0 对接 OpenAI 兼容模型，物理模型由系统统一管理；每个租户必须显式授权可用模型，并可独立配置优先级和权重。未授权时失败关闭，不会回退到全局模型池；主备模型从同一次冻结计划中选择并保留 Token、模型身份和路由指纹证据。
 * **🧠 智能会话记忆 (Context Awareness)**：支持多轮追问。AI 能够理解“它”、“那个”、“刚才的”等代词，自动关联历史查询结果进行深度下钻。
 * **🛡️ 并发会话隔离 (Session Isolation)**：通过会话标识和租户上下文隔离并行对话；实际并发容量和隔离效果须在目标部署环境验证。
 * **🧾 持久管理审计**：管理操作执行前先写入 `PREPARED` 投递记录，业务结果通过唯一 `eventId` 幂等发布；未确认结果标记为 `UNKNOWN`，死信或未知状态会使审计健康检查失败。JSON 中的密码、Token、Secret、API Key、Cookie 与 Webhook 等字段统一脱敏，非结构化详情按失败关闭原则不保存原文。
@@ -49,7 +49,7 @@
 ### 1. 初始化数据库
 标准环境执行 `scripts/ops/flyway_migrate.sh`：空库由冻结合并基线创建，已纳管库先校验再迁移；未纳管现有库只有在表、字段、默认值、生成表达式、索引和排序规则与当前基线完全一致时才允许显式接管。部分升级或未知结构会失败关闭，必须先备份并按[数据库版本迁移与旧库接管手册](docs/数据库版本迁移与旧库接管手册.md)收敛。
 
-`sql/mysql.sql`、`sql/patch_*.sql` 与 `src/main/resources/db/manual/` 仅保留为冻结基线来源和历史交付档案，不再由应用或标准部署自动执行。租户管理采用单一 READY 开户：套餐正余额、管理员账号、MySQL 只读数据源和白名单缺一不可，并在控制库写入前验证连接与账号授权；模型资源池 (`t_lingsql_engine_ai_model_config`) 仍属于显式 provisioning。
+`sql/mysql.sql`、`sql/patch_*.sql` 与 `src/main/resources/db/manual/` 仅保留为冻结基线来源和历史交付档案，不再由应用或标准部署自动执行。租户管理采用单一 READY 开户：套餐正余额、管理员账号、MySQL 只读数据源和白名单缺一不可，并在控制库写入前验证连接与账号授权。模型资源池 (`t_lingsql_engine_ai_model_config`) 与租户模型授权 (`t_lingsql_engine_tenant_model_route`) 属于显式 provisioning；完成租户开户后必须至少授权一个已启用且真实探测为 `HEALTHY` 的模型，才可进行首问。
 
 ### 2. 定义语义字典 (可选)
 在 `t_lingsql_engine_semantic_lexicon` 中定义业务术语，帮助 AI 理解“毛利”、“活跃度”等复杂概念。

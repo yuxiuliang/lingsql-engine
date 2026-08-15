@@ -1,8 +1,7 @@
 package com.lingsql.runtime;
 
-import com.lingsql.agent.model.AiModelConfig;
-import com.lingsql.agent.ModelRouteFingerprintCalculator;
-import com.lingsql.agent.repository.AiModelConfigRepository;
+import com.lingsql.agent.ModelRoutePlan;
+import com.lingsql.agent.TenantModelRouting;
 import com.lingsql.runtime.model.RuntimeFingerprintView;
 import com.lingsql.runtime.model.RuntimeModelFingerprintView;
 import lombok.RequiredArgsConstructor;
@@ -11,7 +10,6 @@ import org.springframework.boot.info.BuildProperties;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -19,17 +17,15 @@ import java.util.List;
  *
  * @author 余炘洋
  * @date 2026-08-15
+ * @modify 余炘洋 2026-08-16 输出指定租户的模型授权路由指纹
  */
 @Service
 @RequiredArgsConstructor
 public class RuntimeFingerprintService {
 
-    private static final Integer ACTIVE_STATUS = 1;
-
     private final BuildProperties buildProperties;
     private final JdbcTemplate jdbcTemplate;
-    private final AiModelConfigRepository modelConfigRepository;
-    private final ModelRouteFingerprintCalculator modelRouteFingerprintCalculator;
+    private final TenantModelRouting tenantModelRouting;
 
     @Value("${lingsql.runtime.data-snapshot-id:UNSET}")
     private String dataSnapshotId;
@@ -39,14 +35,18 @@ public class RuntimeFingerprintService {
      *
      * @return 运行指纹
      */
-    public RuntimeFingerprintView load() {
-        List<AiModelConfig> activeModelConfigs = modelConfigRepository.findByIsActive(ACTIVE_STATUS);
-        List<RuntimeModelFingerprintView> activeModels = activeModelConfigs.stream()
-                .sorted(Comparator.comparing(AiModelConfig::getPriority, Comparator.nullsLast(Integer::compareTo))
-                        .thenComparing(AiModelConfig::getId, Comparator.nullsLast(Long::compareTo)))
-                .map(this::toModelView)
+    public RuntimeFingerprintView load(String modelTenantId) {
+        ModelRoutePlan routePlan = tenantModelRouting.planFor(modelTenantId);
+        List<RuntimeModelFingerprintView> activeModels = routePlan.candidates().stream()
+                .map(candidate -> new RuntimeModelFingerprintView(
+                        candidate.modelConfig().getId(),
+                        candidate.modelConfig().getProviderName(),
+                        candidate.modelConfig().getModelName(),
+                        candidate.modelConfig().getModelVersion(),
+                        candidate.priority(),
+                        candidate.weight()))
                 .toList();
-        String routeFingerprint = modelRouteFingerprintCalculator.calculate(activeModelConfigs);
+        String routeFingerprint = routePlan.routeFingerprint();
         String schemaVersion = jdbcTemplate.query(
                 "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank DESC LIMIT 1",
                 resultSet -> resultSet.next() ? resultSet.getString(1) : "UNMANAGED"
@@ -59,17 +59,6 @@ public class RuntimeFingerprintService {
                 dataSnapshotId,
                 routeFingerprint,
                 activeModels
-        );
-    }
-
-    private RuntimeModelFingerprintView toModelView(AiModelConfig config) {
-        return new RuntimeModelFingerprintView(
-                config.getId(),
-                config.getProviderName(),
-                config.getModelName(),
-                config.getModelVersion(),
-                config.getPriority(),
-                config.getWeight()
         );
     }
 

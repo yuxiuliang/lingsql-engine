@@ -141,6 +141,7 @@ jobs:
           BASE_URL: ${{ inputs.base_url }}
           PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
           PILOT_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
+          MODEL_ROUTE_TENANT_ID: ${{ secrets.RELEASE_GATE_PILOT_TENANT_ID }}
           EXPECTED_RELEASE_COMMIT: ${{ github.sha }}
           RUNTIME_FINGERPRINT_REPORT_FILE: ./reports/runtime_fingerprint.md
         run: ./scripts/ops/runtime_fingerprint_guard.sh

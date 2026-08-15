@@ -152,7 +152,7 @@ validate_parent_evidence() {
 validate_runtime_fingerprint() {
   local response expected_commit expected_schema expected_snapshot expected_route
   local actual_commit actual_schema actual_snapshot actual_route expected_provider expected_model expected_version model_match
-  response="$(api_get '/api/v1/admin/runtime/fingerprint' "${PILOT_CONTROL_TOKEN}")"
+  response="$(api_get "/api/v1/admin/runtime/fingerprint?modelTenantId=${PILOT_TENANT_ID}" "${PILOT_CONTROL_TOKEN}")"
   [[ "$(jq -r '.code // 0' <<< "${response}")" == "200" ]] || { log_error "无法读取运行候选指纹"; exit 2; }
   expected_commit="$(jq -r '.environment.releaseCommit' "${GQ_SUITE_FILE}")"
   expected_schema="$(jq -r '.environment.flywaySchemaVersion' "${GQ_SUITE_FILE}")"

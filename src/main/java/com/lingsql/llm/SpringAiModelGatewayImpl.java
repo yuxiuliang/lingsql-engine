@@ -3,6 +3,7 @@ package com.lingsql.llm;
 import com.lingsql.agent.ModelHealthService;
 import com.lingsql.agent.ModelRouter;
 import com.lingsql.agent.ModelRouteSelection;
+import com.lingsql.agent.ModelRoutePlan;
 import com.lingsql.agent.model.AiModelConfig;
 import com.lingsql.billing.invocation.BilledModelResponse;
 import com.lingsql.billing.invocation.BillingInvocationUnknownException;
@@ -36,6 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author 余炘洋
  * @date 2026-01-22
+ * @modify 余炘洋 2026-08-16 主备模型复用同一租户授权计划
  */
 @Slf4j
 @Component
@@ -63,9 +65,11 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
      */
     @Override
     public ModelCallResult chat(ModelCallCommand command) {
+        ModelRoutePlan routePlan;
         ModelRouteSelection primarySelection;
         try {
-            primarySelection = modelRouter.selectModelWithEvidence();
+            routePlan = modelRouter.planFor(command.tenantId());
+            primarySelection = modelRouter.selectFromPlan(routePlan, List.of());
         } catch (Exception exception) {
             throw modelUnavailable("未找到可用的主模型", exception);
         }
@@ -78,7 +82,7 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
             healthService.recordFailure(primary, exception.getMessage());
             log.warn("主模型本地配置无效，准备选择备用模型: id={}, provider={}, model={}",
                     primary.getId(), primary.getProviderName(), primary.getModelName(), exception);
-            return executeFallback(command, primary, exception);
+            return executeFallback(command, routePlan, primary, exception);
         }
     }
 
@@ -161,11 +165,12 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
 
     private ModelCallResult executeFallback(
             ModelCallCommand command,
+            ModelRoutePlan routePlan,
             AiModelConfig primary,
             LocalModelPreparationException primaryFailure
     ) {
         try {
-            ModelRouteSelection fallbackSelection = modelRouter.selectModelWithEvidence(List.of(primary.getId()));
+            ModelRouteSelection fallbackSelection = modelRouter.selectFromPlan(routePlan, List.of(primary.getId()));
             AiModelConfig fallback = fallbackSelection.modelConfig();
             PreparedModelCall prepared = preparePhysicalCall(fallback, command);
             return executePhysicalCall(command, fallbackSelection, prepared, 2);

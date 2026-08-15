@@ -1,7 +1,5 @@
 package com.lingsql.agent;
 
-import com.lingsql.agent.model.AiModelConfig;
-import com.lingsql.agent.repository.AiModelConfigRepository;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -17,65 +15,41 @@ import java.util.stream.Collectors;
  *
  * @author 余炘洋
  * @date 2026-01-22
+ * @modify 余炘洋 2026-08-16 改为租户显式授权的冻结路由计划
  */
 @Component
 @RequiredArgsConstructor
 public class ModelRouter {
 
-    private final AiModelConfigRepository repository;
+    private final TenantModelRouting tenantModelRouting;
     private final ModelHealthService healthService;
-    private final ModelRouteFingerprintCalculator fingerprintCalculator;
     private final Random random = new Random();
 
     /**
      * 从数据库中选择可用模型，支持优先级与权重负载均衡。
      *
-     * @return 模型配置
+     * @param tenantId 租户标识
+     * @return 冻结路由计划
      * @author 余炘洋
      * @date 2026-01-22
      */
-    public AiModelConfig selectModel() {
-        return selectModelWithEvidence().modelConfig();
+    public ModelRoutePlan planFor(String tenantId) {
+        return tenantModelRouting.planFor(tenantId);
     }
 
     /**
-     * 从数据库中选择可用模型，支持排除指定模型。
+     * 从已冻结的租户授权计划中选择模型。主备调用复用同一计划，避免授权变更或并发查询造成漂移。
      *
-     * @param excludeIds 需要排除的模型ID
-     * @return 模型配置
-     * @author 余炘洋
-     * @date 2026-01-22
-     */
-    public AiModelConfig selectModel(List<Long> excludeIds) {
-        return selectModelWithEvidence(excludeIds).modelConfig();
-    }
-
-    /**
-     * 选择模型并返回本次选择使用的路由配置指纹。
-     *
+     * @param plan 冻结路由计划
+     * @param excludeIds 需要排除的模型 ID
      * @return 带路由证据的选择结果
      */
-    public ModelRouteSelection selectModelWithEvidence() {
-        return selectModelWithEvidence(List.of());
-    }
-
-    /**
-     * 排除指定模型后选择模型，并返回本次选择使用的路由配置指纹。
-     *
-     * @param excludeIds 需要排除的模型ID
-     * @return 带路由证据的选择结果
-     */
-    public ModelRouteSelection selectModelWithEvidence(List<Long> excludeIds) {
-        List<AiModelConfig> configs = repository.findByIsActive(1);
-        if (configs.isEmpty()) {
-            throw new BizException(ErrorCode.MODEL_UNAVAILABLE, "没有可用的 AI 模型配置，请检查数据库。");
-        }
-
+    public ModelRouteSelection selectFromPlan(ModelRoutePlan plan, List<Long> excludeIds) {
         List<Long> excludes = excludeIds == null ? List.of() : excludeIds;
-        List<AiModelConfig> available = configs.stream()
-                .filter(config -> config.getId() != null)
-                .filter(config -> !excludes.contains(config.getId()))
-                .filter(healthService::isAvailable)
+        List<ModelRouteCandidate> available = plan.candidates().stream()
+                .filter(candidate -> candidate.modelConfig().getId() != null)
+                .filter(candidate -> !excludes.contains(candidate.modelConfig().getId()))
+                .filter(candidate -> healthService.isAvailable(candidate.modelConfig()))
                 .collect(Collectors.toList());
 
         if (available.isEmpty()) {
@@ -83,16 +57,15 @@ public class ModelRouter {
         }
 
         int minPriority = available.stream()
-                .map(AiModelConfig::getPriority)
-                .filter(value -> value != null)
+                .map(ModelRouteCandidate::priority)
                 .min(Comparator.naturalOrder())
                 .orElse(1);
 
-        List<AiModelConfig> candidates = available.stream()
-                .filter(config -> config.getPriority() == null || config.getPriority() == minPriority)
+        List<ModelRouteCandidate> candidates = available.stream()
+                .filter(candidate -> candidate.priority() == minPriority)
                 .collect(Collectors.toList());
 
-        return new ModelRouteSelection(weightedRandom(candidates), fingerprintCalculator.calculate(configs));
+        return new ModelRouteSelection(weightedRandom(candidates).modelConfig(), plan.routeFingerprint());
     }
 
     /**
@@ -103,19 +76,19 @@ public class ModelRouter {
      * @author 余炘洋
      * @date 2026-01-22
      */
-    private AiModelConfig weightedRandom(List<AiModelConfig> configs) {
+    private ModelRouteCandidate weightedRandom(List<ModelRouteCandidate> configs) {
         int totalWeight = configs.stream()
-                .mapToInt(healthService::resolveWeight)
+                .mapToInt(candidate -> healthService.resolveWeight(candidate.modelConfig(), candidate.weight()))
                 .sum();
         int hitWeight = random.nextInt(Math.max(totalWeight, 1));
 
-        AiModelConfig selected = configs.get(0);
+        ModelRouteCandidate selected = configs.get(0);
         int currentWeight = 0;
-        for (AiModelConfig config : configs) {
-            int weight = healthService.resolveWeight(config);
+        for (ModelRouteCandidate candidate : configs) {
+            int weight = healthService.resolveWeight(candidate.modelConfig(), candidate.weight());
             currentWeight += weight;
             if (hitWeight < currentWeight) {
-                selected = config;
+                selected = candidate;
                 break;
             }
         }

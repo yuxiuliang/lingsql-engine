@@ -46,7 +46,7 @@
 ## 3. 模型与工具接缝
 
 - `IModelGateway` 隔离业务模块和模型供应商协议；当前生产实现是 `SpringAiModelGatewayImpl`。
-- 模型配置仍来自数据库，保留优先级、权重路由、熔断和备用模型切换。
+- 物理模型配置仍来自数据库；租户必须通过 `TenantModelRouting` 显式授权可用模型，并拥有独立优先级和权重。未授权时失败关闭，主备模型只能从同一次冻结的租户路由计划中选择。
 - 元数据扫描、语义字典、Schema 刷新和数据库查询目前是内部受控模块，不是允许模型任意调用的开放工具。
 - `SqlGuardedQueryExecutor` 是强制安全接缝。编排器不能单独调用 JDBC，也不能通过配置调整 `SqlRewriter -> SqlSecurityChecker -> JDBC` 的顺序。
 - `IAgentPlugin<I, O>` 是内置插件扩展点；插件必须声明稳定 ID、版本、输入输出类型、访问级别、成本和幂等性。

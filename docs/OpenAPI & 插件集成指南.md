@@ -684,6 +684,39 @@ Authorization: Bearer {accessToken}
 
 `V20260815_09` 之前产生的历史调用不会依据当前模型配置做不可信回填，新增字段保持 `null` 且 `identityComplete=false`；升级后新调用若缺少配置 ID、模型版本或合法 SHA-256 路由指纹，会在出站前失败关闭。
 
+#### 4.2.9 配置租户模型授权路由
+
+物理模型配置不是全租户默认可用资源。系统管理员必须为每个业务租户显式替换完整授权集合：
+
+```http
+PUT /api/v1/admin/tenant-model-routes/tenant-pilot
+Authorization: Bearer {systemAdminToken}
+Content-Type: application/json
+
+[
+  {"modelConfigId": 7, "priority": 1, "weight": 100},
+  {"modelConfigId": 9, "priority": 2, "weight": 100}
+]
+```
+
+仅允许授权已启用且最近真实探测状态为 `HEALTHY` 的模型；模型 ID 不得重复，优先级范围为 1–100，权重范围为 1–1000，单租户最多 16 个。接口采用完整替换语义，成功后主模型和备用模型都只能从同一次冻结的租户路由计划中选择。没有授权、授权模型被禁用或健康探测失效时，模型调用失败关闭，不会回退到系统全局模型池。
+
+```http
+GET /api/v1/admin/tenant-model-routes/tenant-pilot
+Authorization: Bearer {systemAdminToken}
+```
+
+读写接口分别要求 `ADMIN:MODEL:READ`、`ADMIN:MODEL:WRITE` 以及系统管理员身份。返回视图不包含模型地址或 API Key。仍被任一租户路由引用的物理模型禁止删除。
+
+候选运行指纹必须明确指定被验收的模型租户：
+
+```http
+GET /api/v1/admin/runtime/fingerprint?modelTenantId=tenant-pilot
+Authorization: Bearer {systemAdminToken}
+```
+
+返回的 `activeModels` 和 `modelRouteFingerprint` 只描述该租户的授权路由；40 题证据中的每次物理调用指纹必须与其一致。
+
 ### 4.3 元数据管理
 
 #### 4.3.1 获取 Schema 列表
@@ -1657,7 +1690,8 @@ async function callApi<T>(request: () => Promise<T>): Promise<T> {
 | PUT | `/api/v1/admin/metadata/isolated` | 更新隔离字段 | ADMIN:METADATA:WRITE |
 | POST | `/api/v1/admin/metadata/ai-suggest` | AI 语义解析 | ADMIN:METADATA:AI |
 | **发布与验收** |
-| GET | `/api/v1/admin/runtime/fingerprint` | 当前 Git SHA、Flyway、数据快照与激活模型路由指纹 | ADMIN:TENANT:READ + 系统管理员 |
+| GET | `/api/v1/admin/runtime/fingerprint?modelTenantId={tenantId}` | 当前 Git SHA、Flyway、数据快照与指定租户授权模型路由指纹 | ADMIN:TENANT:READ + 系统管理员 |
+| GET/PUT | `/api/v1/admin/tenant-model-routes/{tenantId}` | 查询或完整替换租户模型授权路由 | ADMIN:MODEL:READ/WRITE + 系统管理员 |
 
 ---
 
