@@ -1,6 +1,6 @@
 package com.lingsql.chat.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.chat.entity.ChatHistory;
 import com.lingsql.chat.model.ChatHistoryDetailView;
 import com.lingsql.chat.model.ChatHistoryMessageView;
@@ -235,7 +235,7 @@ public class ChatHistoryService {
      */
     private PageResult<ChatHistoryView> fromJsonPage(String json) {
         try {
-            return objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<PageResult<ChatHistoryView>>() {
+            return objectMapper.readValue(json, new tools.jackson.core.type.TypeReference<PageResult<ChatHistoryView>>() {
             });
         } catch (Exception ex) {
             log.warn("历史列表缓存解析失败: {}", ex.getMessage());
@@ -270,7 +270,7 @@ public class ChatHistoryService {
      */
     private ChatHistoryDetailView fromJsonDetail(String json) {
         try {
-            return objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<ChatHistoryDetailView>() {
+            return objectMapper.readValue(json, new tools.jackson.core.type.TypeReference<ChatHistoryDetailView>() {
             });
         } catch (Exception ex) {
             log.warn("历史详情缓存解析失败: {}", ex.getMessage());
@@ -471,7 +471,7 @@ public class ChatHistoryService {
                 .count(500)
                 .build();
         try (var connection = stringRedisTemplate.getConnectionFactory().getConnection();
-             Cursor<byte[]> cursor = connection.scan(options)) {
+             Cursor<byte[]> cursor = connection.keyCommands().scan(options)) {
             while (cursor.hasNext()) {
                 byte[] key = cursor.next();
                 if (key == null || key.length == 0) {

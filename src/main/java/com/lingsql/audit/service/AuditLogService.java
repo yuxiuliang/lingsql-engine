@@ -9,9 +9,9 @@ import com.lingsql.common.result.PageResult;
 import com.lingsql.common.pagination.PageParam;
 import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.config.LingSqlProperties;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -291,7 +291,7 @@ public class AuditLogService {
         }
         if (node.isObject() && node instanceof ObjectNode objectNode) {
             List<String> toRemove = new ArrayList<>();
-            Iterator<Map.Entry<String, JsonNode>> fields = objectNode.fields();
+            Iterator<Map.Entry<String, JsonNode>> fields = objectNode.properties().iterator();
             while (fields.hasNext()) {
                 Map.Entry<String, JsonNode> entry = fields.next();
                 String fieldName = entry.getKey();

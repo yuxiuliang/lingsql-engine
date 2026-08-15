@@ -4,6 +4,7 @@ import com.lingsql.common.result.ApiResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.mock.http.MockHttpInputMessage;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -16,7 +17,7 @@ class GlobalExceptionHandlerTest {
         GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
         ApiResponse<Void> response = handler.handleNoResourceFoundException(
-                new NoResourceFoundException(HttpMethod.GET, "/static/admin/index.html")
+                new NoResourceFoundException(HttpMethod.GET, "/static/admin/index.html", "")
         );
 
         assertEquals(404, response.getCode());
@@ -30,7 +31,7 @@ class GlobalExceptionHandlerTest {
         request.setRequestURI("/api/v1/chat/history/1");
 
         ApiResponse<Void> response = handler.handleHttpMessageNotReadableException(
-                new HttpMessageNotReadableException("JSON parse error"),
+                new HttpMessageNotReadableException("JSON parse error", new MockHttpInputMessage(new byte[0])),
                 request
         );
 
@@ -45,7 +46,7 @@ class GlobalExceptionHandlerTest {
         request.setRequestURI("/api/v1/auth/login");
 
         ApiResponse<Void> response = handler.handleHttpMessageNotReadableException(
-                new HttpMessageNotReadableException("JSON parse error"),
+                new HttpMessageNotReadableException("JSON parse error", new MockHttpInputMessage(new byte[0])),
                 request
         );
 

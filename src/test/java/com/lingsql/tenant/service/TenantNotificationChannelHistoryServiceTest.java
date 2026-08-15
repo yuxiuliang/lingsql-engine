@@ -1,6 +1,6 @@
 package com.lingsql.tenant.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.audit.model.AuditLogQuery;
 import com.lingsql.audit.model.AuditLogView;
 import com.lingsql.audit.service.AuditLogService;

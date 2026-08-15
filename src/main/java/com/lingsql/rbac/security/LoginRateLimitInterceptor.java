@@ -1,6 +1,6 @@
 package com.lingsql.rbac.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.config.LingSqlProperties.Security.RateLimit;

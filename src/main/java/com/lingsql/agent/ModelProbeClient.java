@@ -5,15 +5,12 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.web.client.RestTemplateBuilder;
-import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -35,7 +32,7 @@ public class ModelProbeClient {
     private static final String DEFAULT_CHAT_PATH = "/v1/chat/completions";
     private static final String DEFAULT_MODELS_PATH = "/v1/models";
 
-    private final RestTemplateBuilder restTemplateBuilder;
+    private final RestClient.Builder restClientBuilder;
 
     /**
      * 执行一次轻量探测。
@@ -50,10 +47,10 @@ public class ModelProbeClient {
             return ProbeResult.fail("模型配置为空");
         }
         try {
-            RestTemplate restTemplate = buildRestTemplate();
+            RestClient restClient = buildRestClient();
             HttpHeaders headers = buildHeaders(modelConfig);
 
-            ProbeResult modelsProbe = probeModelsEndpoint(restTemplate, headers, modelConfig);
+            ProbeResult modelsProbe = probeModelsEndpoint(restClient, headers, modelConfig);
             if (modelsProbe.isSuccess()) {
                 return modelsProbe;
             }
@@ -64,7 +61,7 @@ public class ModelProbeClient {
                     modelConfig.getModelName(),
                     modelsProbe.getReason());
 
-            return probeChatEndpoint(restTemplate, headers, modelConfig);
+            return probeChatEndpoint(restClient, headers, modelConfig);
         } catch (Exception ex) {
             log.warn("模型探测失败: id={}, provider={}, model={}, reason={}",
                     modelConfig.getId(),
@@ -91,20 +88,18 @@ public class ModelProbeClient {
     }
 
     /**
-     * 构建 RestTemplate。
+     * 构建 RestClient。
      *
-     * @return RestTemplate
+     * @return RestClient
      * @author 余炘洋
      * @date 2026-01-22
      */
-    private RestTemplate buildRestTemplate() {
-        return restTemplateBuilder
-                .requestFactory(() -> {
-                    SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-                    factory.setConnectTimeout((int) DEFAULT_TIMEOUT.toMillis());
-                    factory.setReadTimeout((int) DEFAULT_TIMEOUT.toMillis());
-                    return factory;
-                })
+    private RestClient buildRestClient() {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(DEFAULT_TIMEOUT);
+        requestFactory.setReadTimeout(DEFAULT_TIMEOUT);
+        return restClientBuilder
+                .requestFactory(requestFactory)
                 .build();
     }
 
@@ -129,17 +124,21 @@ public class ModelProbeClient {
     /**
      * 使用 /v1/models 探测。
      *
-     * @param restTemplate RestTemplate
+     * @param restClient RestClient
      * @param headers      请求头
      * @param modelConfig  模型配置
      * @return 探测结果
      * @author 余炘洋
      * @date 2026-01-22
      */
-    private ProbeResult probeModelsEndpoint(RestTemplate restTemplate, HttpHeaders headers, AiModelConfig modelConfig) {
+    private ProbeResult probeModelsEndpoint(RestClient restClient, HttpHeaders headers, AiModelConfig modelConfig) {
         try {
             String url = resolveModelsUrl(modelConfig.getBaseUrl());
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, new HttpEntity<>(headers), String.class);
+            ResponseEntity<String> response = restClient.get()
+                    .uri(url)
+                    .headers(requestHeaders -> requestHeaders.addAll(headers))
+                    .retrieve()
+                    .toEntity(String.class);
             if (response.getStatusCode().is2xxSuccessful()) {
                 return ProbeResult.success();
             }
@@ -152,14 +151,14 @@ public class ModelProbeClient {
     /**
      * 使用 /v1/chat/completions 探测。
      *
-     * @param restTemplate RestTemplate
+     * @param restClient RestClient
      * @param headers      请求头
      * @param modelConfig  模型配置
      * @return 探测结果
      * @author 余炘洋
      * @date 2026-01-22
      */
-    private ProbeResult probeChatEndpoint(RestTemplate restTemplate, HttpHeaders headers, AiModelConfig modelConfig) {
+    private ProbeResult probeChatEndpoint(RestClient restClient, HttpHeaders headers, AiModelConfig modelConfig) {
         try {
             Map<String, Object> request = new HashMap<>();
             request.put("model", modelConfig.getModelName());
@@ -170,9 +169,13 @@ public class ModelProbeClient {
                     Map.of("role", "user", "content", "health check")
             ));
 
-            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
             String url = resolveChatUrl(modelConfig.getBaseUrl());
-            String response = restTemplate.postForObject(url, entity, String.class);
+            String response = restClient.post()
+                    .uri(url)
+                    .headers(requestHeaders -> requestHeaders.addAll(headers))
+                    .body(request)
+                    .retrieve()
+                    .body(String.class);
             if (response == null || response.isBlank()) {
                 return ProbeResult.fail("chat 响应为空");
             }

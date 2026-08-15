@@ -1,7 +1,6 @@
 package com.lingsql.chat.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.chat.entity.ChatHistory;
 import com.lingsql.chat.model.ChatHistoryDetailView;
 import com.lingsql.chat.model.ChatHistoryView;
@@ -108,7 +107,6 @@ class ChatHistoryServiceTest {
 
     private ChatHistoryService createService(ChatHistoryRepository repository, StringRedisTemplate stringRedisTemplate) {
         ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.registerModule(new JavaTimeModule());
         LingSqlProperties properties = new LingSqlProperties();
         ChatHistoryPayloadCodec codec = new ChatHistoryPayloadCodec(objectMapper);
         PageParamResolver pageParamResolver = new PageParamResolver(properties);
@@ -140,7 +138,6 @@ class ChatHistoryServiceTest {
 
     private String createPayload(String answer) {
         ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.registerModule(new JavaTimeModule());
         ChatHistoryPayloadCodec codec = new ChatHistoryPayloadCodec(objectMapper);
         return codec.encode(
                 List.of(Map.of("answer", answer)),

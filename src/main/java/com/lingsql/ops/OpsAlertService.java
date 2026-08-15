@@ -1,6 +1,6 @@
 package com.lingsql.ops;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.ops.model.AlertDispatchChannelResult;
 import com.lingsql.ops.model.AlertDispatchResult;

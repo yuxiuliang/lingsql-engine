@@ -1,7 +1,7 @@
 package com.lingsql.tenant.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.audit.model.AuditLogQuery;
 import com.lingsql.audit.model.AuditLogView;
 import com.lingsql.audit.service.AuditLogService;
@@ -214,7 +214,7 @@ public class TenantNotificationChannelHistoryService {
 
     private String resolveText(JsonNode detailNode, String fieldName, String fallback) {
         if (detailNode != null && detailNode.has(fieldName) && !detailNode.get(fieldName).isNull()) {
-            String value = detailNode.get(fieldName).asText(null);
+            String value = detailNode.get(fieldName).stringValue(null);
             if (StringUtils.hasText(value)) {
                 return value.trim();
             }
@@ -250,8 +250,8 @@ public class TenantNotificationChannelHistoryService {
         }
         List<String> channels = new ArrayList<>();
         for (JsonNode item : channelsNode) {
-            if (item != null && !item.isNull() && StringUtils.hasText(item.asText())) {
-                channels.add(item.asText().trim());
+            if (item != null && !item.isNull() && StringUtils.hasText(item.stringValue())) {
+                channels.add(item.stringValue().trim());
             }
         }
         return channels;
@@ -264,10 +264,10 @@ public class TenantNotificationChannelHistoryService {
         List<TenantNotificationChannelTestChannelView> results = new ArrayList<>();
         for (JsonNode item : detailNode.get("channelResults")) {
             TenantNotificationChannelTestChannelView view = new TenantNotificationChannelTestChannelView();
-            view.setChannel(item.has("channel") && !item.get("channel").isNull() ? item.get("channel").asText() : null);
+            view.setChannel(item.has("channel") && !item.get("channel").isNull() ? item.get("channel").stringValue() : null);
             view.setSuccess(item.has("success") && !item.get("success").isNull() ? item.get("success").asBoolean() : null);
             view.setStatusCode(item.has("statusCode") && !item.get("statusCode").isNull() ? item.get("statusCode").asInt() : null);
-            view.setDetail(item.has("detail") && !item.get("detail").isNull() ? item.get("detail").asText() : null);
+            view.setDetail(item.has("detail") && !item.get("detail").isNull() ? item.get("detail").stringValue() : null);
             results.add(view);
         }
         return results;

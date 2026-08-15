@@ -1,7 +1,7 @@
 package com.lingsql.schema;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.schema.entity.JoinRule;
 import com.lingsql.schema.entity.SemanticLexiconItem;
@@ -17,7 +17,6 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 /**
  * 语义配置加载与缓存服务。
@@ -118,7 +117,7 @@ public class SemanticConfigService {
     private void cacheLexicon(String cacheKey, Map<String, String> lexicon) {
         try {
             String json = objectMapper.writeValueAsString(lexicon);
-            redisTemplate.opsForValue().set(cacheKey, json, resolveTtl().toSeconds(), TimeUnit.SECONDS);
+            redisTemplate.opsForValue().set(cacheKey, json, resolveTtl());
         } catch (Exception e) {
             log.warn("缓存语义字典失败", e);
         }
@@ -135,7 +134,7 @@ public class SemanticConfigService {
     private void cacheJoinRules(String cacheKey, List<JoinRule> rules) {
         try {
             String json = objectMapper.writeValueAsString(rules);
-            redisTemplate.opsForValue().set(cacheKey, json, resolveTtl().toSeconds(), TimeUnit.SECONDS);
+            redisTemplate.opsForValue().set(cacheKey, json, resolveTtl());
         } catch (Exception e) {
             log.warn("缓存 Join 规则失败", e);
         }

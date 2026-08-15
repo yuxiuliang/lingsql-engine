@@ -1,7 +1,7 @@
 package com.lingsql.billing;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.billing.entity.BillingPolicyVersion;
 import com.lingsql.billing.model.BillingLimit;
 import com.lingsql.billing.model.BillingPolicySnapshot;
