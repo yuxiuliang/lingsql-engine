@@ -26,6 +26,7 @@
         <jackson-bom.version>3.1.5</jackson-bom.version>
         <jackson-2-bom.version>2.21.5</jackson-2-bom.version>
         <log4j2.version>2.25.5</log4j2.version>
+        <cyclonedx-maven-plugin.version>2.9.3</cyclonedx-maven-plugin.version>
         <lingsql.build.commit>local</lingsql.build.commit>
     </properties>
 
@@ -177,6 +178,19 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <version>${cyclonedx-maven-plugin.version}</version>
+                <configuration>
+                    <projectType>application</projectType>
+                    <schemaVersion>1.6</schemaVersion>
+                    <includeTestScope>false</includeTestScope>
+                    <outputFormat>json</outputFormat>
+                    <outputName>lingsql-backend.cdx</outputName>
+                    <skipAttach>true</skipAttach>
                 </configuration>
             </plugin>
         </plugins>

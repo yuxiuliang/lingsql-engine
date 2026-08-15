@@ -94,6 +94,60 @@ jobs:
         run: |
           test "$(docker image inspect --format '{{.Config.User}}' lingsql-engine:ci)" = "10001:10001"
 
+  supply-chain:
+    name: Supply Chain Evidence
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web_src/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: web_src
+        run: npm ci
+
+      - name: Build Admin UI Into Backend Resources
+        working-directory: web_src
+        run: npm run build
+
+      - name: Build Release JAR
+        run: mvn -B -ntp package -DskipTests -DskipITs -Dlingsql.build.commit="${GITHUB_SHA}"
+
+      - name: Prepare Artifact
+        run: |
+          mkdir -p dist
+          ARTIFACT_FILE="$(ls -1 target/lingsql-engine-*.jar | grep -v '\.original$' | head -n 1)"
+          test -n "${ARTIFACT_FILE}"
+          cp "${ARTIFACT_FILE}" dist/lingsql-engine.jar
+
+      - name: Generate And Verify SBOM
+        env:
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_ARTIFACT_FILE: ./dist/lingsql-engine.jar
+          SBOM_OUTPUT_DIR: ./dist
+        run: ./scripts/ops/generate_release_sbom.sh
+
+      - name: Upload Supply Chain Evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: lingsql-supply-chain-evidence
+          path: dist/
+
   database-migration:
     name: Database Migration
     runs-on: ubuntu-latest

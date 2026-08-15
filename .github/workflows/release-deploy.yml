@@ -104,11 +104,18 @@ jobs:
           test -n "${ARTIFACT_FILE}"
           cp "${ARTIFACT_FILE}" dist/lingsql-engine.jar
 
+      - name: Generate And Verify Release SBOM
+        env:
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_ARTIFACT_FILE: ./dist/lingsql-engine.jar
+          SBOM_OUTPUT_DIR: ./dist
+        run: ./scripts/ops/generate_release_sbom.sh
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
         with:
           name: lingsql-release-jar
-          path: dist/lingsql-engine.jar
+          path: dist/
 
   deploy:
     name: Deploy With Auto Rollback
