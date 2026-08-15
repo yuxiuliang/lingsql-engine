@@ -75,7 +75,7 @@ load_env() {
 ensure_app_database_user() {
   log_info "校验应用数据库最小权限账号..."
   docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
-    mysql -uroot "-p${MYSQL_ROOT_PASSWORD}" -e \
+    mysql --default-character-set=utf8mb4 -uroot "-p${MYSQL_ROOT_PASSWORD}" -e \
     "CREATE USER IF NOT EXISTS '${MYSQL_APP_USERNAME}'@'%' IDENTIFIED BY '${MYSQL_APP_PASSWORD}';
      ALTER USER '${MYSQL_APP_USERNAME}'@'%' IDENTIFIED BY '${MYSQL_APP_PASSWORD}';
      REVOKE ALL PRIVILEGES, GRANT OPTION FROM '${MYSQL_APP_USERNAME}'@'%';
@@ -90,7 +90,7 @@ assert_database_privileges() {
   local expected="$3"
   local actual
   actual="$(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
-    mysql -N -B -uroot "-p${MYSQL_ROOT_PASSWORD}" -e \
+    mysql --default-character-set=utf8mb4 -N -B -uroot "-p${MYSQL_ROOT_PASSWORD}" -e \
     "SELECT COALESCE(GROUP_CONCAT(PRIVILEGE_TYPE ORDER BY PRIVILEGE_TYPE SEPARATOR ','), '')
        FROM information_schema.SCHEMA_PRIVILEGES
       WHERE GRANTEE = CONCAT(CHAR(39), '${username}', CHAR(39), '@', CHAR(39), '%', CHAR(39))
@@ -157,7 +157,7 @@ init_demo_database() {
 
   log_info "初始化销售库存演示库与只读账号..."
   docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
-    mysql -uroot "-p${MYSQL_ROOT_PASSWORD}" -e \
+    mysql --default-character-set=utf8mb4 -uroot "-p${MYSQL_ROOT_PASSWORD}" -e \
     "CREATE DATABASE IF NOT EXISTS \`${LINGSQL_DEMO_DATABASE}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
      CREATE USER IF NOT EXISTS '${LINGSQL_DEMO_USERNAME}'@'%' IDENTIFIED BY '${LINGSQL_DEMO_PASSWORD}';
      ALTER USER '${LINGSQL_DEMO_USERNAME}'@'%' IDENTIFIED BY '${LINGSQL_DEMO_PASSWORD}';
@@ -166,7 +166,7 @@ init_demo_database() {
      FLUSH PRIVILEGES;"
   assert_database_privileges "${LINGSQL_DEMO_USERNAME}" "${LINGSQL_DEMO_DATABASE}" "SELECT"
   docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
-    mysql -uroot "-p${MYSQL_ROOT_PASSWORD}" "${LINGSQL_DEMO_DATABASE}" < "${DEMO_SCHEMA_FILE}"
+    mysql --default-character-set=utf8mb4 -uroot "-p${MYSQL_ROOT_PASSWORD}" "${LINGSQL_DEMO_DATABASE}" < "${DEMO_SCHEMA_FILE}"
   log_info "演示数据源: jdbc:mysql://mysql:3306/${LINGSQL_DEMO_DATABASE}"
   log_info "演示只读账号: ${LINGSQL_DEMO_USERNAME}"
 }
@@ -182,7 +182,7 @@ seed_commercial_baseline() {
   fi
   log_info "开始导入商业化基线种子数据..."
   docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
-    mysql -uroot "-p${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" < "${SEED_FILE}"
+    mysql --default-character-set=utf8mb4 -uroot "-p${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" < "${SEED_FILE}"
   log_info "商业化基线种子导入完成。"
 }
 
