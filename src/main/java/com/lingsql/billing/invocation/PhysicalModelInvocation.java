@@ -10,8 +10,11 @@ package com.lingsql.billing.invocation;
  * @param stage 调用阶段
  * @param caller 调用来源
  * @param routeAttempt 模型路由尝试序号
+ * @param modelConfigId 实际模型配置ID
  * @param providerName 供应商名称
  * @param modelName 模型名称
+ * @param modelVersion 模型版本
+ * @param routeFingerprint 调用选择时的路由配置指纹
  * @param maxBillableTokens 最大可计费Token
  * @param promptHash Prompt摘要
  * @author 余炘洋
@@ -25,8 +28,11 @@ public record PhysicalModelInvocation(
         String stage,
         String caller,
         int routeAttempt,
+        long modelConfigId,
         String providerName,
         String modelName,
+        String modelVersion,
+        String routeFingerprint,
         int maxBillableTokens,
         String promptHash
 ) {

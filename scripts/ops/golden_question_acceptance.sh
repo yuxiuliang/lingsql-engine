@@ -275,6 +275,7 @@ collect_batch_evidence() {
   local requested matched workflows invocations settled unknown pending cancelled reserves closes
   local reserve_amount close_amount refund_amount complete_requests unbalanced conserved evidence_ok=true
   local acceptance_receipt acceptance_receipt_valid acceptance_receipt_hash balance_before balance_after interval_net_amount
+  local identified_invocations route_fingerprints identity_match_count expected_provider expected_model expected_version expected_route
   request_ids_json="$(jq -Rsc 'split("\n") | map(select(length>0)) | unique' "${REQUEST_IDS_FILE}")"
   [[ "$(jq 'length' <<< "${request_ids_json}")" -eq "${BUSINESS_RUN_COUNT}" ]] || evidence_ok=false
   request_ids_csv="$(jq -r 'join(",")' <<< "${request_ids_json}")"
@@ -296,6 +297,10 @@ collect_batch_evidence() {
   tenant_encoded="$(jq -rn --arg v "${PILOT_TENANT_ID}" '$v|@uri')"
   ledger_response="$(api_get "/api/v1/admin/billing/ledger/evidence?tenantId=${tenant_encoded}&requestIds=$(jq -rn --arg v "${request_ids_csv}" '$v|@uri')" "${PILOT_CONTROL_TOKEN}")"
   [[ "$(jq -r '.code // 0' <<< "${ledger_response}")" == "200" ]] || evidence_ok=false
+  expected_provider="$(jq -r '.environment.modelProvider' "${GQ_SUITE_FILE}")"
+  expected_model="$(jq -r '.environment.modelName' "${GQ_SUITE_FILE}")"
+  expected_version="$(jq -r '.environment.modelVersion' "${GQ_SUITE_FILE}")"
+  expected_route="$(jq -r '.environment.modelRouteFingerprint' "${GQ_SUITE_FILE}")"
   requested="$(jq -r '.data.requestedRequestCount // 0' <<< "${ledger_response}")"; matched="$(jq -r '.data.matchedRequestCount // 0' <<< "${ledger_response}")"
   workflows="$(jq -r '.data.matchedWorkflowCount // 0' <<< "${ledger_response}")"; invocations="$(jq -r '.data.invocationCount // 0' <<< "${ledger_response}")"
   settled="$(jq -r '.data.settledInvocationCount // 0' <<< "${ledger_response}")"; unknown="$(jq -r '.data.unknownInvocationCount // 0' <<< "${ledger_response}")"
@@ -304,22 +309,36 @@ collect_batch_evidence() {
   reserve_amount="$(jq -r '.data.reserveAmount // 0' <<< "${ledger_response}")"; close_amount="$(jq -r '.data.closeAmount // 0' <<< "${ledger_response}")"
   refund_amount="$(jq -r '.data.refundAmount // 0' <<< "${ledger_response}")"; complete_requests="$(jq -r '.data.completeRequestCount // 0' <<< "${ledger_response}")"
   unbalanced="$(jq -r '.data.unbalancedInvocationCount // 0' <<< "${ledger_response}")"; conserved="$(jq -r '.data.conserved // false' <<< "${ledger_response}")"
-  request_details="$(jq -c '[.data.requests[]? | {requestId,sqlAuditCount,successfulSqlAuditCount,invocationCount,architectSettledCount,analystSettledCount,settledInvocationCount,unknownInvocationCount,pendingInvocationCount,cancelledInvocationCount,ledgerInvocationCount,reserveCount,refundCount,closeCount,reserveAmount,refundAmount,closeAmount,unbalancedInvocationCount,complete,failureReasons}]' <<< "${ledger_response}")"
+  identified_invocations="$(jq -r '.data.identifiedInvocationCount // 0' <<< "${ledger_response}")"
+  route_fingerprints="$(jq -c '.data.routeFingerprints // []' <<< "${ledger_response}")"
+  identity_match_count="$(jq -r --arg provider "${expected_provider}" --arg model "${expected_model}" \
+    --arg version "${expected_version}" --arg route "${expected_route}" \
+    '[.data.requests[]?.modelIdentities[]? | select(
+      .identityComplete == true and
+      ((.providerName // "") | ascii_downcase) == ($provider | ascii_downcase) and
+      ((.modelName // "") | ascii_downcase) == ($model | ascii_downcase) and
+      .modelVersion == $version and .routeFingerprint == $route
+    )] | length' <<< "${ledger_response}")"
+  request_details="$(jq -c '[.data.requests[]? | {requestId,sqlAuditCount,successfulSqlAuditCount,invocationCount,architectSettledCount,analystSettledCount,settledInvocationCount,unknownInvocationCount,pendingInvocationCount,cancelledInvocationCount,identifiedInvocationCount,modelIdentities,ledgerInvocationCount,reserveCount,refundCount,closeCount,reserveAmount,refundAmount,closeAmount,unbalancedInvocationCount,complete,failureReasons}]' <<< "${ledger_response}")"
   [[ "${requested}" -eq "${BUSINESS_RUN_COUNT}" && "${matched}" -eq "${BUSINESS_RUN_COUNT}" && "${workflows}" -eq "${BUSINESS_RUN_COUNT}" \
       && "${complete_requests}" -eq "${BUSINESS_RUN_COUNT}" && "$(jq 'length' <<< "${request_details}")" -eq "${BUSINESS_RUN_COUNT}" \
       && "${invocations}" -ge "$((BUSINESS_RUN_COUNT * 2))" && "${settled}" -eq "${invocations}" && "${unknown}" -eq 0 && "${pending}" -eq 0 \
+      && "${identified_invocations}" -eq "${invocations}" && "${identity_match_count}" -eq "${invocations}" \
+      && "$(jq --arg route "${expected_route}" 'length == 1 and .[0] == $route' <<< "${route_fingerprints}")" == "true" \
       && "${cancelled}" -eq 0 && "${reserves}" -eq "${invocations}" && "${closes}" -eq "${invocations}" \
       && "${unbalanced}" -eq 0 && "${conserved}" == "true" && "${reserve_amount}" -eq "$((close_amount + refund_amount))" \
-      && "$(jq '[.[] | select(.complete == true and .sqlAuditCount == 1 and .successfulSqlAuditCount == 1 and .invocationCount >= 2 and .ledgerInvocationCount == .invocationCount and .architectSettledCount >= 1 and .analystSettledCount >= 1 and .settledInvocationCount == .invocationCount and .unknownInvocationCount == 0 and .pendingInvocationCount == 0 and .cancelledInvocationCount == 0 and .reserveCount == .invocationCount and .closeCount == .invocationCount and .unbalancedInvocationCount == 0 and .reserveAmount == (.closeAmount + .refundAmount))] | length' <<< "${request_details}")" -eq "${BUSINESS_RUN_COUNT}" ]] || evidence_ok=false
+      && "$(jq --arg provider "${expected_provider}" --arg model "${expected_model}" --arg version "${expected_version}" --arg route "${expected_route}" \
+        '[.[] | select(.complete == true and .sqlAuditCount == 1 and .successfulSqlAuditCount == 1 and .invocationCount >= 2 and .ledgerInvocationCount == .invocationCount and .architectSettledCount >= 1 and .analystSettledCount >= 1 and .settledInvocationCount == .invocationCount and .unknownInvocationCount == 0 and .pendingInvocationCount == 0 and .cancelledInvocationCount == 0 and .identifiedInvocationCount == .invocationCount and ([.modelIdentities[]? | select(.identityComplete == true and ((.providerName // "") | ascii_downcase) == ($provider | ascii_downcase) and ((.modelName // "") | ascii_downcase) == ($model | ascii_downcase) and .modelVersion == $version and .routeFingerprint == $route)] | length) == .invocationCount and .reserveCount == .invocationCount and .closeCount == .invocationCount and .unbalancedInvocationCount == 0 and .reserveAmount == (.closeAmount + .refundAmount))] | length' <<< "${request_details}")" -eq "${BUSINESS_RUN_COUNT}" ]] || evidence_ok=false
   jq -cn --argjson requested "${requested}" --argjson matched "${matched}" --argjson workflows "${workflows}" \
     --argjson completeRequests "${complete_requests}" --argjson invocations "${invocations}" --argjson settled "${settled}" \
     --argjson unknown "${unknown}" --argjson pending "${pending}" --argjson cancelled "${cancelled}" \
     --argjson reserves "${reserves}" --argjson closes "${closes}" --argjson reserveAmount "${reserve_amount}" \
     --argjson closeAmount "${close_amount}" --argjson refundAmount "${refund_amount}" --argjson unbalanced "${unbalanced}" \
-    --argjson conserved "${conserved}" --argjson requests "${request_details}" --arg acceptanceReceiptHash "${acceptance_receipt_hash}" \
+    --argjson conserved "${conserved}" --argjson identifiedInvocations "${identified_invocations}" --argjson routeFingerprints "${route_fingerprints}" \
+    --argjson requests "${request_details}" --arg acceptanceReceiptHash "${acceptance_receipt_hash}" \
     --argjson balanceBefore "${balance_before}" --argjson balanceAfter "${balance_after}" --argjson intervalNetAmount "${interval_net_amount}" \
     --argjson passed "${evidence_ok}" \
-    '{type:"batchEvidence",requestedRequestCount:$requested,matchedRequestCount:$matched,matchedWorkflowCount:$workflows,completeRequestCount:$completeRequests,invocationCount:$invocations,settledInvocationCount:$settled,unknownInvocationCount:$unknown,pendingInvocationCount:$pending,cancelledInvocationCount:$cancelled,reserveCount:$reserves,closeCount:$closes,reserveAmount:$reserveAmount,closeAmount:$closeAmount,refundAmount:$refundAmount,unbalancedInvocationCount:$unbalanced,conserved:$conserved,billingAcceptance:{receiptHash:$acceptanceReceiptHash,balanceBefore:$balanceBefore,balanceAfter:$balanceAfter,intervalNetAmount:$intervalNetAmount},requests:$requests,passed:$passed}' \
+    '{type:"batchEvidence",requestedRequestCount:$requested,matchedRequestCount:$matched,matchedWorkflowCount:$workflows,completeRequestCount:$completeRequests,invocationCount:$invocations,settledInvocationCount:$settled,unknownInvocationCount:$unknown,pendingInvocationCount:$pending,cancelledInvocationCount:$cancelled,identifiedInvocationCount:$identifiedInvocations,routeFingerprints:$routeFingerprints,reserveCount:$reserves,closeCount:$closes,reserveAmount:$reserveAmount,closeAmount:$closeAmount,refundAmount:$refundAmount,unbalancedInvocationCount:$unbalanced,conserved:$conserved,billingAcceptance:{receiptHash:$acceptanceReceiptHash,balanceBefore:$balanceBefore,balanceAfter:$balanceAfter,intervalNetAmount:$intervalNetAmount},requests:$requests,passed:$passed}' \
     >> "${EVIDENCE_FILE}"
 }
 

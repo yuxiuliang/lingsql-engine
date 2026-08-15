@@ -24,6 +24,7 @@ public class ModelRouter {
 
     private final AiModelConfigRepository repository;
     private final ModelHealthService healthService;
+    private final ModelRouteFingerprintCalculator fingerprintCalculator;
     private final Random random = new Random();
 
     /**
@@ -34,7 +35,7 @@ public class ModelRouter {
      * @date 2026-01-22
      */
     public AiModelConfig selectModel() {
-        return selectModel(List.of());
+        return selectModelWithEvidence().modelConfig();
     }
 
     /**
@@ -46,6 +47,25 @@ public class ModelRouter {
      * @date 2026-01-22
      */
     public AiModelConfig selectModel(List<Long> excludeIds) {
+        return selectModelWithEvidence(excludeIds).modelConfig();
+    }
+
+    /**
+     * 选择模型并返回本次选择使用的路由配置指纹。
+     *
+     * @return 带路由证据的选择结果
+     */
+    public ModelRouteSelection selectModelWithEvidence() {
+        return selectModelWithEvidence(List.of());
+    }
+
+    /**
+     * 排除指定模型后选择模型，并返回本次选择使用的路由配置指纹。
+     *
+     * @param excludeIds 需要排除的模型ID
+     * @return 带路由证据的选择结果
+     */
+    public ModelRouteSelection selectModelWithEvidence(List<Long> excludeIds) {
         List<AiModelConfig> configs = repository.findByIsActive(1);
         if (configs.isEmpty()) {
             throw new BizException(ErrorCode.MODEL_UNAVAILABLE, "没有可用的 AI 模型配置，请检查数据库。");
@@ -72,7 +92,7 @@ public class ModelRouter {
                 .filter(config -> config.getPriority() == null || config.getPriority() == minPriority)
                 .collect(Collectors.toList());
 
-        return weightedRandom(candidates);
+        return new ModelRouteSelection(weightedRandom(candidates), fingerprintCalculator.calculate(configs));
     }
 
     /**

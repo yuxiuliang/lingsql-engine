@@ -3,7 +3,9 @@ package com.lingsql.billing;
 import com.lingsql.audit.repository.SqlExecuteLogRepository;
 import com.lingsql.billing.entity.BillingPolicyVersion;
 import com.lingsql.billing.entity.TenantBillingOverride;
+import com.lingsql.billing.invocation.BillingInvocationEntity;
 import com.lingsql.billing.invocation.BillingInvocationRepository;
+import com.lingsql.billing.model.BillingInvocationIdentityView;
 import com.lingsql.billing.model.BillingLedgerEvidenceView;
 import com.lingsql.billing.model.BillingPolicyVersionRequest;
 import com.lingsql.billing.model.BillingRequestEvidenceView;
@@ -28,6 +30,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import tools.jackson.databind.ObjectMapper;
 
@@ -45,6 +48,7 @@ public class BillingAdminService {
     private static final int ACTIVE_STATUS = 1;
     private static final int INACTIVE_STATUS = 0;
     private static final int MAX_EVIDENCE_REQUESTS = 100;
+    private static final Pattern SHA256_PATTERN = Pattern.compile("[0-9a-f]{64}");
 
     private final BillingPolicyVersionRepository policyRepository;
     private final TenantBillingOverrideRepository overrideRepository;
@@ -220,6 +224,9 @@ public class BillingAdminService {
                 invocationRepository.findRequestInvocationEvidence(normalizedTenantId, normalized),
                 BillingInvocationRepository.RequestInvocationEvidenceProjection::getWorkflowRequestId
         );
+        Map<String, List<BillingInvocationIdentityView>> identityEvidence = indexIdentities(
+                invocationRepository.findByTenantIdAndWorkflowRequestIdInOrderByInvocationIdAsc(
+                        normalizedTenantId, normalized));
         Map<String, BillingLedgerEventRepository.RequestLedgerEvidenceProjection> ledgerEvidence = indexBy(
                 ledgerEventRepository.findRequestLedgerEvidence(normalizedTenantId, normalized),
                 BillingLedgerEventRepository.RequestLedgerEvidenceProjection::getWorkflowRequestId
@@ -229,6 +236,7 @@ public class BillingAdminService {
                         requestId,
                         sqlEvidence.get(requestId),
                         invocationEvidence.get(requestId),
+                        identityEvidence.getOrDefault(requestId, List.of()),
                         ledgerEvidence.get(requestId)
                 ))
                 .toList();
@@ -238,6 +246,7 @@ public class BillingAdminService {
         long unknownCount = sum(requests, BillingRequestEvidenceView::unknownInvocationCount);
         long pendingCount = sum(requests, BillingRequestEvidenceView::pendingInvocationCount);
         long cancelledCount = sum(requests, BillingRequestEvidenceView::cancelledInvocationCount);
+        long identifiedCount = sum(requests, BillingRequestEvidenceView::identifiedInvocationCount);
         long reserveAmount = sum(requests, BillingRequestEvidenceView::reserveAmount);
         long refundAmount = sum(requests, BillingRequestEvidenceView::refundAmount);
         long closeAmount = sum(requests, BillingRequestEvidenceView::closeAmount);
@@ -259,6 +268,15 @@ public class BillingAdminService {
                 unknownCount,
                 pendingCount,
                 cancelledCount,
+                identifiedCount,
+                requests.stream()
+                        .flatMap(request -> request.modelIdentities().stream())
+                        .filter(BillingInvocationIdentityView::identityComplete)
+                        .map(BillingInvocationIdentityView::routeFingerprint)
+                        .filter(StringUtils::hasText)
+                        .distinct()
+                        .sorted()
+                        .toList(),
                 sum(requests, BillingRequestEvidenceView::sqlAuditCount),
                 sum(requests, BillingRequestEvidenceView::successfulSqlAuditCount),
                 sum(requests, BillingRequestEvidenceView::refundCount),
@@ -276,6 +294,7 @@ public class BillingAdminService {
             String requestId,
             SqlExecuteLogRepository.SqlAuditEvidenceProjection sql,
             BillingInvocationRepository.RequestInvocationEvidenceProjection invocation,
+            List<BillingInvocationIdentityView> identities,
             BillingLedgerEventRepository.RequestLedgerEvidenceProjection ledger
     ) {
         long sqlAuditCount = value(sql == null ? null : sql.getAuditCount());
@@ -287,6 +306,7 @@ public class BillingAdminService {
         long unknownCount = value(invocation == null ? null : invocation.getUnknownCount());
         long pendingCount = value(invocation == null ? null : invocation.getPendingCount());
         long cancelledCount = value(invocation == null ? null : invocation.getCancelledCount());
+        long identifiedCount = identities.stream().filter(BillingInvocationIdentityView::identityComplete).count();
         long ledgerInvocationCount = value(ledger == null ? null : ledger.getLedgerInvocationCount());
         long eventCount = value(ledger == null ? null : ledger.getEventCount());
         long reserveCount = value(ledger == null ? null : ledger.getReserveCount());
@@ -308,6 +328,8 @@ public class BillingAdminService {
         addFailure(failureReasons, unknownCount > 0, "存在UNKNOWN物理模型调用");
         addFailure(failureReasons, pendingCount > 0, "存在RESERVED或DISPATCHED物理模型调用");
         addFailure(failureReasons, cancelledCount > 0, "存在CANCELLED物理模型调用");
+        addFailure(failureReasons, identities.size() != invocationCount || identifiedCount != invocationCount,
+                "物理模型调用身份或路由指纹不完整");
         addFailure(failureReasons, ledgerInvocationCount != invocationCount, "物理调用与账本调用数量不一致");
         addFailure(failureReasons, reserveCount != invocationCount, "每次物理调用必须恰有一个RESERVE");
         addFailure(failureReasons, closeCount != invocationCount, "每次物理调用必须恰有一个CLOSE");
@@ -329,6 +351,8 @@ public class BillingAdminService {
                 unknownCount,
                 pendingCount,
                 cancelledCount,
+                identifiedCount,
+                List.copyOf(identities),
                 ledgerInvocationCount,
                 eventCount,
                 reserveCount,
@@ -341,6 +365,41 @@ public class BillingAdminService {
                 unbalancedCount,
                 failureReasons.isEmpty(),
                 List.copyOf(failureReasons)
+        );
+    }
+
+    private Map<String, List<BillingInvocationIdentityView>> indexIdentities(
+            List<BillingInvocationEntity> invocations) {
+        if (invocations == null || invocations.isEmpty()) {
+            return Map.of();
+        }
+        return invocations.stream()
+                .filter(item -> item != null && StringUtils.hasText(item.getWorkflowRequestId()))
+                .collect(Collectors.groupingBy(
+                        item -> item.getWorkflowRequestId().trim(),
+                        LinkedHashMap::new,
+                        Collectors.mapping(this::toIdentityView, Collectors.toList())
+                ));
+    }
+
+    private BillingInvocationIdentityView toIdentityView(BillingInvocationEntity entity) {
+        boolean complete = entity.getModelConfigId() != null && entity.getModelConfigId() > 0
+                && StringUtils.hasText(entity.getProviderName())
+                && StringUtils.hasText(entity.getModelName())
+                && StringUtils.hasText(entity.getModelVersion())
+                && StringUtils.hasText(entity.getRouteFingerprint())
+                && SHA256_PATTERN.matcher(entity.getRouteFingerprint()).matches();
+        return new BillingInvocationIdentityView(
+                entity.getInvocationId(),
+                entity.getStage(),
+                entity.getRouteAttempt() == null ? 0 : entity.getRouteAttempt(),
+                entity.getModelConfigId(),
+                entity.getProviderName(),
+                entity.getModelName(),
+                entity.getModelVersion(),
+                entity.getRouteFingerprint(),
+                entity.getState(),
+                complete
         );
     }
 

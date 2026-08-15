@@ -1,6 +1,7 @@
 package com.lingsql.runtime;
 
 import com.lingsql.agent.model.AiModelConfig;
+import com.lingsql.agent.ModelRouteFingerprintCalculator;
 import com.lingsql.agent.repository.AiModelConfigRepository;
 import com.lingsql.runtime.model.RuntimeFingerprintView;
 import com.lingsql.runtime.model.RuntimeModelFingerprintView;
@@ -10,11 +11,7 @@ import org.springframework.boot.info.BuildProperties;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
-import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -32,6 +29,7 @@ public class RuntimeFingerprintService {
     private final BuildProperties buildProperties;
     private final JdbcTemplate jdbcTemplate;
     private final AiModelConfigRepository modelConfigRepository;
+    private final ModelRouteFingerprintCalculator modelRouteFingerprintCalculator;
 
     @Value("${lingsql.runtime.data-snapshot-id:UNSET}")
     private String dataSnapshotId;
@@ -42,12 +40,13 @@ public class RuntimeFingerprintService {
      * @return 运行指纹
      */
     public RuntimeFingerprintView load() {
-        List<RuntimeModelFingerprintView> activeModels = modelConfigRepository.findByIsActive(ACTIVE_STATUS).stream()
+        List<AiModelConfig> activeModelConfigs = modelConfigRepository.findByIsActive(ACTIVE_STATUS);
+        List<RuntimeModelFingerprintView> activeModels = activeModelConfigs.stream()
                 .sorted(Comparator.comparing(AiModelConfig::getPriority, Comparator.nullsLast(Integer::compareTo))
                         .thenComparing(AiModelConfig::getId, Comparator.nullsLast(Long::compareTo)))
                 .map(this::toModelView)
                 .toList();
-        String routeFingerprint = calculateModelRouteFingerprint(activeModels);
+        String routeFingerprint = modelRouteFingerprintCalculator.calculate(activeModelConfigs);
         String schemaVersion = jdbcTemplate.query(
                 "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank DESC LIMIT 1",
                 resultSet -> resultSet.next() ? resultSet.getString(1) : "UNMANAGED"
@@ -74,26 +73,4 @@ public class RuntimeFingerprintService {
         );
     }
 
-    private String calculateModelRouteFingerprint(List<RuntimeModelFingerprintView> models) {
-        String canonical = models.stream()
-                .map(model -> String.join("|",
-                        String.valueOf(model.id()),
-                        normalize(model.providerName()),
-                        normalize(model.modelName()),
-                        normalize(model.modelVersion()),
-                        String.valueOf(model.priority()),
-                        String.valueOf(model.weight())))
-                .reduce((left, right) -> left + "\n" + right)
-                .orElse("");
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(canonical.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("运行环境不支持 SHA-256", ex);
-        }
-    }
-
-    private String normalize(String value) {
-        return value == null ? "" : value.trim();
-    }
 }

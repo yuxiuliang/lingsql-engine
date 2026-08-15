@@ -2,6 +2,7 @@ package com.lingsql.llm;
 
 import com.lingsql.agent.ModelHealthService;
 import com.lingsql.agent.ModelRouter;
+import com.lingsql.agent.ModelRouteSelection;
 import com.lingsql.agent.model.AiModelConfig;
 import com.lingsql.billing.invocation.BilledModelResponse;
 import com.lingsql.billing.invocation.BillingInvocationUnknownException;
@@ -62,16 +63,17 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
      */
     @Override
     public ModelCallResult chat(ModelCallCommand command) {
-        AiModelConfig primary;
+        ModelRouteSelection primarySelection;
         try {
-            primary = modelRouter.selectModel();
+            primarySelection = modelRouter.selectModelWithEvidence();
         } catch (Exception exception) {
             throw modelUnavailable("未找到可用的主模型", exception);
         }
+        AiModelConfig primary = primarySelection.modelConfig();
 
         try {
             PreparedModelCall prepared = preparePhysicalCall(primary, command);
-            return executePhysicalCall(command, primary, prepared, 1);
+            return executePhysicalCall(command, primarySelection, prepared, 1);
         } catch (LocalModelPreparationException exception) {
             healthService.recordFailure(primary, exception.getMessage());
             log.warn("主模型本地配置无效，准备选择备用模型: id={}, provider={}, model={}",
@@ -93,13 +95,15 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
      */
     private ModelCallResult executePhysicalCall(
             ModelCallCommand command,
-            AiModelConfig modelConfig,
+            ModelRouteSelection selection,
             PreparedModelCall prepared,
             int routeAttempt
     ) {
+        AiModelConfig modelConfig = selection.modelConfig();
         long startTime = System.currentTimeMillis();
         String promptHash = hashPrompt(command.systemPrompt(), command.userPrompt());
-        String invocationId = buildInvocationId(command, modelConfig, routeAttempt, promptHash);
+        String invocationId = buildInvocationId(
+                command, modelConfig, selection.routeFingerprint(), routeAttempt, promptHash);
         PhysicalModelInvocation invocation = new PhysicalModelInvocation(
                 invocationId,
                 command.tenantId(),
@@ -108,8 +112,11 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
                 command.stage(),
                 command.callerType() + ":" + command.callerId(),
                 routeAttempt,
+                modelConfig.getId(),
                 modelConfig.getProviderName(),
                 modelConfig.getModelName(),
+                modelConfig.getModelVersion(),
+                selection.routeFingerprint(),
                 resolveMaximumBillableTokens(command),
                 promptHash
         );
@@ -158,9 +165,10 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
             LocalModelPreparationException primaryFailure
     ) {
         try {
-            AiModelConfig fallback = modelRouter.selectModel(List.of(primary.getId()));
+            ModelRouteSelection fallbackSelection = modelRouter.selectModelWithEvidence(List.of(primary.getId()));
+            AiModelConfig fallback = fallbackSelection.modelConfig();
             PreparedModelCall prepared = preparePhysicalCall(fallback, command);
-            return executePhysicalCall(command, fallback, prepared, 2);
+            return executePhysicalCall(command, fallbackSelection, prepared, 2);
         } catch (LocalModelPreparationException exception) {
             log.error("备用模型本地配置无效: primaryId={}, reason={}",
                     primary.getId(), exception.getMessage(), exception);
@@ -211,6 +219,8 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
                 || modelConfig.getProviderName().isBlank()
                 || modelConfig.getModelName() == null
                 || modelConfig.getModelName().isBlank()
+                || modelConfig.getModelVersion() == null
+                || modelConfig.getModelVersion().isBlank()
                 || modelConfig.getBaseUrl() == null
                 || modelConfig.getBaseUrl().isBlank()) {
             throw new LocalModelPreparationException("模型配置不完整");
@@ -230,6 +240,7 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
     private String buildInvocationId(
             ModelCallCommand command,
             AiModelConfig modelConfig,
+            String routeFingerprint,
             int routeAttempt,
             String promptHash
     ) {
@@ -242,6 +253,8 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
                 String.valueOf(command.logicalCallNo()),
                 String.valueOf(routeAttempt),
                 String.valueOf(modelConfig.getId()),
+                modelConfig.getModelVersion().trim(),
+                routeFingerprint,
                 promptHash
         ));
     }

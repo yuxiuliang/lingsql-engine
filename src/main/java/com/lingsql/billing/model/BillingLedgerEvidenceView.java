@@ -17,6 +17,8 @@ import java.util.List;
  * @param unknownInvocationCount 未知物理调用数
  * @param pendingInvocationCount 未终态物理调用数
  * @param cancelledInvocationCount 已取消物理调用数
+ * @param identifiedInvocationCount 身份证据完整的物理调用数
+ * @param routeFingerprints 本批调用实际使用的路由配置指纹
  * @param sqlAuditCount SQL审计数量
  * @param successfulSqlAuditCount 成功SQL审计数量
  * @param refundCount 退款事件数量
@@ -43,6 +45,8 @@ public record BillingLedgerEvidenceView(
         long unknownInvocationCount,
         long pendingInvocationCount,
         long cancelledInvocationCount,
+        long identifiedInvocationCount,
+        List<String> routeFingerprints,
         long sqlAuditCount,
         long successfulSqlAuditCount,
         long refundCount,

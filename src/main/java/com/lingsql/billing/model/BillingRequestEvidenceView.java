@@ -15,6 +15,8 @@ import java.util.List;
  * @param unknownInvocationCount 未知调用数量
  * @param pendingInvocationCount 未终态调用数量
  * @param cancelledInvocationCount 已取消调用数量
+ * @param identifiedInvocationCount 身份证据完整的物理调用数量
+ * @param modelIdentities 逐物理调用实际模型身份摘要
  * @param ledgerInvocationCount 有账本的调用数量
  * @param eventCount 账本事件数量
  * @param reserveCount 预留事件数量
@@ -41,6 +43,8 @@ public record BillingRequestEvidenceView(
         long unknownInvocationCount,
         long pendingInvocationCount,
         long cancelledInvocationCount,
+        long identifiedInvocationCount,
+        List<BillingInvocationIdentityView> modelIdentities,
         long ledgerInvocationCount,
         long eventCount,
         long reserveCount,

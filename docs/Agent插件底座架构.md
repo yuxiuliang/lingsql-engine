@@ -325,7 +325,7 @@ MCP Client 连接配置属于平台资产，包含服务器身份、传输、认
 
 ### 9.3 计费、审计与补偿
 
-每次物理模型调用已经产生独立 `invocationId` 和资金状态，记录 tenant/workflow/caller/stage/route/provider/model、Prompt 摘要、最大与实际 Token、冻结价格、预留/实际/退款金额和终态；不保存 Prompt、模型原文、密钥或客户结果。余额预留、`RESERVED -> DISPATCHED`、实际结算和差额退款均以 MySQL 为事实源，Redis 只作为可重建投影。
+每次物理模型调用已经产生独立 `invocationId` 和资金状态，记录 tenant/workflow/caller/stage/route/provider/model、实际模型配置 ID、调用时模型版本、选择时完整启用路由配置指纹、Prompt 摘要、最大与实际 Token、冻结价格、预留/实际/退款金额和终态；不保存 Prompt、模型原文、密钥或客户结果。路由器在同一次数据库读取上返回模型选择和路由指纹，模型网关显式传给计费模块，禁止从 ThreadLocal 或事后当前配置反推。余额预留、`RESERVED -> DISPATCHED`、实际结算和差额退款均以 MySQL 为事实源，Redis 只作为可重建投影。
 
 模型网关是深模块：业务侧只提交显式 `ModelCallCommand` 并接收 `ModelCallResult`；内部适配器才执行一次指定模型的物理调用。主模型与备用模型不能共享资金事件。只有本地配置准备阶段明确尚未出站时才能换备用模型；一旦进入 `DISPATCHED`，异常只能进入 `UNKNOWN`，不能自动退款或继续用同一资金事件重试。
 

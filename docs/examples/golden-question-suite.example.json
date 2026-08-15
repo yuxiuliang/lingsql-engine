@@ -7,7 +7,7 @@
   "environment": {
     "environmentId": "customer-uat",
     "releaseCommit": "0000000000000000000000000000000000000000",
-    "flywaySchemaVersion": "20260815.08",
+    "flywaySchemaVersion": "20260815.09",
     "dataSnapshotId": "sales-snapshot-20260815",
     "modelRouteFingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
     "modelProvider": "approved-provider",

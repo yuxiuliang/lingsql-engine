@@ -38,7 +38,9 @@ public class PhysicalModelBillingImpl implements IPhysicalModelBilling {
     private static final int MAX_CALLER_LENGTH = 64;
     private static final int MAX_PROVIDER_LENGTH = 64;
     private static final int MAX_MODEL_LENGTH = 64;
+    private static final int MAX_MODEL_VERSION_LENGTH = 128;
     private static final int PROMPT_HASH_LENGTH = 64;
+    private static final int ROUTE_FINGERPRINT_LENGTH = 64;
     private static final Pattern SHA256_PATTERN = Pattern.compile("[0-9a-fA-F]{64}");
 
     private final BillingInvocationRepository invocationRepository;
@@ -297,8 +299,11 @@ public class PhysicalModelBillingImpl implements IPhysicalModelBilling {
         entity.setStage(invocation.stage().trim());
         entity.setCaller(invocation.caller().trim());
         entity.setRouteAttempt(invocation.routeAttempt());
+        entity.setModelConfigId(invocation.modelConfigId());
         entity.setProviderName(invocation.providerName().trim());
         entity.setModelName(invocation.modelName().trim().toUpperCase());
+        entity.setModelVersion(invocation.modelVersion().trim());
+        entity.setRouteFingerprint(invocation.routeFingerprint().trim().toLowerCase());
         entity.setPromptHash(invocation.promptHash().trim().toLowerCase());
         entity.setMaxBillableTokens(invocation.maxBillableTokens());
         entity.setUnitCost(quote.unitCost());
@@ -320,8 +325,11 @@ public class PhysicalModelBillingImpl implements IPhysicalModelBilling {
                 && entity.getStage().equals(invocation.stage().trim())
                 && entity.getCaller().equals(invocation.caller().trim())
                 && entity.getRouteAttempt() == invocation.routeAttempt()
+                && Objects.equals(entity.getModelConfigId(), invocation.modelConfigId())
                 && entity.getProviderName().equals(invocation.providerName().trim())
                 && entity.getModelName().equals(invocation.modelName().trim().toUpperCase())
+                && Objects.equals(entity.getModelVersion(), invocation.modelVersion().trim())
+                && Objects.equals(entity.getRouteFingerprint(), invocation.routeFingerprint().trim().toLowerCase())
                 && entity.getMaxBillableTokens() == invocation.maxBillableTokens()
                 && entity.getPromptHash().equals(invocation.promptHash().trim().toLowerCase());
         if (!same) {
@@ -348,10 +356,14 @@ public class PhysicalModelBillingImpl implements IPhysicalModelBilling {
                 || invalidText(invocation.caller(), MAX_CALLER_LENGTH)
                 || invalidText(invocation.providerName(), MAX_PROVIDER_LENGTH)
                 || invalidText(invocation.modelName(), MAX_MODEL_LENGTH)
+                || invalidText(invocation.modelVersion(), MAX_MODEL_VERSION_LENGTH)
+                || invalidText(invocation.routeFingerprint(), ROUTE_FINGERPRINT_LENGTH)
                 || invalidText(invocation.promptHash(), PROMPT_HASH_LENGTH)
+                || !SHA256_PATTERN.matcher(invocation.routeFingerprint().trim()).matches()
                 || !SHA256_PATTERN.matcher(invocation.promptHash().trim()).matches()
                 || invocation.logicalCallNo() <= 0
                 || invocation.routeAttempt() <= 0
+                || invocation.modelConfigId() <= 0
                 || invocation.maxBillableTokens() <= 0) {
             throw new BillingInvocationConflictException("物理模型计费参数不完整");
         }

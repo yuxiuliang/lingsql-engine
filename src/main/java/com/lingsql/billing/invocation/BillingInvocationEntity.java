@@ -51,11 +51,20 @@ public class BillingInvocationEntity {
     @Column(name = "route_attempt", nullable = false)
     private Integer routeAttempt;
 
+    @Column(name = "model_config_id")
+    private Long modelConfigId;
+
     @Column(name = "provider_name", nullable = false)
     private String providerName;
 
     @Column(name = "model_name", nullable = false)
     private String modelName;
+
+    @Column(name = "model_version")
+    private String modelVersion;
+
+    @Column(name = "route_fingerprint")
+    private String routeFingerprint;
 
     @Column(name = "prompt_hash", nullable = false)
     private String promptHash;
