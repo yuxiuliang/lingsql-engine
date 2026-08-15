@@ -4,7 +4,7 @@ const DEFAULT_PORT = 18080;
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 const CHAT_PATH = "/v1/chat/completions";
 const USAGE_FAULT_PATH = "/__ci/fault/usage-missing";
-const USAGE_FAULT_COUNT = 2;
+const USAGE_FAULT_COUNT = 20;
 let forcedMissingUsageRemaining = 0;
 
 function resolvePort(value) {

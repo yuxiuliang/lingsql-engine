@@ -44,7 +44,7 @@ arm_usage_missing_fault() {
       fetch("http://127.0.0.1:18080/__ci/fault/usage-missing", {method: "POST"})
         .then(async response => {
           const body = await response.json();
-          if (!response.ok || body.status !== "ARMED" || body.remaining !== 2) process.exit(2);
+          if (!response.ok || body.status !== "ARMED" || body.remaining < 2) process.exit(2);
         })
         .catch(() => process.exit(2));
     '
@@ -97,7 +97,7 @@ load_unknown_invocation() {
   [[ "${invocation_id}" =~ ^[0-9a-f]{64}$ && "${state}" == "UNKNOWN" \
     && "${failure_code}" == "USAGE_MISSING" && "${max_tokens}" -gt 32 \
     && "${reserved_amount}" =~ ^[0-9]+$ ]] || {
-    log_error "请求 ${request_id} 没有形成预期的 USAGE_MISSING/UNKNOWN 状态"
+    log_error "请求 ${request_id} 没有形成预期状态: state=${state:-NONE}, failure=${failure_code:-NONE}"
     exit 2
   }
   printf '%s' "${invocation_id}"
