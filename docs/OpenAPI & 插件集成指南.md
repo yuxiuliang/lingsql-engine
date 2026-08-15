@@ -649,6 +649,8 @@ Content-Type: application/json
 
 该接口仅允许系统管理员使用。`CONFIRMED_USAGE` 必须提供不超过预留上限的非负 `actualTokens`，系统在同一 MySQL 事务中结算实际费用、退回差额并写入不可变裁决记录；`CONFIRMED_NOT_BILLED` 不得携带 `actualTokens`，系统将全额退回预留并取消调用。相同证据的重复请求幂等返回，不同证据或结论会被拒绝。接口只接受证据摘要，不接收或保存供应商账单正文。
 
+仓库的确定性全栈工作流会运行 `scripts/ops/integration/unknown_billing_resolution_acceptance.sh`：OpenAI 协议桩对两个专用 CI 问题返回有效内容但故意省略 `usage`，从真实问数入口形成两条 `USAGE_MISSING/UNKNOWN`，再分别验证 `CONFIRMED_USAGE`、`CONFIRMED_NOT_BILLED`、相同证据幂等、不同证据冲突以及计费验收回执的 MySQL 余额守恒。该脚本只允许用于隔离的确定性集成环境；其模拟供应商请求 ID 和证据摘要不得作为真实供应商账单或人工裁决依据。
+
 #### 4.2.7 生成 MySQL 计费验收回执
 
 先在试点流量开始前冻结余额和账本水位：
@@ -669,7 +671,18 @@ Content-Type: application/json
 {"requestIds":["request-001","request-002","request-003"]}
 ```
 
-两个接口均要求系统管理员及 `ADMIN:BILLING:WRITE` 权限。关闭操作会锁定 MySQL 租户余额事实行，并拒绝以下情况：目标请求在起始水位前已有账本、区间内出现非本批请求、存在非 `APPLIED` 或缺少 `apply_time` 的账本事件、物理调用未进入 `SETTLED/CANCELLED`、逐调用事件不守恒，或 `balanceBefore - balanceAfter` 不等于完整区间净扣款。通过后返回并持久化包含起止水位、精确请求摘要、余额前后值、本批/区间净扣款、非本批事件数、调用终态统计及 `receiptHash` 的不可变回执。相同请求集合重复关闭会返回原回执，不同集合会被拒绝。
+ 两个接口均要求系统管理员及 `ADMIN:BILLING:WRITE` 权限。关闭操作会锁定 MySQL 租户余额事实行，并拒绝以下情况：目标请求在起始水位前已有账本、区间内出现非本批请求、存在非 `APPLIED` 或缺少 `apply_time` 的账本事件、物理调用未进入 `SETTLED/CANCELLED`、逐调用事件不守恒，或 `balanceBefore - balanceAfter` 不等于完整区间净扣款。通过后返回并持久化包含起止水位、精确请求摘要、余额前后值、本批/区间净扣款、非本批事件数、调用终态统计及 `receiptHash` 的不可变回执。相同请求集合重复关闭会返回原回执，不同集合会被拒绝。
+
+#### 4.2.8 查询请求级账本与实际模型身份
+
+```http
+GET /api/v1/admin/billing/ledger/evidence?tenantId=tenant-pilot&requestIds=request-001,request-002
+Authorization: Bearer {accessToken}
+```
+
+响应在每个 `requests[]` 中返回 `identifiedInvocationCount` 和 `modelIdentities[]`。每个物理调用摘要包含 `invocationId`、阶段、路由尝试序号、实际 `modelConfigId`、供应商、模型名、调用时 `modelVersion`、选择时 `routeFingerprint`、资金状态及 `identityComplete`。批量根节点同时返回 `identifiedInvocationCount` 和去重后的 `routeFingerprints`，40 题验收可将其与候选运行指纹中的 `modelRouteFingerprint` 比对。只有身份证据数量等于物理调用数量且每条均完整，请求证据才会标记为完整。
+
+`V20260815_09` 之前产生的历史调用不会依据当前模型配置做不可信回填，新增字段保持 `null` 且 `identityComplete=false`；升级后新调用若缺少配置 ID、模型版本或合法 SHA-256 路由指纹，会在出站前失败关闭。
 
 ### 4.3 元数据管理
 

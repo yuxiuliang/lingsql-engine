@@ -97,7 +97,7 @@ function resolveCompletion(payload) {
 }
 
 function completionResponse(model, content) {
-  return {
+  const response = {
     id: "chatcmpl-lingsql-ci-stub",
     object: "chat.completion",
     created: 1786761600,
@@ -106,13 +106,25 @@ function completionResponse(model, content) {
       index: 0,
       message: {role: "assistant", content},
       finish_reason: "stop"
-    }],
-    usage: {
+    }]
+  };
+  response.usage = {
       prompt_tokens: 48,
       completion_tokens: 16,
       total_tokens: 64
-    }
   };
+  return response;
+}
+
+function deterministicFault(messages) {
+  const userPrompt = messageContent(messages, "user");
+  if (userPrompt.includes("[CI_UNKNOWN_USAGE_SETTLE]")) {
+    return {omitUsage: true, responseId: "chatcmpl-ci-unknown-settle"};
+  }
+  if (userPrompt.includes("[CI_UNKNOWN_USAGE_CANCEL]")) {
+    return {omitUsage: true, responseId: "chatcmpl-ci-unknown-cancel"};
+  }
+  return {omitUsage: false, responseId: "chatcmpl-lingsql-ci-stub"};
 }
 
 const port = resolvePort(process.env.STUB_PORT);
@@ -132,7 +144,13 @@ const server = http.createServer(async (request, response) => {
       ? payload.model.trim()
       : "QWEN-PLUS";
     const content = resolveCompletion(payload);
-    sendJson(response, 200, completionResponse(model, content));
+    const fault = deterministicFault(payload.messages);
+    const completion = completionResponse(model, content);
+    completion.id = fault.responseId;
+    if (fault.omitUsage) {
+      delete completion.usage;
+    }
+    sendJson(response, 200, completion);
   } catch (error) {
     sendJson(response, 400, {error: {message: error.message}});
   }
