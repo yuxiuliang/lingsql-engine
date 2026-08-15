@@ -7,6 +7,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${ROOT_DIR}/.env"
 BASE_BOOTSTRAP="${ROOT_DIR}/scripts/ops/bootstrap_local_stack.sh"
 PILOT_ACCEPTANCE="${ROOT_DIR}/scripts/ops/pilot_acceptance.sh"
+RUNTIME_FINGERPRINT_GUARD="${ROOT_DIR}/scripts/ops/runtime_fingerprint_guard.sh"
 
 log_info() { echo "[INFO] $*"; }
 log_error() { echo "[ERROR] $*" >&2; }
@@ -186,6 +187,16 @@ main() {
   ensure_demo_tenant
   reconcile_demo_datasource
   ensure_model_ready
+
+  if [[ -n "${EXPECTED_RELEASE_COMMIT:-}" ]]; then
+    BASE_URL="${BASE_URL}" \
+    PILOT_CONTROL_TOKEN="${CONTROL_TOKEN}" \
+    PILOT_CONTROL_TENANT_ID="${LINGSQL_ADMIN_TENANT_ID}" \
+    EXPECTED_RELEASE_COMMIT="${EXPECTED_RELEASE_COMMIT}" \
+    EXPECTED_DATA_SNAPSHOT_ID="${EXPECTED_DATA_SNAPSHOT_ID:-}" \
+    RUNTIME_FINGERPRINT_REPORT_FILE="${RUNTIME_FINGERPRINT_REPORT_FILE:-${ROOT_DIR}/reports/runtime_fingerprint.md}" \
+      "${RUNTIME_FINGERPRINT_GUARD}"
+  fi
 
   log_info "开始执行三问真实业务验收。"
   BASE_URL="${BASE_URL}" \

@@ -11,12 +11,13 @@ COPY src ./src
 RUN npm --prefix web_src run build
 
 FROM maven:3.9.16-eclipse-temurin-25 AS app-build
+ARG LINGSQL_BUILD_COMMIT=local
 WORKDIR /workspace
 COPY pom.xml ./
 RUN mvn -B -ntp -DskipTests dependency:go-offline
 COPY src ./src
 COPY --from=web-build /workspace/src/main/resources/static/admin ./src/main/resources/static/admin
-RUN mvn -B -ntp -DskipTests package
+RUN mvn -B -ntp -DskipTests package -Dlingsql.build.commit="${LINGSQL_BUILD_COMMIT}"
 
 FROM eclipse-temurin:25-jre
 WORKDIR /app
