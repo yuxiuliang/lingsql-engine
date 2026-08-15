@@ -84,6 +84,8 @@ load_evidence_hashes() {
   require_file "灾备验收报告" "${CANDIDATE_BACKUP_REPORT_FILE}"
   require_file "商用门禁报告" "${CANDIDATE_COMMERCIAL_REPORT_FILE}"
   require_file "SLO 门禁报告" "${CANDIDATE_SLO_REPORT_FILE}"
+  require_file "迁移 Hook 收据" "${CANDIDATE_MIGRATION_RECEIPT_FILE}"
+  require_file "旧版本迁移兼容性报告" "${CANDIDATE_OLD_VERSION_SMOKE_REPORT_FILE}"
 
   SUITE_SHA="$(sha256_file "${GQ_SUITE_FILE}")"
   validate_sha "预授权 40 题 Suite 摘要" "${GQ_EXPECTED_SUITE_SHA256}"
@@ -95,6 +97,8 @@ load_evidence_hashes() {
   BACKUP_REPORT_SHA="$(sha256_file "${CANDIDATE_BACKUP_REPORT_FILE}")"
   COMMERCIAL_REPORT_SHA="$(sha256_file "${CANDIDATE_COMMERCIAL_REPORT_FILE}")"
   SLO_REPORT_SHA="$(sha256_file "${CANDIDATE_SLO_REPORT_FILE}")"
+  MIGRATION_RECEIPT_SHA="$(sha256_file "${CANDIDATE_MIGRATION_RECEIPT_FILE}")"
+  OLD_VERSION_SMOKE_REPORT_SHA="$(sha256_file "${CANDIDATE_OLD_VERSION_SMOKE_REPORT_FILE}")"
 }
 
 receipt_seal() {
@@ -123,7 +127,8 @@ create_receipt() {
     --arg gqReport "${GQ_REPORT_SHA}" --arg runtime "${RUNTIME_REPORT_SHA}" \
     --arg pilot "${PILOT_REPORT_SHA}" --arg backup "${BACKUP_REPORT_SHA}" \
     --arg commercial "${COMMERCIAL_REPORT_SHA}" --arg slo "${SLO_REPORT_SHA}" \
-    '{schemaVersion:1,createdAt:$createdAt,commit:$commit,slot:$slot,port:$port,releaseId:$releaseId,artifactSha256:$artifact,runtimeFingerprintSha256:$runtimeState,suiteSha256:$suite,goldenQuestionEvidenceSha256:$gqEvidence,reports:{goldenQuestion:$gqReport,runtimeFingerprint:$runtime,pilotThreeQuestions:$pilot,backupRestore:$backup,commercialGate:$commercial,sloGate:$slo}}')"
+    --arg migrationReceipt "${MIGRATION_RECEIPT_SHA}" --arg oldVersionSmoke "${OLD_VERSION_SMOKE_REPORT_SHA}" \
+    '{schemaVersion:1,createdAt:$createdAt,commit:$commit,slot:$slot,port:$port,releaseId:$releaseId,artifactSha256:$artifact,runtimeFingerprintSha256:$runtimeState,suiteSha256:$suite,goldenQuestionEvidenceSha256:$gqEvidence,migrationReceiptSha256:$migrationReceipt,reports:{goldenQuestion:$gqReport,runtimeFingerprint:$runtime,pilotThreeQuestions:$pilot,backupRestore:$backup,commercialGate:$commercial,sloGate:$slo,oldVersionMigrationSmoke:$oldVersionSmoke}}')"
   seal="$(receipt_seal "${payload}")"
   jq -cS --arg seal "${seal}" '. + {seal:$seal}' <<< "${payload}" > "${temp_file}"
   chmod 400 "${temp_file}"
@@ -155,12 +160,14 @@ verify_receipt() {
     --arg gqReport "${GQ_REPORT_SHA}" --arg runtime "${RUNTIME_REPORT_SHA}" \
     --arg pilot "${PILOT_REPORT_SHA}" --arg backup "${BACKUP_REPORT_SHA}" \
     --arg commercial "${COMMERCIAL_REPORT_SHA}" --arg slo "${SLO_REPORT_SHA}" \
+    --arg migrationReceipt "${MIGRATION_RECEIPT_SHA}" --arg oldVersionSmoke "${OLD_VERSION_SMOKE_REPORT_SHA}" \
     '.commit == $commit and .slot == $slot and .port == $port and .releaseId == $releaseId and
      .artifactSha256 == $artifact and .runtimeFingerprintSha256 == $runtimeState and .suiteSha256 == $suite and
-     .goldenQuestionEvidenceSha256 == $gqEvidence and
+     .goldenQuestionEvidenceSha256 == $gqEvidence and .migrationReceiptSha256 == $migrationReceipt and
      .reports.goldenQuestion == $gqReport and .reports.runtimeFingerprint == $runtime and
      .reports.pilotThreeQuestions == $pilot and .reports.backupRestore == $backup and
-     .reports.commercialGate == $commercial and .reports.sloGate == $slo' \
+     .reports.commercialGate == $commercial and .reports.sloGate == $slo and
+     .reports.oldVersionMigrationSmoke == $oldVersionSmoke' \
     "${RECEIPT_FILE}" >/dev/null || { log_error "候选验收收据与当前候选或证据不一致"; exit 2; }
   echo "[INFO] 候选验收收据复核通过: commit=${EXPECTED_RELEASE_COMMIT}, slot=${SLOT}"
 }
@@ -201,6 +208,8 @@ archive_evidence() {
   archive_evidence_file "灾备验收报告" "${CANDIDATE_BACKUP_REPORT_FILE}" "${BACKUP_REPORT_SHA}" "${EVIDENCE_ARCHIVE_DIR}/backup-restore-report.md"
   archive_evidence_file "商用门禁报告" "${CANDIDATE_COMMERCIAL_REPORT_FILE}" "${COMMERCIAL_REPORT_SHA}" "${EVIDENCE_ARCHIVE_DIR}/commercial-gate-report.md"
   archive_evidence_file "SLO 门禁报告" "${CANDIDATE_SLO_REPORT_FILE}" "${SLO_REPORT_SHA}" "${EVIDENCE_ARCHIVE_DIR}/slo-gate-report.md"
+  archive_evidence_file "迁移 Hook 收据" "${CANDIDATE_MIGRATION_RECEIPT_FILE}" "${MIGRATION_RECEIPT_SHA}" "${EVIDENCE_ARCHIVE_DIR}/migration-hook-receipt.json"
+  archive_evidence_file "旧版本迁移兼容性报告" "${CANDIDATE_OLD_VERSION_SMOKE_REPORT_FILE}" "${OLD_VERSION_SMOKE_REPORT_SHA}" "${EVIDENCE_ARCHIVE_DIR}/old-version-migration-smoke.json"
 }
 
 reserve_receipt() {
@@ -253,6 +262,8 @@ main() {
   CANDIDATE_BACKUP_REPORT_FILE="${CANDIDATE_BACKUP_REPORT_FILE:-}"
   CANDIDATE_COMMERCIAL_REPORT_FILE="${CANDIDATE_COMMERCIAL_REPORT_FILE:-}"
   CANDIDATE_SLO_REPORT_FILE="${CANDIDATE_SLO_REPORT_FILE:-}"
+  CANDIDATE_MIGRATION_RECEIPT_FILE="${CANDIDATE_MIGRATION_RECEIPT_FILE:-}"
+  CANDIDATE_OLD_VERSION_SMOKE_REPORT_FILE="${CANDIDATE_OLD_VERSION_SMOKE_REPORT_FILE:-}"
 
   command -v jq >/dev/null 2>&1 || { log_error "缺少命令: jq"; exit 1; }
   command -v sha256sum >/dev/null 2>&1 || { log_error "缺少命令: sha256sum"; exit 1; }

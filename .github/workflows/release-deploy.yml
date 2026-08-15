@@ -159,6 +159,7 @@ jobs:
           RELEASE_GATE_GQ_SUITE_SHA256: ${{ vars.RELEASE_GATE_GQ_SUITE_SHA256 }}
           BACKUP_RESTORE_MYSQL_HOST: ${{ vars.RELEASE_GATE_MYSQL_HOST }}
           BACKUP_RESTORE_MYSQL_PORT: ${{ vars.RELEASE_GATE_MYSQL_PORT }}
+          RELEASE_GATE_CONTROL_DB: ${{ vars.RELEASE_GATE_CONTROL_DB }}
           BACKUP_RESTORE_SOURCE_DB: ${{ vars.RELEASE_GATE_BACKUP_SOURCE_DB }}
           BACKUP_RESTORE_BACKUP_DIR: ${{ vars.RELEASE_GATE_BACKUP_DIR }}
           BACKUP_RESTORE_BACKUP_USER: ${{ vars.RELEASE_GATE_BACKUP_USER }}
@@ -172,7 +173,7 @@ jobs:
           fi
           for name in PROMETHEUS_URL DRILL_ID DETECTED_AT ACKED_AT MITIGATED_AT LINGSQL_MIGRATION_HOOK \
             LINGSQL_DEPLOY_BASE LINGSQL_SWITCH_HOOK RELEASE_GATE_CONTROL_TENANT_ID RELEASE_GATE_GQ_SUITE_FILE RELEASE_GATE_GQ_SUITE_SHA256 \
-            BACKUP_RESTORE_MYSQL_HOST BACKUP_RESTORE_MYSQL_PORT BACKUP_RESTORE_SOURCE_DB \
+            BACKUP_RESTORE_MYSQL_HOST BACKUP_RESTORE_MYSQL_PORT RELEASE_GATE_CONTROL_DB BACKUP_RESTORE_SOURCE_DB \
             BACKUP_RESTORE_BACKUP_DIR BACKUP_RESTORE_BACKUP_USER BACKUP_RESTORE_RESTORE_USER; do
             if [ -z "$(printf '%s' "${!name}" | xargs)" ]; then
               echo "::error::严格发布门禁缺少 ${name}。"
@@ -199,9 +200,10 @@ jobs:
           BACKUP_RESTORE_BACKUP_PASSWORD: ${{ secrets.RELEASE_GATE_BACKUP_PASSWORD }}
           BACKUP_RESTORE_RESTORE_PASSWORD: ${{ secrets.RELEASE_GATE_RESTORE_PASSWORD }}
           BACKUP_RESTORE_SAMPLE_QUERY: ${{ secrets.RELEASE_GATE_BACKUP_SAMPLE_QUERY }}
+          RELEASE_GATE_CONTROL_DB_SAMPLE_QUERY: ${{ secrets.RELEASE_GATE_CONTROL_DB_SAMPLE_QUERY }}
         run: |
           for name in RELEASE_GATE_BILLING_TOKEN RELEASE_GATE_CONTROL_TOKEN RELEASE_GATE_RECEIPT_HMAC_KEY PILOT_TENANT_ID PILOT_USERNAME PILOT_PASSWORD \
-            BACKUP_RESTORE_BACKUP_PASSWORD BACKUP_RESTORE_RESTORE_PASSWORD BACKUP_RESTORE_SAMPLE_QUERY; do
+            BACKUP_RESTORE_BACKUP_PASSWORD BACKUP_RESTORE_RESTORE_PASSWORD BACKUP_RESTORE_SAMPLE_QUERY RELEASE_GATE_CONTROL_DB_SAMPLE_QUERY; do
             if [ -z "${!name}" ]; then
               echo "::error::严格发布门禁缺少 secret ${name}。"
               exit 1
@@ -212,16 +214,50 @@ jobs:
             exit 1
           fi
 
-      - name: Run Required Database Migration Hook
+      - name: Validate Pending Migration Compatibility
         env:
-          LINGSQL_MIGRATION_HOOK: ${{ vars.LINGSQL_MIGRATION_HOOK }}
+          MIGRATION_MYSQL_HOST: ${{ vars.RELEASE_GATE_MYSQL_HOST }}
+          MIGRATION_MYSQL_PORT: ${{ vars.RELEASE_GATE_MYSQL_PORT }}
+          MIGRATION_MYSQL_DATABASE: ${{ vars.RELEASE_GATE_CONTROL_DB }}
+          MIGRATION_MYSQL_USER: ${{ vars.RELEASE_GATE_BACKUP_USER }}
+          MIGRATION_MYSQL_PASSWORD: ${{ secrets.RELEASE_GATE_BACKUP_PASSWORD }}
+          MIGRATION_COMPATIBILITY_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/compatibility.json
+        run: bash scripts/ops/migration_compatibility_guard.sh
+
+      - name: Verify Pre-Migration Control Database Backup
+        env:
+          BACKUP_RESTORE_MYSQL_HOST: ${{ vars.RELEASE_GATE_MYSQL_HOST }}
+          BACKUP_RESTORE_MYSQL_PORT: ${{ vars.RELEASE_GATE_MYSQL_PORT }}
+          BACKUP_RESTORE_SOURCE_DB: ${{ vars.RELEASE_GATE_CONTROL_DB }}
+          BACKUP_RESTORE_TARGET_DB: lingsql_restore_verify_pre_migration_${{ github.run_id }}_${{ github.run_attempt }}
+          BACKUP_RESTORE_BACKUP_USER: ${{ vars.RELEASE_GATE_BACKUP_USER }}
+          BACKUP_RESTORE_BACKUP_PASSWORD: ${{ secrets.RELEASE_GATE_BACKUP_PASSWORD }}
+          BACKUP_RESTORE_RESTORE_USER: ${{ vars.RELEASE_GATE_RESTORE_USER }}
+          BACKUP_RESTORE_RESTORE_PASSWORD: ${{ secrets.RELEASE_GATE_RESTORE_PASSWORD }}
+          BACKUP_RESTORE_BACKUP_DIR: ${{ vars.RELEASE_GATE_BACKUP_DIR }}
+          BACKUP_RESTORE_WORK_ROOT: ${{ runner.temp }}/lingsql-pre-migration-backup-restore
+          BACKUP_RESTORE_SAMPLE_QUERY: ${{ secrets.RELEASE_GATE_CONTROL_DB_SAMPLE_QUERY }}
+          BACKUP_RESTORE_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/backup-restore.md
+        run: bash scripts/ops/backup_restore_acceptance.sh
+
+      - name: Run Migration And Verify Old Version Compatibility
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
+          PILOT_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
+          EXPECTED_RELEASE_COMMIT: ${{ github.sha }}
           RELEASE_TAG: ${{ inputs.release_tag }}
-        run: |
-          if [ ! -x "${LINGSQL_MIGRATION_HOOK}" ]; then
-            echo "::error::数据库迁移 Hook 不存在或不可执行: ${LINGSQL_MIGRATION_HOOK}"
-            exit 1
-          fi
-          "${LINGSQL_MIGRATION_HOOK}" "${GITHUB_SHA}" "${RELEASE_TAG}"
+          LINGSQL_MIGRATION_HOOK: ${{ vars.LINGSQL_MIGRATION_HOOK }}
+          MIGRATION_MYSQL_HOST: ${{ vars.RELEASE_GATE_MYSQL_HOST }}
+          MIGRATION_MYSQL_PORT: ${{ vars.RELEASE_GATE_MYSQL_PORT }}
+          MIGRATION_MYSQL_DATABASE: ${{ vars.RELEASE_GATE_CONTROL_DB }}
+          MIGRATION_MYSQL_USER: ${{ vars.RELEASE_GATE_BACKUP_USER }}
+          MIGRATION_MYSQL_PASSWORD: ${{ secrets.RELEASE_GATE_BACKUP_PASSWORD }}
+          MIGRATION_COMPATIBILITY_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/compatibility.json
+          MIGRATION_BACKUP_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/backup-restore.md
+          MIGRATION_RECEIPT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/receipt.json
+          MIGRATION_OLD_VERSION_SMOKE_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/old-version-smoke.json
+        run: bash scripts/ops/migration_release_guard.sh
 
       - name: Prepare Isolated Candidate
         id: prepare_candidate
@@ -269,6 +305,8 @@ jobs:
           CANDIDATE_BACKUP_REPORT_FILE: ./reports/backup_restore_acceptance.md
           CANDIDATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
           CANDIDATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
+          CANDIDATE_MIGRATION_RECEIPT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/receipt.json
+          CANDIDATE_OLD_VERSION_SMOKE_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/old-version-smoke.json
           EXPECTED_RELEASE_COMMIT: ${{ github.sha }}
           EXPECTED_DATA_SNAPSHOT_ID: ${{ vars.LINGSQL_RUNTIME_DATA_SNAPSHOT_ID }}
           EXPECTED_MODEL_ROUTE_FINGERPRINT: ${{ vars.RELEASE_GATE_MODEL_ROUTE_FINGERPRINT }}
@@ -322,6 +360,8 @@ jobs:
           CANDIDATE_BACKUP_REPORT_FILE: ./reports/backup_restore_acceptance.md
           CANDIDATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
           CANDIDATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
+          CANDIDATE_MIGRATION_RECEIPT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/receipt.json
+          CANDIDATE_OLD_VERSION_SMOKE_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/old-version-smoke.json
         run: ./scripts/ops/release_candidate_promote.sh
 
       - name: Post Promote Smoke And Auto Rollback
@@ -357,6 +397,8 @@ jobs:
           CANDIDATE_BACKUP_REPORT_FILE: ./reports/backup_restore_acceptance.md
           CANDIDATE_COMMERCIAL_REPORT_FILE: ./reports/commercial_acceptance.md
           CANDIDATE_SLO_REPORT_FILE: ./reports/release_gate_slo.md
+          CANDIDATE_MIGRATION_RECEIPT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/receipt.json
+          CANDIDATE_OLD_VERSION_SMOKE_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/old-version-smoke.json
         run: ./scripts/ops/release_candidate_abort.sh
 
       - name: Upload Gate Report
@@ -367,6 +409,10 @@ jobs:
           path: |
             reports/release_gate_slo.md
             reports/commercial_acceptance.md
+            reports/migration-*/compatibility.json
+            reports/migration-*/backup-restore.md
+            reports/migration-*/receipt.json
+            reports/migration-*/old-version-smoke.json
             reports/golden-question-*/report.md
           if-no-files-found: ignore
           retention-days: 7
