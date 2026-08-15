@@ -1,6 +1,8 @@
 package com.lingsql.billing;
 
 import com.lingsql.billing.entity.BillingPlan;
+import com.lingsql.billing.invocation.BillingInvocationRepository;
+import com.lingsql.billing.invocation.BillingInvocationState;
 import com.lingsql.billing.model.BillingCommercialReadinessView;
 import com.lingsql.billing.model.BillingReadinessCheckItem;
 import com.lingsql.billing.repository.BillingLedgerEventRepository;
@@ -33,6 +35,7 @@ public class BillingCommercialReadinessService {
     private final BillingLedgerEventRepository ledgerEventRepository;
     private final BillingReconcileLogRepository reconcileLogRepository;
     private final BillingPlanRepository billingPlanRepository;
+    private final BillingInvocationRepository invocationRepository;
     private final LingSqlProperties properties;
 
     /**
@@ -59,6 +62,12 @@ public class BillingCommercialReadinessService {
         java.time.Duration pendingTimeout = billing == null || billing.getPendingTimeout() == null
                 ? java.time.Duration.ofMinutes(10)
                 : billing.getPendingTimeout();
+        java.time.Duration reservedTimeout = billing == null || billing.getInvocationReservedTimeout() == null
+                ? java.time.Duration.ofMinutes(5)
+                : billing.getInvocationReservedTimeout();
+        java.time.Duration dispatchedTimeout = billing == null || billing.getInvocationDispatchedTimeout() == null
+                ? java.time.Duration.ofMinutes(10)
+                : billing.getInvocationDispatchedTimeout();
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime since = now.minusHours(windowHours);
@@ -67,6 +76,15 @@ public class BillingCommercialReadinessService {
         long stalePending = ledgerEventRepository.countByStatusAndCreateTimeBefore(
                 LEDGER_STATUS_PENDING,
                 now.minus(pendingTimeout)
+        );
+        long unknownInvocations = invocationRepository.countByState(BillingInvocationState.UNKNOWN.name());
+        long staleReservedInvocations = invocationRepository.countByStateAndReservedAtBefore(
+                BillingInvocationState.RESERVED.name(),
+                now.minus(reservedTimeout)
+        );
+        long staleDispatchedInvocations = invocationRepository.countByStateAndDispatchedAtBefore(
+                BillingInvocationState.DISPATCHED.name(),
+                now.minus(dispatchedTimeout)
         );
         double failedRate = ledgerTotal <= 0 ? 0D : ((double) ledgerFailed / (double) ledgerTotal);
         long openReconcile = reconcileLogRepository.countByStatus(RECONCILE_STATUS_OPEN);
@@ -92,6 +110,21 @@ public class BillingCommercialReadinessService {
                 "超过 %s 的待结算事件 %d 条".formatted(pendingTimeout, stalePending)
         ));
         checks.add(buildCheck(
+                "物理模型调用不确定费用",
+                unknownInvocations == 0,
+                "UNKNOWN 调用 %d 条".formatted(unknownInvocations)
+        ));
+        checks.add(buildCheck(
+                "物理模型调用超时预留",
+                staleReservedInvocations == 0,
+                "超过 %s 的 RESERVED 调用 %d 条".formatted(reservedTimeout, staleReservedInvocations)
+        ));
+        checks.add(buildCheck(
+                "物理模型调用超时确认",
+                staleDispatchedInvocations == 0,
+                "超过 %s 的 DISPATCHED 调用 %d 条".formatted(dispatchedTimeout, staleDispatchedInvocations)
+        ));
+        checks.add(buildCheck(
                 "未处理对账积压",
                 openReconcile <= maxOpenReconcile,
                 "未处理对账 %d 条，阈值 %d 条".formatted(openReconcile, maxOpenReconcile)
@@ -113,6 +146,9 @@ public class BillingCommercialReadinessService {
         view.setLedgerTotal(ledgerTotal);
         view.setLedgerFailed(ledgerFailed);
         view.setStalePendingCount(stalePending);
+        view.setUnknownInvocationCount(unknownInvocations);
+        view.setStaleReservedInvocationCount(staleReservedInvocations);
+        view.setStaleDispatchedInvocationCount(staleDispatchedInvocations);
         view.setLedgerFailedRate(failedRate);
         view.setOpenReconcileCount(openReconcile);
         view.setActivePlanCount(activePlanCount);

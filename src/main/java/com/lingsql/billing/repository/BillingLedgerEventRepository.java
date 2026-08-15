@@ -121,7 +121,7 @@ public interface BillingLedgerEventRepository extends JpaRepository<BillingLedge
             SELECT request_id AS requestId,
                    MIN(tenant_id) AS tenantId,
                    SUM(CASE WHEN event_type = 0 THEN IFNULL(cost_amount, 0) ELSE 0 END) AS reserveTotal,
-                   SUM(CASE WHEN event_type = 2 THEN IFNULL(cost_amount, 0) ELSE 0 END) AS closeTotal,
+                   SUM(CASE WHEN event_type IN (1, 2) THEN IFNULL(cost_amount, 0) ELSE 0 END) AS closeTotal,
                    MAX(create_time) AS latestTime
               FROM t_lingsql_engine_billing_ledger
              WHERE create_time >= :since
@@ -170,13 +170,16 @@ public interface BillingLedgerEventRepository extends JpaRepository<BillingLedge
      */
     @Query(value = """
             SELECT COUNT(*) AS eventCount,
-                   COUNT(DISTINCT request_id) AS matchedRequestCount,
+                   COUNT(DISTINCT CASE
+                       WHEN workflow_request_id IN (:requestIds) THEN workflow_request_id
+                       ELSE request_id
+                   END) AS matchedRequestCount,
                    SUM(CASE WHEN event_type = 0 THEN 1 ELSE 0 END) AS reserveCount,
                    SUM(CASE WHEN event_type = 2 THEN 1 ELSE 0 END) AS closeCount,
                    SUM(CASE WHEN event_type = 0 THEN IFNULL(cost_amount, 0) ELSE 0 END) AS reserveAmount
-              FROM t_lingsql_engine_billing_ledger
+             FROM t_lingsql_engine_billing_ledger
              WHERE tenant_id = :tenantId
-               AND request_id IN (:requestIds)
+               AND (request_id IN (:requestIds) OR workflow_request_id IN (:requestIds))
             """, nativeQuery = true)
     LedgerEvidenceProjection findLedgerEvidence(@Param("tenantId") String tenantId,
                                                  @Param("requestIds") List<String> requestIds);

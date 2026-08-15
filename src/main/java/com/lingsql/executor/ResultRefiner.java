@@ -1,8 +1,10 @@
 package com.lingsql.executor;
 
+import com.lingsql.billing.invocation.PhysicalBillingException;
+import com.lingsql.agent.orchestration.AgentExecutionContext;
 import com.lingsql.llm.IModelGateway;
-import com.lingsql.llm.LlmTraceContext;
-import com.lingsql.llm.LlmTraceInfo;
+import com.lingsql.llm.ModelCallCommand;
+import com.lingsql.llm.ModelCallResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -21,6 +23,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ResultRefiner {
 
+    private static final String MODEL_CALLER_TYPE = "AGENT";
+    private static final String MODEL_STAGE = "BUSINESS_ANALYST";
+    private static final int ANALYST_LOGICAL_CALL_NO = 1;
     private final IModelGateway modelGateway;
     private static final String REFINE_FALLBACK_MESSAGE = "生成答复失败，请稍后重试。";
     private static final int MAX_REFINE_ROWS = 20;
@@ -40,26 +45,32 @@ public class ResultRefiner {
     /**
      * 将执行结果润色为自然语言。
      *
+     * @param context Agent 执行上下文
      * @param question 用户问题
      * @param result   执行结果
      * @return 业务回复
      * @author 余炘洋
      * @date 2026-01-22
      */
-    public String refine(String question, SqlExecutionResult result) {
-        return refineWithMetadata(question, result).answer();
+    public String refine(AgentExecutionContext context, String question, SqlExecutionResult result) {
+        return refineWithMetadata(context, question, result).answer();
     }
 
     /**
      * 将执行结果润色为自然语言，并返回调用状态用于编排轨迹。
      *
+     * @param context Agent 执行上下文
      * @param question 用户问题
      * @param result 执行结果
      * @return 分析结果
      * @author 余炘洋
      * @date 2026-07-29
      */
-    public ResultRefinement refineWithMetadata(String question, SqlExecutionResult result) {
+    public ResultRefinement refineWithMetadata(
+            AgentExecutionContext context,
+            String question,
+            SqlExecutionResult result
+    ) {
         long start = System.currentTimeMillis();
         if (result == null) {
             return new ResultRefinement("未获取到查询结果，请稍后重试。", false, System.currentTimeMillis() - start);
@@ -71,23 +82,32 @@ public class ResultRefiner {
                 "错误原因: " + safe(result.getErrorMessage()) + "\n" +
                 "查询结果: " + dataStr;
         try {
-            LlmTraceContext.clear();
-            String answer = modelGateway.chat(REFINER_PROMPT, userPrompt);
-            LlmTraceInfo trace = LlmTraceContext.get();
+            ModelCallResult callResult = modelGateway.chat(new ModelCallCommand(
+                    context.tenantId(),
+                    context.requestId(),
+                    MODEL_CALLER_TYPE,
+                    context.executionId(),
+                    MODEL_STAGE,
+                    ANALYST_LOGICAL_CALL_NO,
+                    REFINER_PROMPT,
+                    userPrompt
+            ));
             return new ResultRefinement(
-                    answer,
+                    callResult.content(),
                     true,
                     System.currentTimeMillis() - start,
-                    trace == null ? null : trace.getProviderName(),
-                    trace == null ? null : trace.getModelName(),
-                    trace == null ? null : trace.getModelVersion(),
-                    trace == null ? null : trace.getTokenCount()
+                    callResult.providerName(),
+                    callResult.modelName(),
+                    callResult.modelVersion(),
+                    callResult.tokenCount(),
+                    callResult.costAmount(),
+                    callResult.invocationId()
             );
+        } catch (PhysicalBillingException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.warn("业务分析师生成答复失败，已使用降级答复", ex);
             return new ResultRefinement(REFINE_FALLBACK_MESSAGE, false, System.currentTimeMillis() - start);
-        } finally {
-            LlmTraceContext.clear();
         }
     }
 

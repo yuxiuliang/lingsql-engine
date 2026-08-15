@@ -3,6 +3,12 @@ package com.lingsql.llm;
 import com.lingsql.agent.ModelHealthService;
 import com.lingsql.agent.ModelRouter;
 import com.lingsql.agent.model.AiModelConfig;
+import com.lingsql.billing.invocation.BilledModelResponse;
+import com.lingsql.billing.invocation.BillingInvocationUnknownException;
+import com.lingsql.billing.invocation.IPhysicalModelBilling;
+import com.lingsql.billing.invocation.PhysicalModelInvocation;
+import com.lingsql.billing.invocation.PhysicalModelResponse;
+import com.lingsql.billing.invocation.PhysicalBillingException;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -44,64 +50,84 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
     private final ModelRouter modelRouter;
     private final ModelHealthService healthService;
     private final OpenAiCompatibleNoAuthClient noAuthClient;
+    private final IPhysicalModelBilling physicalModelBilling;
     private final ConcurrentHashMap<Long, SpringAiModelHolder> modelCache = new ConcurrentHashMap<>();
 
     /**
      * 发送聊天请求。
      *
-     * @param systemPrompt 系统提示词
-     * @param userPrompt   用户输入
-     * @return 模型输出
+     * @param command 显式模型调用命令
+     * @return 模型调用结果
      * @author 余炘洋
      * @date 2026-01-22
      */
     @Override
-    public String chat(String systemPrompt, String userPrompt) {
-        AiModelConfig primary = modelRouter.selectModel();
+    public ModelCallResult chat(ModelCallCommand command) {
+        AiModelConfig primary;
         try {
-            return requestOnce(primary, systemPrompt, userPrompt);
-        } catch (Exception ex) {
-            healthService.recordFailure(primary, ex.getMessage());
-            log.warn("主模型调用失败，准备切换模型: id={}, provider={}, model={}",
-                    primary.getId(),
-                    primary.getProviderName(),
-                    primary.getModelName(), ex);
+            primary = modelRouter.selectModel();
+        } catch (Exception exception) {
+            throw modelUnavailable("未找到可用的主模型", exception);
         }
 
         try {
-            AiModelConfig fallback = modelRouter.selectModel(List.of(primary.getId()));
-            try {
-                return requestOnce(fallback, systemPrompt, userPrompt);
-            } catch (Exception ex) {
-                healthService.recordFailure(fallback, ex.getMessage());
-                log.error("模型重试失败: id={}, provider={}, model={}, reason={}",
-                        fallback.getId(),
-                        fallback.getProviderName(),
-                        fallback.getModelName(),
-                        ex.getMessage(), ex);
-                throw ex;
-            }
-        } catch (Exception ex) {
-            log.error("模型切换失败: {}", ex.getMessage(), ex);
-            throw new BizException(ErrorCode.MODEL_UNAVAILABLE, "模型调用失败，请稍后重试", ex);
+            PreparedModelCall prepared = preparePhysicalCall(primary, command);
+            return executePhysicalCall(command, primary, prepared, 1);
+        } catch (LocalModelPreparationException exception) {
+            healthService.recordFailure(primary, exception.getMessage());
+            log.warn("主模型本地配置无效，准备选择备用模型: id={}, provider={}, model={}",
+                    primary.getId(), primary.getProviderName(), primary.getModelName(), exception);
+            return executeFallback(command, primary, exception);
         }
     }
 
     /**
-     * 单次模型调用。
+     * 在持久计费保护下执行一次物理模型调用。
      *
      * @param modelConfig  模型配置
-     * @param systemPrompt 系统提示词
-     * @param userPrompt   用户输入
-     * @return 模型输出
+     * @param command 模型调用命令
+     * @param prepared 已完成本地校验的调用
+     * @param routeAttempt 物理路由序号
+     * @return 模型调用结果
      * @author 余炘洋
      * @date 2026-01-22
      */
-    private String requestOnce(AiModelConfig modelConfig, String systemPrompt, String userPrompt) {
+    private ModelCallResult executePhysicalCall(
+            ModelCallCommand command,
+            AiModelConfig modelConfig,
+            PreparedModelCall prepared,
+            int routeAttempt
+    ) {
         long startTime = System.currentTimeMillis();
-        ModelResponse modelResponse = hasApiKey(modelConfig)
-                ? requestWithSpringAi(modelConfig, systemPrompt, userPrompt)
-                : noAuthClient.chat(modelConfig, systemPrompt, userPrompt);
+        String promptHash = hashPrompt(command.systemPrompt(), command.userPrompt());
+        String invocationId = buildInvocationId(command, modelConfig, routeAttempt, promptHash);
+        PhysicalModelInvocation invocation = new PhysicalModelInvocation(
+                invocationId,
+                command.tenantId(),
+                command.workflowRequestId(),
+                command.logicalCallNo(),
+                command.stage(),
+                command.callerType() + ":" + command.callerId(),
+                routeAttempt,
+                modelConfig.getProviderName(),
+                modelConfig.getModelName(),
+                resolveMaximumBillableTokens(command),
+                promptHash
+        );
+        BilledModelResponse<ModelResponse> billedResponse;
+        try {
+            billedResponse = physicalModelBilling.execute(
+                    invocation,
+                    () -> {
+                        ModelResponse response = prepared.invoke();
+                        return new PhysicalModelResponse<>(response, response.tokenCount(), null);
+                    }
+            );
+        } catch (BillingInvocationUnknownException exception) {
+            healthService.recordFailure(modelConfig, exception.getMessage());
+            throw exception;
+        }
+        ModelResponse modelResponse = billedResponse.payload();
         String content = modelResponse.content();
         if (content == null || content.isBlank()) {
             throw new BizException(ErrorCode.MODEL_UNAVAILABLE, "模型返回为空");
@@ -114,22 +140,61 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
                 modelConfig.getProviderName(),
                 modelConfig.getModelName(),
                 costMs);
-        LlmTraceInfo traceInfo = new LlmTraceInfo();
-        traceInfo.setProviderName(modelConfig.getProviderName());
-        traceInfo.setModelName(modelConfig.getModelName());
-        traceInfo.setModelVersion(modelConfig.getModelVersion());
-        traceInfo.setCostMs(costMs);
-        traceInfo.setTokenCount(modelResponse.tokenCount());
-        LlmTraceContext.set(traceInfo);
-        return content;
+        return new ModelCallResult(
+                content,
+                modelConfig.getProviderName(),
+                modelConfig.getModelName(),
+                modelConfig.getModelVersion(),
+                billedResponse.actualTokens(),
+                billedResponse.actualAmount(),
+                billedResponse.invocationId(),
+                billedResponse.billingVersion(),
+                routeAttempt
+        );
+    }
+
+    private ModelCallResult executeFallback(
+            ModelCallCommand command,
+            AiModelConfig primary,
+            LocalModelPreparationException primaryFailure
+    ) {
+        try {
+            AiModelConfig fallback = modelRouter.selectModel(List.of(primary.getId()));
+            PreparedModelCall prepared = preparePhysicalCall(fallback, command);
+            return executePhysicalCall(command, fallback, prepared, 2);
+        } catch (LocalModelPreparationException exception) {
+            log.error("备用模型本地配置无效: primaryId={}, reason={}",
+                    primary.getId(), exception.getMessage(), exception);
+            exception.addSuppressed(primaryFailure);
+            throw modelUnavailable("主备模型本地配置均不可用", exception);
+        } catch (PhysicalBillingException exception) {
+            throw exception;
+        } catch (BizException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw modelUnavailable("备用模型选择失败", exception);
+        }
+    }
+
+    private PreparedModelCall preparePhysicalCall(AiModelConfig modelConfig, ModelCallCommand command) {
+        validateModelConfig(modelConfig);
+        try {
+            if (hasApiKey(modelConfig)) {
+                OpenAiChatModel chatModel = resolveChatModel(modelConfig);
+                return () -> requestWithSpringAi(chatModel, command.systemPrompt(), command.userPrompt());
+            }
+            resolveApiBaseUrl(modelConfig.getBaseUrl());
+            return () -> noAuthClient.chat(modelConfig, command.systemPrompt(), command.userPrompt());
+        } catch (Exception exception) {
+            throw new LocalModelPreparationException("模型客户端本地初始化失败", exception);
+        }
     }
 
     private ModelResponse requestWithSpringAi(
-            AiModelConfig modelConfig,
+            OpenAiChatModel chatModel,
             String systemPrompt,
             String userPrompt
     ) {
-        OpenAiChatModel chatModel = resolveChatModel(modelConfig);
         ChatResponse response = chatModel.call(new Prompt(List.of(
                 new SystemMessage(systemPrompt),
                 new UserMessage(userPrompt)
@@ -138,6 +203,53 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
                 ? null
                 : response.getResult().getOutput().getText();
         return new ModelResponse(content, resolveTokenCount(response));
+    }
+
+    private void validateModelConfig(AiModelConfig modelConfig) {
+        if (modelConfig == null
+                || modelConfig.getId() == null
+                || modelConfig.getProviderName() == null
+                || modelConfig.getProviderName().isBlank()
+                || modelConfig.getModelName() == null
+                || modelConfig.getModelName().isBlank()
+                || modelConfig.getBaseUrl() == null
+                || modelConfig.getBaseUrl().isBlank()) {
+            throw new LocalModelPreparationException("模型配置不完整");
+        }
+    }
+
+    private int resolveMaximumBillableTokens(ModelCallCommand command) {
+        long promptBytes = command.systemPrompt().getBytes(StandardCharsets.UTF_8).length
+                + (long) command.userPrompt().getBytes(StandardCharsets.UTF_8).length;
+        return (int) Math.min(Integer.MAX_VALUE, promptBytes + DEFAULT_MAX_TOKENS);
+    }
+
+    private String hashPrompt(String systemPrompt, String userPrompt) {
+        return hashText(systemPrompt + "\u0000" + userPrompt);
+    }
+
+    private String buildInvocationId(
+            ModelCallCommand command,
+            AiModelConfig modelConfig,
+            int routeAttempt,
+            String promptHash
+    ) {
+        return hashText(String.join("|",
+                command.tenantId(),
+                command.workflowRequestId(),
+                command.callerType(),
+                command.callerId(),
+                command.stage(),
+                String.valueOf(command.logicalCallNo()),
+                String.valueOf(routeAttempt),
+                String.valueOf(modelConfig.getId()),
+                promptHash
+        ));
+    }
+
+    private BizException modelUnavailable(String message, Throwable cause) {
+        log.error("{}: {}", message, cause.getMessage(), cause);
+        return new BizException(ErrorCode.MODEL_UNAVAILABLE, "模型调用失败，请稍后重试", cause);
     }
 
     /**
@@ -246,9 +358,13 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
     }
 
     private String hashSecret(String secret) {
+        return hashText(secret);
+    }
+
+    private String hashText(String text) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(secret.getBytes(StandardCharsets.UTF_8));
+                    .digest(text.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("JDK 不支持 SHA-256", exception);
@@ -264,5 +380,22 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
      * @date 2026-08-15
      */
     private record SpringAiModelHolder(String fingerprint, OpenAiChatModel chatModel) {
+    }
+
+    @FunctionalInterface
+    private interface PreparedModelCall {
+
+        ModelResponse invoke();
+    }
+
+    private static final class LocalModelPreparationException extends RuntimeException {
+
+        private LocalModelPreparationException(String message) {
+            super(message);
+        }
+
+        private LocalModelPreparationException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 }

@@ -3,7 +3,7 @@ package com.lingsql.agent.orchestration;
 import com.lingsql.agent.collaboration.AgentRole;
 import com.lingsql.agent.plugin.AgentPluginException;
 import com.lingsql.agent.plugin.AgentPluginExecutor;
-import com.lingsql.billing.TenantBillingService;
+import com.lingsql.billing.invocation.PhysicalBillingException;
 import com.lingsql.chat.model.ChatTraceStep;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
@@ -48,7 +48,6 @@ public class ControlledAgentOrchestratorImpl implements IControlledAgentOrchestr
 
     private final AgentPluginExecutor pluginExecutor;
     private final ResultRefiner resultRefiner;
-    private final TenantBillingService tenantBillingService;
 
     @Override
     public AgentRunResult run(AgentRunCommand command) {
@@ -90,13 +89,10 @@ public class ControlledAgentOrchestratorImpl implements IControlledAgentOrchestr
         ResultRefinement refinement;
         try {
             runControl.assertWithinDeadline();
-            refinement = resultRefiner.refineWithMetadata(command.question().trim(), publicResult);
-            tenantBillingService.chargeModelUsage(
-                    command.tenantId(),
-                    command.requestId(),
-                    AgentRole.ANALYST.name(),
-                    refinement.modelName(),
-                    refinement.tokenCount()
+            refinement = resultRefiner.refineWithMetadata(
+                    executionContext,
+                    command.question().trim(),
+                    publicResult
             );
             runControl.assertWithinDeadline();
         } catch (Exception exception) {
@@ -189,7 +185,8 @@ public class ControlledAgentOrchestratorImpl implements IControlledAgentOrchestr
         Throwable current = exception;
         AgentFailureCode pluginFailure = null;
         while (current != null) {
-            if (current instanceof AgentBillingSettlementException) {
+            if (current instanceof AgentBillingSettlementException
+                    || current instanceof PhysicalBillingException) {
                 return AgentFailureCode.BILLING_SETTLEMENT_FAILED;
             }
             if (current instanceof AgentAuditPersistenceException) {

@@ -2,6 +2,7 @@ package com.lingsql.billing;
 
 import com.lingsql.billing.entity.BillingPolicyVersion;
 import com.lingsql.billing.entity.TenantBillingOverride;
+import com.lingsql.billing.invocation.BillingInvocationRepository;
 import com.lingsql.billing.model.BillingLedgerEvidenceView;
 import com.lingsql.billing.model.BillingPolicyVersionRequest;
 import com.lingsql.billing.model.TenantBillingOverrideRequest;
@@ -41,6 +42,7 @@ public class BillingAdminService {
     private final TenantBillingOverrideRepository overrideRepository;
     private final BillingOverrideService billingOverrideService;
     private final BillingLedgerEventRepository ledgerEventRepository;
+    private final BillingInvocationRepository invocationRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -201,13 +203,20 @@ public class BillingAdminService {
         }
         BillingLedgerEventRepository.LedgerEvidenceProjection evidence =
                 ledgerEventRepository.findLedgerEvidence(tenantId.trim(), normalized);
+        BillingInvocationRepository.InvocationEvidenceProjection invocationEvidence =
+                invocationRepository.findInvocationEvidence(tenantId.trim(), normalized);
         return new BillingLedgerEvidenceView(
                 normalized.size(),
                 projectionValue(evidence == null ? null : evidence.getMatchedRequestCount()),
                 projectionValue(evidence == null ? null : evidence.getEventCount()),
                 projectionValue(evidence == null ? null : evidence.getReserveCount()),
                 projectionValue(evidence == null ? null : evidence.getCloseCount()),
-                projectionValue(evidence == null ? null : evidence.getReserveAmount())
+                projectionValue(evidence == null ? null : evidence.getReserveAmount()),
+                projectionValue(invocationEvidence == null ? null : invocationEvidence.getInvocationCount()),
+                projectionValue(invocationEvidence == null ? null : invocationEvidence.getMatchedWorkflowCount()),
+                projectionValue(invocationEvidence == null ? null : invocationEvidence.getSettledCount()),
+                projectionValue(invocationEvidence == null ? null : invocationEvidence.getUnknownCount()),
+                projectionValue(invocationEvidence == null ? null : invocationEvidence.getPendingCount())
         );
     }
 

@@ -1,5 +1,6 @@
 package com.lingsql.billing;
 
+import com.lingsql.billing.invocation.BillingInvocationRepository;
 import com.lingsql.billing.entity.BillingPlan;
 import com.lingsql.billing.model.BillingCommercialReadinessView;
 import com.lingsql.billing.repository.BillingLedgerEventRepository;
@@ -26,6 +27,7 @@ class BillingCommercialReadinessServiceTest {
         BillingLedgerEventRepository ledgerRepository = Mockito.mock(BillingLedgerEventRepository.class);
         BillingReconcileLogRepository reconcileRepository = Mockito.mock(BillingReconcileLogRepository.class);
         BillingPlanRepository planRepository = Mockito.mock(BillingPlanRepository.class);
+        BillingInvocationRepository invocationRepository = Mockito.mock(BillingInvocationRepository.class);
         LingSqlProperties properties = new LingSqlProperties();
         properties.getBilling().setReadinessWindowHours(24);
         properties.getBilling().setReadinessFailedRateThreshold(0.05D);
@@ -34,6 +36,7 @@ class BillingCommercialReadinessServiceTest {
                 ledgerRepository,
                 reconcileRepository,
                 planRepository,
+                invocationRepository,
                 properties
         );
 
@@ -49,7 +52,7 @@ class BillingCommercialReadinessServiceTest {
         assertEquals(200L, view.getLedgerTotal());
         assertEquals(2L, view.getLedgerFailed());
         assertEquals(1L, view.getOpenReconcileCount());
-        assertEquals(6, view.getChecks().size());
+        assertEquals(9, view.getChecks().size());
     }
 
     @Test
@@ -57,6 +60,7 @@ class BillingCommercialReadinessServiceTest {
         BillingLedgerEventRepository ledgerRepository = Mockito.mock(BillingLedgerEventRepository.class);
         BillingReconcileLogRepository reconcileRepository = Mockito.mock(BillingReconcileLogRepository.class);
         BillingPlanRepository planRepository = Mockito.mock(BillingPlanRepository.class);
+        BillingInvocationRepository invocationRepository = Mockito.mock(BillingInvocationRepository.class);
         LingSqlProperties properties = new LingSqlProperties();
         properties.getBilling().setReadinessWindowHours(12);
         properties.getBilling().setReadinessFailedRateThreshold(0.01D);
@@ -65,6 +69,7 @@ class BillingCommercialReadinessServiceTest {
                 ledgerRepository,
                 reconcileRepository,
                 planRepository,
+                invocationRepository,
                 properties
         );
 

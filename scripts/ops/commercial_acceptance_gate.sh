@@ -118,7 +118,14 @@ main() {
     true
   fi >> "${tmp_status}"
 
-  # 6) 运维值守：P1 演练闭环
+  # 6) 灾备闭环：必须使用本次真实备份恢复到显式隔离数据库并核对双指纹
+  if run_step "灾备闭环-备份恢复抽查" bash "${SCRIPT_DIR}/backup_restore_acceptance.sh"; then
+    true
+  else
+    true
+  fi >> "${tmp_status}"
+
+  # 7) 运维值守：P1 演练闭环
   if run_step "运维值守-P1演练" bash "${SCRIPT_DIR}/p1_incident_drill.sh"; then
     true
   else

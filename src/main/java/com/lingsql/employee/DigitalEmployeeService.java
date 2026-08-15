@@ -1,5 +1,7 @@
 package com.lingsql.employee;
 
+import com.lingsql.billing.invocation.PhysicalBillingException;
+import com.lingsql.agent.orchestration.AgentExecutionContext;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.pagination.PageParam;
@@ -465,16 +467,30 @@ public class DigitalEmployeeService {
         String triggerSource = expectedScheduleTime == null
                 ? resolveTriggerSource(request == null ? null : request.getTriggerSource())
                 : TRIGGER_SOURCE_SCHEDULED;
+        String workflowRequestId = RequestTraceContext.resolveRequestId();
+        AgentExecutionContext executionContext = new AgentExecutionContext(
+                workflowRequestId,
+                workflowRequestId,
+                employee.getTenantId(),
+                null,
+                null
+        );
 
         long startMs = System.currentTimeMillis();
         SqlExecutionResult executionResult;
         try {
-            executionResult = smartSqlExecutor.execute(employee.getTenantId(), question, REQUEST_SOURCE_DIGITAL_EMPLOYEE);
+            executionResult = smartSqlExecutor.execute(
+                    executionContext,
+                    question,
+                    REQUEST_SOURCE_DIGITAL_EMPLOYEE
+            );
+        } catch (PhysicalBillingException ex) {
+            throw ex;
         } catch (Exception ex) {
             executionResult = SqlExecutionResult.failure(null, EXECUTION_ERROR_MESSAGE);
         }
         SqlExecutionResult safeResult = sanitizeExecutionResult(executionResult);
-        String answer = resultRefiner.refine(question, safeResult);
+        String answer = resultRefiner.refine(executionContext, question, safeResult);
         long durationMs = Math.max(0L, System.currentTimeMillis() - startMs);
         LocalDateTime now = LocalDateTime.now();
 
@@ -488,7 +504,7 @@ public class DigitalEmployeeService {
         runLog.setSuccess(safeResult.isSuccess() ? ACTIVE_STATUS : INACTIVE_STATUS);
         runLog.setErrorMessage(safeResult.getErrorMessage());
         runLog.setResultRows(resolveResultRows(safeResult));
-        runLog.setRequestId(RequestTraceContext.resolveRequestId());
+        runLog.setRequestId(workflowRequestId);
         runLog.setDurationMs(durationMs);
         runLog.setCreateTime(now);
         AlertDispatchResult alertDispatchResult = sendScheduledAlertIfNecessary(employee, triggerSource, runLog, safeResult, question, answer);

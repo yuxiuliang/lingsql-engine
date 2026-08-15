@@ -10,6 +10,8 @@ package com.lingsql.executor;
  * @param modelName 模型名称
  * @param modelVersion 模型版本
  * @param tokenCount Token 总量
+ * @param costAmount 实际计费金额
+ * @param invocationId 物理调用标识
  * @author 余炘洋
  * @date 2026-07-29
  */
@@ -20,10 +22,12 @@ public record ResultRefinement(
         String providerName,
         String modelName,
         String modelVersion,
-        Integer tokenCount
+        Integer tokenCount,
+        Long costAmount,
+        String invocationId
 ) {
 
     public ResultRefinement(String answer, boolean success, long durationMs) {
-        this(answer, success, durationMs, null, null, null, null);
+        this(answer, success, durationMs, null, null, null, null, null, null);
     }
 }

@@ -3,7 +3,6 @@ package com.lingsql.executor;
 import com.lingsql.agent.SqlAgentService;
 import com.lingsql.agent.collaboration.AgentRole;
 import com.lingsql.agent.orchestration.AgentAuditPersistenceException;
-import com.lingsql.agent.orchestration.AgentBillingSettlementException;
 import com.lingsql.agent.orchestration.AgentExecutionContext;
 import com.lingsql.agent.orchestration.AgentRunControl;
 import com.lingsql.agent.orchestration.SqlQueryTask;
@@ -19,15 +18,13 @@ import com.lingsql.agent.plugin.AgentPluginDescriptor;
 import com.lingsql.agent.plugin.IAgentPlugin;
 import com.lingsql.audit.model.SqlExecuteLogCommand;
 import com.lingsql.audit.service.SqlExecuteLogService;
-import com.lingsql.billing.TenantBillingService;
 import com.lingsql.chat.model.ChatTraceStep;
 import com.lingsql.common.trace.RequestTraceContext;
 import com.lingsql.context.TenantContext;
 import com.lingsql.datasource.TenantDbConfigErrors;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
-import com.lingsql.llm.LlmTraceContext;
-import com.lingsql.llm.LlmTraceInfo;
+import com.lingsql.llm.ModelCallResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -70,7 +67,6 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
     private final TenantDbConfigRepository tenantDbConfigRepository;
     private final SqlExecuteLogService sqlExecuteLogService;
     private final SqlTaskTracker sqlTaskTracker;
-    private final TenantBillingService tenantBillingService;
 
     /**
      * 执行自然语言查询。
@@ -164,7 +160,6 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
         logCommand.setUserId(context.userId());
         logCommand.setQuestion(question);
         logCommand.setRequestSource(requestSource);
-        LlmTraceContext.clear();
         sqlTaskTracker.start(tenantId);
         appendTrace(trace, TRACE_TYPE_ACTION, "SQL 架构师接收问题", "已接收查询问题，将基于租户上下文、语义字典和历史会话生成 SQL 方案。",
                 TRACE_STATUS_SUCCESS, 1, AgentRole.ARCHITECT, null);
@@ -172,7 +167,7 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
         try {
             TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId)
                     .orElseThrow(TenantDbConfigErrors::missingConfig);
-            return executeWithRetry(config, tenantId, question, logCommand, trace, maxAttempts);
+            return executeWithRetry(context, config, tenantId, question, logCommand, trace, maxAttempts);
         } catch (RuntimeException ex) {
             primaryFailure = ex;
             fillFailureLog(logCommand, null, ex.getMessage());
@@ -182,7 +177,7 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
         } finally {
             try {
                 try {
-                    finalizeBillingAndAudit(tenantId, logCommand);
+                    finalizeAudit(tenantId, logCommand);
                 } catch (RuntimeException finalizationFailure) {
                     if (primaryFailure == null) {
                         throw finalizationFailure;
@@ -190,7 +185,6 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
                     primaryFailure.addSuppressed(finalizationFailure);
                 }
             } finally {
-                LlmTraceContext.clear();
                 sqlTaskTracker.finish(tenantId);
             }
         }
@@ -209,6 +203,7 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
      * @date 2026-07-29
      */
     private SqlExecutionResult executeWithRetry(
+            AgentExecutionContext context,
             TenantDbConfig config,
             String tenantId,
             String question,
@@ -219,7 +214,7 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
         String recoveryObservation = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                return executeOnce(config, tenantId, question, recoveryObservation, logCommand, trace, attempt);
+                return executeOnce(context, config, tenantId, question, recoveryObservation, logCommand, trace, attempt);
             } catch (SqlExecutionException exception) {
                 SqlRecoveryDecision decision = recoveryPolicy.assess(exception);
                 if (!decision.recoverable() || attempt >= maxAttempts) {
@@ -258,6 +253,7 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
      * @date 2026-07-29
      */
     private SqlExecutionResult executeOnce(
+            AgentExecutionContext context,
             TenantDbConfig config,
             String tenantId,
             String question,
@@ -266,14 +262,13 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
             List<ChatTraceStep> trace,
             int attempt
     ) {
-        LlmTraceContext.clear();
         long generationStart = System.currentTimeMillis();
-        String rawSql = reason == null
-                ? agentService.generateSql(tenantId, question)
-                : agentService.generateSqlWithRetry(tenantId, question, reason);
+        ModelCallResult modelResult = reason == null
+                ? agentService.generateSql(context, question, attempt)
+                : agentService.generateSqlWithRetry(context, question, reason, attempt);
         long generationCostMs = System.currentTimeMillis() - generationStart;
-        applyModelTrace(logCommand);
-        tenantBillingService.reserveCost(tenantId, logCommand);
+        applyModelResult(logCommand, modelResult);
+        String rawSql = modelResult.content();
 
         if (rawSql == null || rawSql.isBlank() || rawSql.toUpperCase().startsWith("ERROR")) {
             String failureMessage = "ERROR:NO_SCHEMA_MATCH".equalsIgnoreCase(rawSql)
@@ -355,75 +350,62 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
         }
         logCommand.setSuccess(false);
         logCommand.setErrorMessage(errorReason);
-        applyModelTrace(logCommand);
     }
 
     /**
-     * 应用模型追踪信息。
+     * 累计模型调用的显式使用量与费用。
      *
      * @param logCommand 日志对象
+     * @param result 模型调用结果
      * @author 余炘洋
      * @date 2026-01-26
      */
-    private void applyModelTrace(SqlExecuteLogCommand logCommand) {
-        if (logCommand == null) {
+    private void applyModelResult(SqlExecuteLogCommand logCommand, ModelCallResult result) {
+        if (logCommand == null || result == null) {
             return;
         }
-        LlmTraceInfo traceInfo = LlmTraceContext.get();
-        if (traceInfo == null) {
-            return;
-        }
-        try {
-            logCommand.setModelProvider(traceInfo.getProviderName());
-            logCommand.setModelName(traceInfo.getModelName());
-            logCommand.setModelVersion(traceInfo.getModelVersion());
-            Integer tokens = traceInfo.getTokenCount();
-            if (tokens == null || tokens <= 0) {
-                return;
-            }
-            logCommand.addModelTokens(traceInfo.getModelName(), tokens);
+        logCommand.setModelProvider(result.providerName());
+        logCommand.setModelName(result.modelName());
+        logCommand.setModelVersion(result.modelVersion());
+        logCommand.setBillingVersion(result.billingVersion());
+        Integer tokens = result.tokenCount();
+        if (tokens != null && tokens > 0) {
+            logCommand.addModelTokens(result.modelName(), tokens);
             Integer current = logCommand.getTokenCount();
             if (current == null) {
                 logCommand.setTokenCount(tokens);
-                return;
+            } else {
+                long total = (long) current + tokens;
+                logCommand.setTokenCount(total > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) total);
             }
-            long total = (long) current + tokens;
-            logCommand.setTokenCount(total > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) total);
-        } finally {
-            LlmTraceContext.clear();
+        }
+        Long costAmount = result.costAmount();
+        if (costAmount == null || costAmount <= 0) {
+            return;
+        }
+        long currentCost = logCommand.getCostAmount() == null ? 0L : logCommand.getCostAmount();
+        try {
+            logCommand.setCostAmount(Math.addExact(currentCost, costAmount));
+        } catch (ArithmeticException exception) {
+            logCommand.setCostAmount(Long.MAX_VALUE);
         }
     }
 
     /**
-     * 结束执行后处理计费与审计日志。
+     * 结束执行后持久化审计日志。
      *
      * @param tenantId   租户标识
      * @param logCommand 日志对象
      * @author 余炘洋
      * @date 2026-02-26
      */
-    private void finalizeBillingAndAudit(String tenantId, SqlExecuteLogCommand logCommand) {
-        RuntimeException settlementFailure = null;
-        try {
-            tenantBillingService.charge(tenantId, logCommand);
-        } catch (Exception ex) {
-            log.error("执行后计费失败: tenantId={}, requestId={}", tenantId,
-                    logCommand == null ? null : logCommand.getRequestId(), ex);
-            settlementFailure = new AgentBillingSettlementException("执行后计费失败", ex);
-        }
+    private void finalizeAudit(String tenantId, SqlExecuteLogCommand logCommand) {
         try {
             sqlExecuteLogService.record(logCommand);
         } catch (Exception ex) {
             log.error("执行日志写入失败: tenantId={}, requestId={}", tenantId,
                     logCommand == null ? null : logCommand.getRequestId(), ex);
-            if (settlementFailure == null) {
-                settlementFailure = new AgentAuditPersistenceException("执行日志写入失败", ex);
-            } else {
-                settlementFailure.addSuppressed(new AgentAuditPersistenceException("执行日志写入失败", ex));
-            }
-        }
-        if (settlementFailure != null) {
-            throw settlementFailure;
+            throw new AgentAuditPersistenceException("执行日志写入失败", ex);
         }
     }
 

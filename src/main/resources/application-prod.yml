@@ -81,6 +81,10 @@ lingsql:
     close-recovery-delay: ${LINGSQL_BILLING_CLOSE_RECOVERY_DELAY:10m}
     pending-timeout: ${LINGSQL_BILLING_PENDING_TIMEOUT:10m}
     readiness-min-ledger-events: ${LINGSQL_BILLING_READINESS_MIN_LEDGER_EVENTS:2}
+    invocation-reserved-timeout: ${LINGSQL_BILLING_INVOCATION_RESERVED_TIMEOUT:5m}
+    invocation-dispatched-timeout: ${LINGSQL_BILLING_INVOCATION_DISPATCHED_TIMEOUT:10m}
+    invocation-recovery-interval-ms: ${LINGSQL_BILLING_INVOCATION_RECOVERY_INTERVAL_MS:60000}
+    invocation-recovery-batch-size: ${LINGSQL_BILLING_INVOCATION_RECOVERY_BATCH_SIZE:100}
     reconcile-interval-ms: 60000
     reconcile-batch-size: 200
     reconcile-diff-threshold: 0

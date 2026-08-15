@@ -1,8 +1,10 @@
 package com.lingsql.metadata.service;
 
+import com.lingsql.billing.invocation.PhysicalBillingException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 import com.lingsql.llm.IModelGateway;
+import com.lingsql.llm.ModelCallCommand;
 import com.lingsql.metadata.entity.MetadataExt;
 import com.lingsql.metadata.model.AiSuggestRequest;
 import com.lingsql.metadata.model.AiSuggestResponse;
@@ -21,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * 元数据扩展服务。
@@ -32,6 +35,9 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class MetadataExtService {
+
+    private static final String MODEL_CALLER_TYPE = "ADMIN";
+    private static final String MODEL_STAGE = "METADATA_SEMANTIC";
 
     private final MetadataExtRepository metadataExtRepository;
     private final IModelGateway modelGateway;
@@ -195,12 +201,23 @@ public class MetadataExtService {
         String systemPrompt = "你是数据库字段语义解析助手，只输出 JSON 数组，元素格式为 {\"columnName\":\"字段名\",\"comment\":\"中文含义\"}，不要任何额外文字。";
         String userPrompt = buildPrompt(request);
         try {
-            String raw = modelGateway.chat(systemPrompt, userPrompt);
+            String raw = modelGateway.chat(new ModelCallCommand(
+                    request.getTenantId(),
+                    UUID.randomUUID().toString(),
+                    MODEL_CALLER_TYPE,
+                    "METADATA:" + request.getTableName(),
+                    MODEL_STAGE,
+                    1,
+                    systemPrompt,
+                    userPrompt
+            )).content();
             List<AiSuggestResponse.SuggestItem> items = objectMapper.readValue(raw,
                     new TypeReference<List<AiSuggestResponse.SuggestItem>>() {
                     });
             response.setSuggestions(items);
             return response;
+        } catch (PhysicalBillingException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.warn("AI 语义解析失败: {}", ex.getMessage());
             return response;

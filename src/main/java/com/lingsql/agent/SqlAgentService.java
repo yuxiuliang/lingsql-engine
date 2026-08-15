@@ -1,6 +1,7 @@
 package com.lingsql.agent;
 
 import com.lingsql.agent.prompt.SqlPromptTemplate;
+import com.lingsql.agent.orchestration.AgentExecutionContext;
 import com.lingsql.chat.service.ChatMemoryService;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
@@ -10,6 +11,8 @@ import com.lingsql.datasource.TenantDbConfigErrors;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.llm.IModelGateway;
+import com.lingsql.llm.ModelCallCommand;
+import com.lingsql.llm.ModelCallResult;
 import com.lingsql.schema.MetadataCacheService;
 import com.lingsql.schema.SchemaScanner;
 import com.lingsql.schema.SemanticLexicon;
@@ -33,6 +36,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SqlAgentService {
 
+    private static final String MODEL_CALLER_TYPE = "AGENT";
+    private static final String MODEL_STAGE = "SQL_ARCHITECT";
+
     private final IModelGateway modelGateway;
     private final MetadataCacheService metadataCacheService;
     private final SqlPromptTemplate sqlPromptTemplate;
@@ -46,28 +52,35 @@ public class SqlAgentService {
     /**
      * 将自然语言转换为 SQL。
      *
-     * @param tenantId  租户标识
+     * @param context Agent 执行上下文
      * @param userInput 用户问题
-     * @return SQL 文本
+     * @param logicalCallNo 逻辑调用序号
+     * @return 模型调用结果
      * @author 余炘洋
      * @date 2026-01-22
      */
-    public String generateSql(String tenantId, String userInput) {
-        return generateSqlInternal(tenantId, userInput, null);
+    public ModelCallResult generateSql(AgentExecutionContext context, String userInput, int logicalCallNo) {
+        return generateSqlInternal(context, userInput, null, logicalCallNo);
     }
 
     /**
      * 失败重试时使用的 SQL 生成方法。
      *
-     * @param tenantId  租户标识
+     * @param context Agent 执行上下文
      * @param userInput 用户问题
      * @param reason    失败原因
-     * @return SQL 文本
+     * @param logicalCallNo 逻辑调用序号
+     * @return 模型调用结果
      * @author 余炘洋
      * @date 2026-01-22
      */
-    public String generateSqlWithRetry(String tenantId, String userInput, String reason) {
-        return generateSqlInternal(tenantId, userInput, reason);
+    public ModelCallResult generateSqlWithRetry(
+            AgentExecutionContext context,
+            String userInput,
+            String reason,
+            int logicalCallNo
+    ) {
+        return generateSqlInternal(context, userInput, reason, logicalCallNo);
     }
 
     /**
@@ -95,17 +108,24 @@ public class SqlAgentService {
     /**
      * 内部 SQL 生成入口，支持重试场景。
      *
-     * @param tenantId  租户标识
+     * @param context Agent 执行上下文
      * @param userInput 用户问题
      * @param reason    失败原因
-     * @return SQL 文本
+     * @param logicalCallNo 逻辑调用序号
+     * @return 模型调用结果
      * @author 余炘洋
      * @date 2026-01-22
      */
-    private String generateSqlInternal(String tenantId, String userInput, String reason) {
-        if (!StringUtils.hasText(tenantId)) {
-            throw new BizException(ErrorCode.INVALID_PARAM, "租户ID不能为空");
+    private ModelCallResult generateSqlInternal(
+            AgentExecutionContext context,
+            String userInput,
+            String reason,
+            int logicalCallNo
+    ) {
+        if (context == null || !StringUtils.hasText(context.tenantId())) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "Agent 模型调用上下文不完整");
         }
+        String tenantId = context.tenantId();
         validatePrompt(userInput);
 
         TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId)
@@ -131,8 +151,17 @@ public class SqlAgentService {
         String finalUserInput = buildUserPrompt(userInput, reason);
 
         log.info("AI 正在生成租户 [{}] 的 SQL...", tenantId);
-        String generatedSql = modelGateway.chat(systemPrompt, finalUserInput);
-        return cleanSql(generatedSql);
+        ModelCallResult result = modelGateway.chat(new ModelCallCommand(
+                tenantId,
+                context.requestId(),
+                MODEL_CALLER_TYPE,
+                context.executionId(),
+                MODEL_STAGE,
+                logicalCallNo,
+                systemPrompt,
+                finalUserInput
+        ));
+        return result.withContent(cleanSql(result.content()));
     }
 
     /**

@@ -1,10 +1,10 @@
 package com.lingsql.chat.service;
 
 import com.lingsql.agent.orchestration.ControlledAgentOrchestratorImpl;
+import com.lingsql.agent.orchestration.AgentExecutionContext;
 import com.lingsql.agent.orchestration.AgentRunControl;
 import com.lingsql.agent.orchestration.SqlQueryTask;
 import com.lingsql.agent.plugin.AgentPluginExecutor;
-import com.lingsql.billing.TenantBillingService;
 import com.lingsql.chat.entity.ChatHistory;
 import com.lingsql.chat.model.ChatRequest;
 import com.lingsql.chat.model.ChatResult;
@@ -58,7 +58,8 @@ class ChatApplicationServiceTest {
                         "Communications link failure: connect timed out",
                         List.of(new ChatTraceStep("OBSERVATION", "首轮执行失败", "系统已触发安全失败提示。", "FAILURE", 1))
                 ));
-        when(resultRefiner.refine(anyString(), any(SqlExecutionResult.class))).thenReturn("请稍后重试");
+        when(resultRefiner.refine(any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class)))
+                .thenReturn("请稍后重试");
 
         ChatHistory history = new ChatHistory();
         history.setId(99L);
@@ -68,8 +69,7 @@ class ChatApplicationServiceTest {
         ChatApplicationService service = new ChatApplicationService(
                 new ControlledAgentOrchestratorImpl(
                         pluginExecutor,
-                        resultRefiner,
-                        Mockito.mock(TenantBillingService.class)
+                        resultRefiner
                 ),
                 chatHistoryService,
                 chatMemoryService
@@ -88,8 +88,10 @@ class ChatApplicationServiceTest {
         assertEquals("conversation-001", result.getConversationId());
         verify(chatMemoryService, never()).saveSuccessExchange(anyString(), anyString(), anyString(), anyString(), any());
 
-        verify(resultRefiner, never()).refine(anyString(), any(SqlExecutionResult.class));
-        verify(resultRefiner, never()).refineWithMetadata(anyString(), any(SqlExecutionResult.class));
+        verify(resultRefiner, never()).refine(
+                any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class));
+        verify(resultRefiner, never()).refineWithMetadata(
+                any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class));
     }
 
     @Test
@@ -115,8 +117,7 @@ class ChatApplicationServiceTest {
         ChatApplicationService service = new ChatApplicationService(
                 new ControlledAgentOrchestratorImpl(
                         pluginExecutor,
-                        resultRefiner,
-                        Mockito.mock(TenantBillingService.class)
+                        resultRefiner
                 ),
                 chatHistoryService,
                 chatMemoryService
@@ -134,7 +135,8 @@ class ChatApplicationServiceTest {
         assertEquals(100L, result.getHistoryId());
         assertEquals(3, result.getTrace().size());
         assertEquals("租户数据源未配置", result.getTrace().get(1).getTitle());
-        verify(resultRefiner, never()).refine(anyString(), any(SqlExecutionResult.class));
+        verify(resultRefiner, never()).refine(
+                any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class));
         verify(chatMemoryService, never()).saveSuccessExchange(anyString(), anyString(), anyString(), anyString(), any());
     }
 
@@ -148,8 +150,7 @@ class ChatApplicationServiceTest {
         ChatApplicationService service = new ChatApplicationService(
                 new ControlledAgentOrchestratorImpl(
                         pluginExecutor,
-                        resultRefiner,
-                        Mockito.mock(TenantBillingService.class)
+                        resultRefiner
                 ),
                 chatHistoryService,
                 chatMemoryService

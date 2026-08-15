@@ -340,6 +340,38 @@ public class LingSqlProperties {
         private int readinessMinLedgerEvents = 2;
 
         /**
+         * 物理调用预留后允许的最长未派发时间。
+         *
+         * @author 余炘洋
+         * @date 2026-08-15
+         */
+        private Duration invocationReservedTimeout = Duration.ofMinutes(5);
+
+        /**
+         * 物理调用派发后允许的最长未确认时间。
+         *
+         * @author 余炘洋
+         * @date 2026-08-15
+         */
+        private Duration invocationDispatchedTimeout = Duration.ofMinutes(10);
+
+        /**
+         * 物理调用恢复扫描间隔（毫秒）。
+         *
+         * @author 余炘洋
+         * @date 2026-08-15
+         */
+        private long invocationRecoveryIntervalMs = 60000L;
+
+        /**
+         * 单次物理调用恢复批量大小。
+         *
+         * @author 余炘洋
+         * @date 2026-08-15
+         */
+        private int invocationRecoveryBatchSize = 100;
+
+        /**
          * 对账扫描间隔(毫秒)。
          *
          * @author 余炘洋

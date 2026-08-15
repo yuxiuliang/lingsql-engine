@@ -124,6 +124,30 @@ public interface TenantRepository extends JpaRepository<TenantInfo, Long> {
                                     @Param("updateTime") java.time.LocalDateTime updateTime);
 
     /**
+     * 原子退回租户预留余额。
+     *
+     * @param tenantId 租户ID
+     * @param amount 退回金额
+     * @param isDeleted 删除标记
+     * @param updateTime 更新时间
+     * @return 更新条数
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    @Modifying
+    @Query("""
+            UPDATE TenantInfo t
+               SET t.quotaBalance = t.quotaBalance + :amount,
+                   t.updateTime = :updateTime
+             WHERE t.tenantId = :tenantId
+               AND t.isDeleted = :isDeleted
+            """)
+    int increaseBalance(@Param("tenantId") String tenantId,
+                        @Param("amount") long amount,
+                        @Param("isDeleted") Integer isDeleted,
+                        @Param("updateTime") java.time.LocalDateTime updateTime);
+
+    /**
      * 统计活跃租户数量。
      *
      * @param isDeleted 删除标记

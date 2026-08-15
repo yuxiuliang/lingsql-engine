@@ -1,5 +1,6 @@
 package com.lingsql.employee;
 
+import com.lingsql.agent.orchestration.AgentExecutionContext;
 import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.employee.entity.DigitalEmployee;
 import com.lingsql.employee.entity.DigitalEmployeeRunLog;
@@ -106,9 +107,10 @@ class DigitalEmployeeServiceTest {
         employee.setIsDeleted(0);
 
         when(employeeRepository.findByIdAndIsDeleted(eq(7L), eq(0))).thenReturn(Optional.of(employee));
-        when(smartSqlExecutor.execute(eq("TENANT_A"), eq("统计昨日销售额"), eq("DIGITAL_EMPLOYEE")))
+        when(smartSqlExecutor.execute(any(AgentExecutionContext.class), eq("统计昨日销售额"), eq("DIGITAL_EMPLOYEE")))
                 .thenReturn(SqlExecutionResult.success("SELECT SUM(amount) AS total FROM orders LIMIT 100", List.of(Map.of("total", 1024))));
-        when(resultRefiner.refine(anyString(), any(SqlExecutionResult.class))).thenReturn("昨日销售额为1024");
+        when(resultRefiner.refine(any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class)))
+                .thenReturn("昨日销售额为1024");
         when(runLogRepository.save(any(DigitalEmployeeRunLog.class))).thenAnswer(invocation -> {
             DigitalEmployeeRunLog log = invocation.getArgument(0);
             log.setId(99L);
@@ -165,9 +167,10 @@ class DigitalEmployeeServiceTest {
         employee.setIsDeleted(0);
 
         when(employeeRepository.findByIdAndIsDeleted(eq(8L), eq(0))).thenReturn(Optional.of(employee));
-        when(smartSqlExecutor.execute(eq("TENANT_B"), eq("统计近7天利润"), eq("DIGITAL_EMPLOYEE")))
+        when(smartSqlExecutor.execute(any(AgentExecutionContext.class), eq("统计近7天利润"), eq("DIGITAL_EMPLOYEE")))
                 .thenThrow(new RuntimeException("JDBC timeout"));
-        when(resultRefiner.refine(anyString(), any(SqlExecutionResult.class))).thenReturn("执行失败，请稍后重试");
+        when(resultRefiner.refine(any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class)))
+                .thenReturn("执行失败，请稍后重试");
         when(runLogRepository.save(any(DigitalEmployeeRunLog.class))).thenAnswer(invocation -> {
             DigitalEmployeeRunLog log = invocation.getArgument(0);
             log.setId(100L);
@@ -227,9 +230,10 @@ class DigitalEmployeeServiceTest {
         employee.setIsDeleted(0);
 
         when(employeeRepository.findByIdAndIsDeleted(eq(9L), eq(0))).thenReturn(Optional.of(employee));
-        when(smartSqlExecutor.execute(eq("TENANT_C"), eq("筛选异常订单"), eq("DIGITAL_EMPLOYEE")))
+        when(smartSqlExecutor.execute(any(AgentExecutionContext.class), eq("筛选异常订单"), eq("DIGITAL_EMPLOYEE")))
                 .thenReturn(SqlExecutionResult.success("SELECT * FROM t_order WHERE abnormal_flag = 1 LIMIT 100", List.of(Map.of("order_id", 1))));
-        when(resultRefiner.refine(anyString(), any(SqlExecutionResult.class))).thenReturn("发现 1 条异常订单");
+        when(resultRefiner.refine(any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class)))
+                .thenReturn("发现 1 条异常订单");
         when(runLogRepository.save(any(DigitalEmployeeRunLog.class))).thenAnswer(invocation -> {
             DigitalEmployeeRunLog log = invocation.getArgument(0);
             log.setId(101L);
@@ -292,12 +296,13 @@ class DigitalEmployeeServiceTest {
         employee.setIsDeleted(0);
 
         when(employeeRepository.findByIdAndIsDeleted(eq(10L), eq(0))).thenReturn(Optional.of(employee));
-        when(smartSqlExecutor.execute(eq("TENANT_D"), eq("统计昨日销售额"), eq("DIGITAL_EMPLOYEE")))
+        when(smartSqlExecutor.execute(any(AgentExecutionContext.class), eq("统计昨日销售额"), eq("DIGITAL_EMPLOYEE")))
                 .thenReturn(SqlExecutionResult.success(
                         "SELECT region, amount FROM t_order LIMIT 100",
                         List.of(Map.of("region", "华东", "amount", 1200), Map.of("region", "华南", "amount", 980))
                 ));
-        when(resultRefiner.refine(anyString(), any(SqlExecutionResult.class))).thenReturn("昨日销售额已汇总");
+        when(resultRefiner.refine(any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class)))
+                .thenReturn("昨日销售额已汇总");
         when(runLogRepository.save(any(DigitalEmployeeRunLog.class))).thenAnswer(invocation -> {
             DigitalEmployeeRunLog log = invocation.getArgument(0);
             log.setId(102L);
@@ -375,9 +380,10 @@ class DigitalEmployeeServiceTest {
 
         when(employeeRepository.findByIdAndIsDeleted(eq(11L), eq(0))).thenReturn(Optional.of(employee));
         when(tenantRepository.findByTenantIdAndIsDeleted(eq("TENANT_E"), eq(0))).thenReturn(Optional.of(tenant));
-        when(smartSqlExecutor.execute(eq("TENANT_E"), eq("统计昨日库存"), eq("DIGITAL_EMPLOYEE")))
+        when(smartSqlExecutor.execute(any(AgentExecutionContext.class), eq("统计昨日库存"), eq("DIGITAL_EMPLOYEE")))
                 .thenReturn(SqlExecutionResult.success("SELECT sku, qty FROM t_stock LIMIT 100", List.of(Map.of("sku", "SKU-1", "qty", 18))));
-        when(resultRefiner.refine(anyString(), any(SqlExecutionResult.class))).thenReturn("库存结果已生成");
+        when(resultRefiner.refine(any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class)))
+                .thenReturn("库存结果已生成");
         when(runLogRepository.save(any(DigitalEmployeeRunLog.class))).thenAnswer(invocation -> {
             DigitalEmployeeRunLog log = invocation.getArgument(0);
             log.setId(103L);

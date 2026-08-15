@@ -72,16 +72,18 @@ flowchart LR
 
 ## 4. 受控运行模型
 
-当前代码的实际顺序如下。SQL 生成用量在 `secure_query` 返回前结算并写审计，业务分析师调用尚未进入同一结算周期：
+当前代码的实际顺序如下。SQL 架构师和业务分析师共享结构化 `IModelGateway`；网关内部的 `IPhysicalModelBilling` 在每次真实网络调用前持久预留和派发，返回可信用量后结算并退款。合规审计员仍是确定性 Java 模块，不调用模型：
 
 ```mermaid
 flowchart LR
-    A["校验上下文"] --> B["生成候选 SQL"]
-    B --> C["改写与安全校验"]
-    C --> D["JDBC 查询"]
-    D --> E["SQL 用量结算与审计"]
-    E --> F["业务分析师生成答复"]
-    F --> G["成功或降级完成"]
+    A["校验显式上下文"] --> B["模型调用预留与 DISPATCHED"]
+    B --> C["SQL 架构师生成候选 SQL"]
+    C --> D["可信用量结算与差额退款"]
+    D --> E["改写、安全校验与 JDBC 查询"]
+    E --> F["业务分析师独立预留并调用模型"]
+    F --> G["结算、审计并完成"]
+    B -. "超时/断连" .-> U["UNKNOWN，不退款、不自动切备用"]
+    F -. "超时/断连" .-> U
 ```
 
 以下状态图是完成统一用量事件、持久 checkpoint 和恢复后的目标模型，不是当前已交付状态：
@@ -323,11 +325,13 @@ MCP Client 连接配置属于平台资产，包含服务器身份、传输、认
 
 ### 9.3 计费、审计与补偿
 
-每次模型和插件调用产生独立用量事件，至少包含 execution/task/plugin/model/tenant/user/request、输入输出 Token、耗时、费用策略版本和结果状态。余额预留、实际结算、释放和补差必须幂等。
+每次物理模型调用已经产生独立 `invocationId` 和资金状态，记录 tenant/workflow/caller/stage/route/provider/model、Prompt 摘要、最大与实际 Token、冻结价格、预留/实际/退款金额和终态；不保存 Prompt、模型原文、密钥或客户结果。余额预留、`RESERVED -> DISPATCHED`、实际结算和差额退款均以 MySQL 为事实源，Redis 只作为可重建投影。
+
+模型网关是深模块：业务侧只提交显式 `ModelCallCommand` 并接收 `ModelCallResult`；内部适配器才执行一次指定模型的物理调用。主模型与备用模型不能共享资金事件。只有本地配置准备阶段明确尚未出站时才能换备用模型；一旦进入 `DISPATCHED`，异常只能进入 `UNKNOWN`，不能自动退款或继续用同一资金事件重试。
 
 管理操作审计已采用 durable inbox：执行业务前以独立事务写入 `PREPARED` 意图，写入失败则拒绝管理操作；业务完成后确认 `SUCCESS/FAILED` 并按 `eventId` 幂等发布，进程中断留下的意图只会转为 `UNKNOWN` 等待人工核对。投递失败会退避重试并最终进入 `DEAD`，两种异常状态都会触发健康失败，留存任务只删除已投递记录。
 
-该实现保证操作意图不被进程重启和队列溢出静默丢弃，但不宣称外部副作用 exactly-once：外部系统已经执行而结果尚未写回时，只能记录 `UNKNOWN`。模型、插件调用与用量事件仍需统一 Transactional Outbox；在其落地前，核心链对计费失败继续采用失败或明确补偿，不能静默漏账。
+该实现保证管理操作意图不被进程重启和队列溢出静默丢弃，但不宣称外部副作用 exactly-once：外部系统已经执行而结果尚未写回时，只能记录 `UNKNOWN`。模型调用已经使用专用持久资金状态机；非模型 Plugin/MCP 工具仍需独立的用量事件和补偿模块，不能把工具费用伪装成模型 Token。
 
 ## 10. 参考项目与取舍
 
@@ -414,19 +418,21 @@ MCP Client 连接配置属于平台资产，包含服务器身份、传输、认
 - 策略拒绝、预算、deadline、计费、审计和插件故障的稳定失败分类与上下文日志。
 - `secure_query` 系统插件。
 - SQL 审计通过类型只在安全查询包内流转，轨迹按真实执行顺序产生。
+- 结构化模型调用命令与结果、逐物理调用 `RESERVED/DISPATCHED/SETTLED/CANCELLED/UNKNOWN` 状态机、MySQL 原子预留与差额退款、陈旧状态恢复和健康门禁。
+- SQL 架构师、业务分析师、Schema 扫描和元数据语义建议已移除模型用量 ThreadLocal，统一显式传递工作流身份和调用序号。
 
 ### 下一阶段
 
 1. 将语义字典升级为可版本化 Semantic Context。
 2. 实现 `knowledge_retrieve`、`calculate_metric`、`chart_mapper` 插件。
-3. 建立持久化 Agent checkpoint、幂等恢复和计费/审计 Outbox。
+3. 建立持久化 Agent checkpoint、幂等恢复和非模型插件用量 Outbox；增加供应商账单导入与 `UNKNOWN` 人工核销。
 4. 将模型调用和 Token 预算纳入统一 `AgentRunControl`。
 5. 建立插件管理 API、租户授权、版本兼容矩阵和签名校验。
 6. 实现 Spring AI `ToolCallback` 适配器、按需工具发现和 MCP 远程插件网关。
 7. 引入 Spring Modulith 或等价架构检查，阻止跨模块访问内部类型和 JDBC 绕过。
 8. 建立 Text-to-SQL 评测集、回归基线和多候选选择策略。
 9. 迁移数字员工兼容入口，并以 Spring Modulith/ArchUnit 强制插件网关与 JDBC 模块边界。
-10. 将会话身份和模型用量从核心 ThreadLocal 迁移为显式上下文与逐调用返回值。
+10. 将残留会话读取从 `TenantContext` 迁移为显式上下文，并为结构化并发和持久恢复建立上下文快照。
 
 ### 目标完成定义
 

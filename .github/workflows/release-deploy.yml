@@ -140,6 +140,12 @@ jobs:
           ACKED_AT: ${{ inputs.p1_acked_at }}
           MITIGATED_AT: ${{ inputs.p1_mitigated_at }}
           LINGSQL_MIGRATION_HOOK: ${{ vars.LINGSQL_MIGRATION_HOOK }}
+          BACKUP_RESTORE_MYSQL_HOST: ${{ vars.RELEASE_GATE_MYSQL_HOST }}
+          BACKUP_RESTORE_MYSQL_PORT: ${{ vars.RELEASE_GATE_MYSQL_PORT }}
+          BACKUP_RESTORE_SOURCE_DB: ${{ vars.RELEASE_GATE_BACKUP_SOURCE_DB }}
+          BACKUP_RESTORE_BACKUP_DIR: ${{ vars.RELEASE_GATE_BACKUP_DIR }}
+          BACKUP_RESTORE_BACKUP_USER: ${{ vars.RELEASE_GATE_BACKUP_USER }}
+          BACKUP_RESTORE_RESTORE_USER: ${{ vars.RELEASE_GATE_RESTORE_USER }}
         run: |
           BASE_URL_TRIMMED="$(printf '%s' "${BASE_URL}" | xargs)"
           BILLING_URL_TRIMMED="$(printf '%s' "${BILLING_READINESS_URL}" | xargs)"
@@ -147,7 +153,9 @@ jobs:
             echo "::error::billing_readiness_url 与 base_url 不能同时为空。"
             exit 1
           fi
-          for name in PROMETHEUS_URL DRILL_ID DETECTED_AT ACKED_AT MITIGATED_AT LINGSQL_MIGRATION_HOOK; do
+          for name in PROMETHEUS_URL DRILL_ID DETECTED_AT ACKED_AT MITIGATED_AT LINGSQL_MIGRATION_HOOK \
+            BACKUP_RESTORE_MYSQL_HOST BACKUP_RESTORE_MYSQL_PORT BACKUP_RESTORE_SOURCE_DB \
+            BACKUP_RESTORE_BACKUP_DIR BACKUP_RESTORE_BACKUP_USER BACKUP_RESTORE_RESTORE_USER; do
             if [ -z "$(printf '%s' "${!name}" | xargs)" ]; then
               echo "::error::严格发布门禁缺少 ${name}。"
               exit 1
@@ -161,8 +169,12 @@ jobs:
           PILOT_TENANT_ID: ${{ secrets.RELEASE_GATE_PILOT_TENANT_ID }}
           PILOT_USERNAME: ${{ secrets.RELEASE_GATE_PILOT_USERNAME }}
           PILOT_PASSWORD: ${{ secrets.RELEASE_GATE_PILOT_PASSWORD }}
+          BACKUP_RESTORE_BACKUP_PASSWORD: ${{ secrets.RELEASE_GATE_BACKUP_PASSWORD }}
+          BACKUP_RESTORE_RESTORE_PASSWORD: ${{ secrets.RELEASE_GATE_RESTORE_PASSWORD }}
+          BACKUP_RESTORE_SAMPLE_QUERY: ${{ secrets.RELEASE_GATE_BACKUP_SAMPLE_QUERY }}
         run: |
-          for name in RELEASE_GATE_BILLING_TOKEN RELEASE_GATE_CONTROL_TOKEN PILOT_TENANT_ID PILOT_USERNAME PILOT_PASSWORD; do
+          for name in RELEASE_GATE_BILLING_TOKEN RELEASE_GATE_CONTROL_TOKEN PILOT_TENANT_ID PILOT_USERNAME PILOT_PASSWORD \
+            BACKUP_RESTORE_BACKUP_PASSWORD BACKUP_RESTORE_RESTORE_PASSWORD BACKUP_RESTORE_SAMPLE_QUERY; do
             if [ -z "${!name}" ]; then
               echo "::error::严格发布门禁缺少 secret ${name}。"
               exit 1
@@ -192,6 +204,18 @@ jobs:
           PILOT_PASSWORD: ${{ secrets.RELEASE_GATE_PILOT_PASSWORD }}
           PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
           PILOT_REPORT_FILE: ./reports/pilot_acceptance.md
+          BACKUP_RESTORE_MYSQL_HOST: ${{ vars.RELEASE_GATE_MYSQL_HOST }}
+          BACKUP_RESTORE_MYSQL_PORT: ${{ vars.RELEASE_GATE_MYSQL_PORT }}
+          BACKUP_RESTORE_SOURCE_DB: ${{ vars.RELEASE_GATE_BACKUP_SOURCE_DB }}
+          BACKUP_RESTORE_TARGET_DB: lingsql_restore_verify_${{ github.run_id }}_${{ github.run_attempt }}
+          BACKUP_RESTORE_BACKUP_USER: ${{ vars.RELEASE_GATE_BACKUP_USER }}
+          BACKUP_RESTORE_BACKUP_PASSWORD: ${{ secrets.RELEASE_GATE_BACKUP_PASSWORD }}
+          BACKUP_RESTORE_RESTORE_USER: ${{ vars.RELEASE_GATE_RESTORE_USER }}
+          BACKUP_RESTORE_RESTORE_PASSWORD: ${{ secrets.RELEASE_GATE_RESTORE_PASSWORD }}
+          BACKUP_RESTORE_BACKUP_DIR: ${{ vars.RELEASE_GATE_BACKUP_DIR }}
+          BACKUP_RESTORE_WORK_ROOT: ${{ runner.temp }}/lingsql-backup-restore
+          BACKUP_RESTORE_SAMPLE_QUERY: ${{ secrets.RELEASE_GATE_BACKUP_SAMPLE_QUERY }}
+          BACKUP_RESTORE_REPORT_FILE: ./reports/backup_restore_acceptance.md
           DRILL_ID: ${{ inputs.p1_drill_id }}
           DETECTED_AT: ${{ inputs.p1_detected_at }}
           ACKED_AT: ${{ inputs.p1_acked_at }}

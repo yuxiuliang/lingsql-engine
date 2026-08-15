@@ -178,6 +178,7 @@ main() {
 
   local audit_total audit_increment billing_snapshot ledger_total ledger_increment billing_ready
   local request_ids_csv ledger_evidence matched_request_count evidence_event_count reserve_count close_count
+  local invocation_count matched_workflow_count settled_invocation_count unknown_invocation_count pending_invocation_count
   audit_total="$(load_audit_total "${control_token}" "${PILOT_TENANT_ID}" "${user_id}")"
   audit_increment=$((audit_total - baseline_audit_total))
   if [[ "${audit_increment}" -lt 3 ]]; then
@@ -201,13 +202,23 @@ main() {
   evidence_event_count="$(jq -r '.eventCount // 0' <<< "${ledger_evidence}")"
   reserve_count="$(jq -r '.reserveCount // 0' <<< "${ledger_evidence}")"
   close_count="$(jq -r '.closeCount // 0' <<< "${ledger_evidence}")"
+  invocation_count="$(jq -r '.invocationCount // 0' <<< "${ledger_evidence}")"
+  matched_workflow_count="$(jq -r '.matchedWorkflowCount // 0' <<< "${ledger_evidence}")"
+  settled_invocation_count="$(jq -r '.settledInvocationCount // 0' <<< "${ledger_evidence}")"
+  unknown_invocation_count="$(jq -r '.unknownInvocationCount // 0' <<< "${ledger_evidence}")"
+  pending_invocation_count="$(jq -r '.pendingInvocationCount // 0' <<< "${ledger_evidence}")"
   if [[ "${ledger_increment}" -lt 6
       || "${matched_request_count}" -ne 3
       || "${evidence_event_count}" -lt 6
       || "${reserve_count}" -lt 3
       || "${close_count}" -lt 3
+      || "${invocation_count}" -lt 6
+      || "${matched_workflow_count}" -ne 3
+      || "${settled_invocation_count}" -ne "${invocation_count}"
+      || "${unknown_invocation_count}" -ne 0
+      || "${pending_invocation_count}" -ne 0
       || "${billing_ready}" != "true" ]]; then
-    log_error "本次三个请求未形成可关联的 RESERVE/CLOSE 账本闭环，或计费就绪检查未通过。"
+    log_error "本次三个请求未形成逐物理调用可关联、全部结算的计费闭环。"
     exit 2
   fi
 
@@ -224,12 +235,13 @@ main() {
 - 本次新增计费账本事件: ${ledger_increment}
 - 关联请求数: ${matched_request_count}/3
 - 关联 RESERVE/CLOSE: ${reserve_count}/${close_count}
+- 物理模型调用: ${invocation_count}（已结算 ${settled_invocation_count}，UNKNOWN ${unknown_invocation_count}，未终态 ${pending_invocation_count}）
 - 计费就绪: ${billing_ready}
 - 验收结论: PASS
 
 ## 验证边界
 
-本报告证明登录、三条自然语言问数、只读 SQL、非空结果、会话延续、SQL 审计和计费账本在本次环境中形成闭环。报告不包含 Token、密码、API Key、SQL 明细或业务结果明细，也不替代双方的 40 题黄金问题签字验收。
+本报告证明登录、三条自然语言问数、只读 SQL、非空结果、会话延续、SQL 审计，以及本次请求关联的逐物理模型调用计费在当前环境中形成闭环。报告不包含 Token、密码、API Key、Prompt、模型原文、SQL 明细或业务结果明细，也不替代双方的 40 题黄金问题签字验收。
 EOF
   log_info "真实业务验收通过，报告已写入: ${PILOT_REPORT_FILE}"
 }

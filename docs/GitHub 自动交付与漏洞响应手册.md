@@ -84,18 +84,23 @@
 ./scripts/ops/commercial_acceptance_gate.sh
 ```
 
-`release-gate.yml` 与 `release-deploy.yml` 只能从远端 `master` 手动执行。正式流程不再提供关闭冒烟、SLO、计费、真实问数、商用总门禁或自动回滚的输入；缺少证据时必须失败。
+`release-gate.yml` 与 `release-deploy.yml` 只能从远端 `master` 手动执行。正式流程不再提供关闭冒烟、SLO、计费、真实问数、运行时审计、备份恢复、商用总门禁或自动回滚的输入；缺少证据时必须失败。两者的严格门禁阶段都在受保护 Environment 的 self-hosted Runner 运行，才能访问隔离 UAT MySQL 和受保护备份目录。
 
-触发时必须填写 `base_url`、真实 `prometheus_url`、发布标签（部署流程）以及一份真实 P1 演练的编号、发现时间、响应时间和缓解时间。`billing_readiness_url` 可留空并由 `base_url` 拼接。
+触发时必须填写 `base_url`、真实 `prometheus_url`、发布标签（部署流程）以及一份真实 P1 演练的编号、发现时间、响应时间和缓解时间。独立门禁还必须选择持有 UAT Secrets 的 `environment_name`；`billing_readiness_url` 可留空并由 `base_url` 拼接。
 
 仓库或目标 Environment 必须配置：
 
-- `RELEASE_GATE_BILLING_TOKEN`：可读取计费快照和 SQL 审计的短期验收 Token。
-- `RELEASE_GATE_PILOT_TENANT_ID`、`RELEASE_GATE_PILOT_USERNAME`、`RELEASE_GATE_PILOT_PASSWORD`：专用验证租户与账号；该账号须具备问数、读取自身 SQL 审计和计费验收快照的最小权限，不得使用真实客户个人账号。
+- `RELEASE_GATE_BILLING_TOKEN`：只用于计费就绪门禁的短期 Token。
+- `RELEASE_GATE_CONTROL_TOKEN`：独立系统租户验收账号的短期 Token。当前 SQL 日志、计费就绪与账本证据组合验收需要 `ADMIN:SQLLOG:READ`、`ADMIN:BILLING:READ` 和系统管理员身份；不得复用普通试点账号或 billing Token。
+- `RELEASE_GATE_PILOT_TENANT_ID`、`RELEASE_GATE_PILOT_USERNAME`、`RELEASE_GATE_PILOT_PASSWORD`：专用验证租户与普通问数账号，不得使用真实客户个人账号或授予系统管理员身份。
+- `RELEASE_GATE_MYSQL_HOST`、`RELEASE_GATE_MYSQL_PORT`、`RELEASE_GATE_BACKUP_SOURCE_DB`、`RELEASE_GATE_BACKUP_DIR`、`RELEASE_GATE_BACKUP_USER`、`RELEASE_GATE_RESTORE_USER`：隔离 UAT 的连接与受保护绝对路径 Variables。
+- `RELEASE_GATE_BACKUP_PASSWORD`、`RELEASE_GATE_RESTORE_PASSWORD`、`RELEASE_GATE_BACKUP_SAMPLE_QUERY`：Environment Secrets。样例查询必须是一条只读聚合 `SELECT`；恢复账号只能管理独立 UAT 的 `lingsql_restore_verify_` 前缀验证库。
 - `RELEASE_NOTIFY_*`、`LINGSQL_DEPLOY_BASE`、`LINGSQL_SWITCH_HOOK`：按部署拓扑配置的通知与切换参数。
 - `LINGSQL_MIGRATION_HOOK`：self-hosted Runner 上的可执行数据库迁移 Hook。它必须在目标控制库完成备份、Flyway 校验/迁移和结果留档，非零退出会阻断制品发布。
 
-发布制品先执行前端依赖审计与生产构建，把管理后台写入 Spring Boot 静态资源，再执行 Schema 漂移检查及 Maven 测试；工作流会检查最终 JAR 确实包含后台首页。门禁会完成登录、三条真实问数、SQL 审计增量、计费账本增量、最少 100 个非 Actuator 请求的 SLO 证据和 P1 演练校验；任何 `FAIL` 或 `SKIP` 都阻断发布。验收账号、模型、数据源或 Prometheus 尚未准备好时，应先在 UAT 完成配置，不能临时关闭门禁。
+即使 `release-deploy.yml` 的目标 Environment 是 production，上述 `RELEASE_GATE_MYSQL_*` 和备份恢复 Secrets 也必须指向独立 UAT MySQL，不能指向生产控制库；生产迁移前备份仍由 `LINGSQL_MIGRATION_HOOK` 单独负责。商用门禁验证“备份可恢复”，迁移 Hook 保护“本次生产变更”，两者不能互相替代。
+
+发布制品先执行前端依赖审计与生产构建，把管理后台写入 Spring Boot 静态资源，再执行 Schema 漂移检查及 Maven 测试；工作流会检查最终 JAR 确实包含后台首页。门禁会完成登录、三条真实问数、SQL 审计增量、计费账本增量、运行时审计、真实备份的 SHA-256 与隔离恢复双指纹、最少 100 个非 Actuator 请求的 SLO 证据和 P1 演练校验；任何 `FAIL` 或 `SKIP` 都阻断发布。验收账号、模型、数据源、UAT 备份恢复配置或 Prometheus 尚未准备好时，应先完成配置，不能临时关闭门禁。
 
 流程包含：
 

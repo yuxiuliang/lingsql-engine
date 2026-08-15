@@ -56,6 +56,30 @@ public class BillingCommercialReadinessView {
     private long stalePendingCount;
 
     /**
+     * 费用结果不确定的物理模型调用数量。
+     *
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    private long unknownInvocationCount;
+
+    /**
+     * 超时未派发的物理模型调用数量。
+     *
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    private long staleReservedInvocationCount;
+
+    /**
+     * 超时未确认的物理模型调用数量。
+     *
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    private long staleDispatchedInvocationCount;
+
+    /**
      * 账本失败率，范围 [0,1]。
      *
      * @author 余炘洋
