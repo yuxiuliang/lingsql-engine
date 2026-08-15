@@ -136,6 +136,12 @@ const routes: Array<RouteRecordRaw> = [
                 meta: {title: '权限管理', icon: 'Permission'}
             },
             {
+                path: '/menu',
+                name: 'MenuManage',
+                component: () => import('@/views/menu/index.vue'),
+                meta: {title: '菜单治理', icon: 'Permission'}
+            },
+            {
                 path: '/audit',
                 name: 'AuditLog',
                 component: () => import('@/views/audit/index.vue'),

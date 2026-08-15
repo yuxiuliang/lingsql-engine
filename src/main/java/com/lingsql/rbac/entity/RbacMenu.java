@@ -131,6 +131,42 @@ public class RbacMenu {
     private String permCode;
 
     /**
+     * 适配的直接归属组织类型编码，使用逗号分隔。
+     *
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @Column(name = "org_type_codes", columnDefinition = "TEXT")
+    private String orgTypeCodes;
+
+    /**
+     * 适配的直接归属组织编码，使用逗号分隔。
+     *
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @Column(name = "org_unit_codes", columnDefinition = "TEXT")
+    private String orgUnitCodes;
+
+    /**
+     * 适配的直接归属组织标签，使用逗号分隔。
+     *
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @Column(name = "org_tags", columnDefinition = "TEXT")
+    private String orgTags;
+
+    /**
+     * 要求具备的组织关系类型，使用逗号分隔。
+     *
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @Column(name = "required_relation_types", columnDefinition = "TEXT")
+    private String requiredRelationTypes;
+
+    /**
      * 创建时间。
      *
      * @author 余炘洋

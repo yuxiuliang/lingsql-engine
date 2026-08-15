@@ -2,6 +2,8 @@ package com.lingsql.tenant.model;
 
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * 租户更新请求。
  *
@@ -58,6 +60,14 @@ public class TenantUpdateRequest {
      * @date 2026-01-26
      */
     private String contactEmail;
+
+    /**
+     * 默认通知通道列表。
+     *
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    private List<String> notificationChannels;
 
     /**
      * 到期时间。

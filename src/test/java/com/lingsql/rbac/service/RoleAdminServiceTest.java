@@ -1,5 +1,8 @@
 package com.lingsql.rbac.service;
 
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.organization.service.OrgGovernanceCatalogService;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
 import com.lingsql.rbac.model.DataScopeRule;
@@ -19,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -84,6 +88,69 @@ class RoleAdminServiceTest {
         verify(ctx.roleDataScopeRepository).deleteByRoleId(11L);
     }
 
+    @Test
+    void createRoleShouldPersistRelationSubtreeDataScope() {
+        TestContext ctx = new TestContext();
+
+        RoleCreateRequest request = new RoleCreateRequest();
+        request.setRoleCode("ROLE_SERVICE");
+        request.setRoleName("服务归口角色");
+        DataScopeRule dataScope = new DataScopeRule();
+        dataScope.setScopeType(RbacDataScopeType.RELATION_SUBTREE);
+        dataScope.setScopeColumn("org_code");
+        dataScope.setRelationTypes(List.of("service", "matrix"));
+        request.setDataScope(dataScope);
+
+        when(ctx.roleRepository.findByTenantIdAndRoleCode("TENANT_A", "ROLE_SERVICE")).thenReturn(Optional.empty());
+        when(ctx.roleRepository.save(any(RbacRole.class))).thenAnswer(invocation -> {
+            RbacRole role = invocation.getArgument(0);
+            role.setId(12L);
+            return role;
+        });
+        when(ctx.rolePermissionRepository.findPermIdsByRoleIds(List.of(12L))).thenReturn(List.of());
+        when(ctx.roleDataScopeRepository.findActiveByRoleIds(List.of(12L)))
+                .thenReturn(List.of(buildScope(12L, RbacDataScopeType.RELATION_SUBTREE, "org_code", "SERVICE,MATRIX")));
+
+        RoleView view = ctx.roleAdminService.createRole(request, "TENANT_A", false);
+
+        assertEquals(RbacDataScopeType.RELATION_SUBTREE, view.getDataScope().getScopeType());
+        assertEquals(List.of("SERVICE", "MATRIX"), view.getDataScope().getRelationTypes());
+        verify(ctx.roleDataScopeRepository).save(any(RbacRoleDataScope.class));
+        verify(ctx.orgGovernanceCatalogService).validateRelationTypes(
+                "TENANT_A",
+                List.of("SERVICE", "MATRIX"),
+                "数据权限关系类型"
+        );
+    }
+
+    @Test
+    void createRoleShouldRejectUnknownRelationType() {
+        TestContext ctx = new TestContext();
+
+        RoleCreateRequest request = new RoleCreateRequest();
+        request.setRoleCode("ROLE_CUSTOM");
+        request.setRoleName("自定义关系角色");
+        DataScopeRule dataScope = new DataScopeRule();
+        dataScope.setScopeType(RbacDataScopeType.RELATION);
+        dataScope.setScopeColumn("org_code");
+        dataScope.setRelationTypes(List.of("unknown_type"));
+        request.setDataScope(dataScope);
+
+        when(ctx.roleRepository.findByTenantIdAndRoleCode("TENANT_A", "ROLE_CUSTOM")).thenReturn(Optional.empty());
+        when(ctx.roleRepository.save(any(RbacRole.class))).thenAnswer(invocation -> {
+            RbacRole role = invocation.getArgument(0);
+            role.setId(13L);
+            return role;
+        });
+        Mockito.doThrow(new BizException(ErrorCode.INVALID_PARAM, "数据权限关系类型存在未定义项: UNKNOWN_TYPE"))
+                .when(ctx.orgGovernanceCatalogService)
+                .validateRelationTypes("TENANT_A", List.of("UNKNOWN_TYPE"), "数据权限关系类型");
+
+        BizException ex = assertThrows(BizException.class, () -> ctx.roleAdminService.createRole(request, "TENANT_A", false));
+
+        assertEquals(ErrorCode.INVALID_PARAM, ex.getErrorCode());
+    }
+
     private static RbacRoleDataScope buildScope(Long roleId, String scopeType, String scopeColumn, String scopeRule) {
         RbacRoleDataScope entity = new RbacRoleDataScope();
         entity.setRoleId(roleId);
@@ -103,6 +170,7 @@ class RoleAdminServiceTest {
         private final RbacUserRoleRepository userRoleRepository = Mockito.mock(RbacUserRoleRepository.class);
         private final TokenService tokenService = Mockito.mock(TokenService.class);
         private final RefreshTokenService refreshTokenService = Mockito.mock(RefreshTokenService.class);
+        private final OrgGovernanceCatalogService orgGovernanceCatalogService = Mockito.mock(OrgGovernanceCatalogService.class);
         private final RoleAdminService roleAdminService = new RoleAdminService(
                 roleRepository,
                 rolePermissionRepository,
@@ -111,7 +179,8 @@ class RoleAdminServiceTest {
                 tenantPermissionService,
                 userRoleRepository,
                 tokenService,
-                refreshTokenService
+                refreshTokenService,
+                orgGovernanceCatalogService
         );
     }
 }

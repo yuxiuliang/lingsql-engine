@@ -11,12 +11,14 @@ import com.lingsql.rbac.entity.RbacMenu;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRolePermission;
+import com.lingsql.rbac.entity.RbacTenantPermission;
 import com.lingsql.rbac.entity.RbacUser;
 import com.lingsql.rbac.entity.RbacUserRole;
 import com.lingsql.rbac.repository.RbacMenuRepository;
 import com.lingsql.rbac.repository.RbacPermissionRepository;
 import com.lingsql.rbac.repository.RbacRolePermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
+import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import com.lingsql.tenant.entity.TenantInfo;
@@ -58,9 +60,17 @@ public class SuperAdminInitializer implements ApplicationRunner {
 
     private static final String SUPER_ADMIN_ROLE_CODE = "SUPER_ADMIN";
     private static final String SUPER_ADMIN_ROLE_NAME = "超级管理员";
+    private static final String TENANT_ADMIN_ROLE_CODE = "TENANT_ADMIN";
     private static final int ACTIVE_STATUS = 1;
     private static final int NOT_DELETED = 0;
     private static final long SYSTEM_TENANT_BALANCE = Long.MAX_VALUE;
+    private static final List<String> TENANT_ADMIN_ORG_PERMISSION_CODES = List.of(
+            "MENU:ADMIN",
+            "MENU:ADMIN:ORG",
+            "ADMIN:ORG:READ",
+            "ADMIN:ORG:WRITE",
+            "ADMIN:ORG:DELETE"
+    );
     private static final Set<String> FORBIDDEN_PASSWORDS = Set.of(
             "Admin123456",
             "admin123456",
@@ -77,6 +87,7 @@ public class SuperAdminInitializer implements ApplicationRunner {
     private final RbacRolePermissionRepository rolePermissionRepository;
     private final RbacUserRoleRepository userRoleRepository;
     private final RbacMenuRepository menuRepository;
+    private final RbacTenantPermissionRepository tenantPermissionRepository;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
     private final ResourceLoader resourceLoader;
@@ -112,6 +123,7 @@ public class SuperAdminInitializer implements ApplicationRunner {
         RbacSeedData seedData = loadSeedData(admin.getSeedResource());
         ensurePermissions(seedData.permissions());
         ensureMenus(seedData.menus());
+        repairTenantAdminOrgAccess();
         ensureTenantExists(tenantId, admin.getTenantName());
         RbacRole superAdminRole = ensureSuperAdminRole();
         if (superAdminRole == null || superAdminRole.getId() == null) {
@@ -301,6 +313,77 @@ public class SuperAdminInitializer implements ApplicationRunner {
         }
     }
 
+    /**
+     * 为历史租户管理员补齐组织架构入口和接口权限。
+     *
+     * <p>原因：组织域最初通过 SQL 种子落地，后续超级管理员初始化切到 `rbac-seed.json` 后，
+     * 该文件一度缺失组织菜单与 `ADMIN:ORG:*` 权限，导致老环境中的 `TENANT_ADMIN`
+     * 角色与租户权限池不会自动补齐这组能力。</p>
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private void repairTenantAdminOrgAccess() {
+        List<RbacPermission> requiredPermissions = permissionRepository.findByPermCodeIn(TENANT_ADMIN_ORG_PERMISSION_CODES);
+        if (CollectionUtils.isEmpty(requiredPermissions)) {
+            return;
+        }
+        List<RbacRole> tenantAdminRoles = roleRepository.findAll().stream()
+                .filter(role -> role != null
+                        && role.getId() != null
+                        && StringUtils.hasText(role.getTenantId())
+                        && TENANT_ADMIN_ROLE_CODE.equalsIgnoreCase(role.getRoleCode()))
+                .toList();
+        if (tenantAdminRoles.isEmpty()) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<RbacRolePermission> missingRolePermissions = new ArrayList<>();
+        List<RbacTenantPermission> missingTenantPermissions = new ArrayList<>();
+        Set<String> repairedTenantIds = new HashSet<>();
+        for (RbacRole tenantAdminRole : tenantAdminRoles) {
+            Set<Long> existingRolePermissionIds = new HashSet<>(rolePermissionRepository.findPermIdsByRoleIds(List.of(tenantAdminRole.getId())));
+            for (RbacPermission permission : requiredPermissions) {
+                if (permission == null || permission.getId() == null || existingRolePermissionIds.contains(permission.getId())) {
+                    continue;
+                }
+                RbacRolePermission relation = new RbacRolePermission();
+                relation.setRoleId(tenantAdminRole.getId());
+                relation.setPermId(permission.getId());
+                relation.setCreateTime(now);
+                missingRolePermissions.add(relation);
+            }
+            if (!repairedTenantIds.add(tenantAdminRole.getTenantId())) {
+                continue;
+            }
+            Set<Long> existingTenantPermissionIds = new HashSet<>(tenantPermissionRepository.findPermIdsByTenantId(tenantAdminRole.getTenantId()));
+            for (RbacPermission permission : requiredPermissions) {
+                if (permission == null || permission.getId() == null || existingTenantPermissionIds.contains(permission.getId())) {
+                    continue;
+                }
+                RbacTenantPermission relation = new RbacTenantPermission();
+                relation.setTenantId(tenantAdminRole.getTenantId());
+                relation.setPermId(permission.getId());
+                relation.setCreateTime(now);
+                missingTenantPermissions.add(relation);
+            }
+        }
+        if (!missingRolePermissions.isEmpty()) {
+            try {
+                rolePermissionRepository.saveAll(missingRolePermissions);
+            } catch (DataIntegrityViolationException ex) {
+                log.warn("租户管理员组织权限补齐冲突: {}", ex.getMessage());
+            }
+        }
+        if (!missingTenantPermissions.isEmpty()) {
+            try {
+                tenantPermissionRepository.saveAll(missingTenantPermissions);
+            } catch (DataIntegrityViolationException ex) {
+                log.warn("租户权限池组织权限补齐冲突: {}", ex.getMessage());
+            }
+        }
+    }
+
     private void ensurePermissions(List<PermissionSeed> seeds) {
         if (CollectionUtils.isEmpty(seeds)) {
             log.warn("权限初始化跳过: 种子数据为空");
@@ -383,6 +466,10 @@ public class SuperAdminInitializer implements ApplicationRunner {
                 menu.setVisible(seed.visible);
                 menu.setStatus(seed.status);
                 menu.setPermCode(seed.permCode);
+                menu.setOrgTypeCodes(normalize(seed.orgTypeCodes));
+                menu.setOrgUnitCodes(normalize(seed.orgUnitCodes));
+                menu.setOrgTags(normalize(seed.orgTags));
+                menu.setRequiredRelationTypes(normalize(seed.requiredRelationTypes));
                 menu.setCreateTime(now);
                 menu.setUpdateTime(now);
                 try {
@@ -463,6 +550,7 @@ public class SuperAdminInitializer implements ApplicationRunner {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record MenuSeed(String menuCode, String menuName, String parentCode, String path, String component,
-                            String icon, Integer sort, Integer visible, Integer status, String permCode) {
+                            String icon, Integer sort, Integer visible, Integer status, String permCode,
+                            String orgTypeCodes, String orgUnitCodes, String orgTags, String requiredRelationTypes) {
     }
 }

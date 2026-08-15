@@ -13,7 +13,6 @@ import com.lingsql.executor.SmartSqlExecutor;
 import com.lingsql.executor.SqlExecutionResult;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import java.util.List;
@@ -75,9 +74,8 @@ class ChatApplicationServiceTest {
         assertEquals("conversation-001", result.getConversationId());
         verify(chatMemoryService, never()).saveSuccessExchange(anyString(), anyString(), anyString(), anyString(), any());
 
-        ArgumentCaptor<SqlExecutionResult> resultCaptor = ArgumentCaptor.forClass(SqlExecutionResult.class);
-        verify(resultRefiner).refine(Mockito.eq("查销售额"), resultCaptor.capture());
-        assertEquals("SQL 执行失败，请检查查询条件", resultCaptor.getValue().getErrorMessage());
+        verify(resultRefiner, never()).refine(anyString(), any(SqlExecutionResult.class));
+        verify(resultRefiner, never()).refineWithMetadata(anyString(), any(SqlExecutionResult.class));
     }
 
     @Test

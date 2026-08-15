@@ -1,4 +1,5 @@
 import {request} from '@/utils/request';
+import type {MenuView} from '@/api/auth';
 
 /**
  * 分页结果定义。
@@ -159,6 +160,7 @@ export interface DataScopeRule {
   scopeType?: string;
   scopeColumn?: string;
   scopeRule?: string;
+  relationTypes?: string[];
 }
 
 /**
@@ -184,6 +186,526 @@ export interface ExperiencePolicyRequest {
   menuWhitelist?: string[];
   dataScopeOverride?: DataScopeRule;
   enabled?: boolean;
+}
+
+/**
+ * 菜单治理视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface MenuAdminView {
+  id?: number;
+  tenantId?: string;
+  menuCode?: string;
+  menuName?: string;
+  parentId?: number;
+  parentMenuCode?: string;
+  path?: string;
+  component?: string;
+  icon?: string;
+  sort?: number;
+  visible?: number;
+  status?: number;
+  permCode?: string;
+  orgTypeCodes?: string[];
+  orgUnitCodes?: string[];
+  orgTags?: string[];
+  requiredRelationTypes?: string[];
+  children?: MenuAdminView[];
+}
+
+/**
+ * 菜单规则更新请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface MenuRuleUpdateRequest {
+  orgTypeCodes?: string[];
+  orgUnitCodes?: string[];
+  orgTags?: string[];
+  requiredRelationTypes?: string[];
+}
+
+/**
+ * 租户菜单覆盖视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface TenantMenuAdminView {
+  id?: number;
+  overrideId?: number;
+  tenantId?: string;
+  menuCode?: string;
+  menuName?: string;
+  parentId?: number;
+  parentMenuCode?: string;
+  path?: string;
+  component?: string;
+  icon?: string;
+  sort?: number;
+  permCode?: string;
+  visible?: number;
+  status?: number;
+  orgTypeCodes?: string[];
+  orgUnitCodes?: string[];
+  orgTags?: string[];
+  requiredRelationTypes?: string[];
+  overrideActive?: boolean;
+  baseVisible?: number;
+  baseStatus?: number;
+  baseOrgTypeCodes?: string[];
+  baseOrgUnitCodes?: string[];
+  baseOrgTags?: string[];
+  baseRequiredRelationTypes?: string[];
+  overrideVisible?: number | null;
+  overrideStatus?: number | null;
+  overrideOrgTypeCodes?: string[];
+  overrideOrgUnitCodes?: string[];
+  overrideOrgTags?: string[];
+  overrideRequiredRelationTypes?: string[];
+  children?: TenantMenuAdminView[];
+}
+
+/**
+ * 租户菜单覆盖更新请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface TenantMenuRuleUpdateRequest {
+  tenantId?: string;
+  visible?: number | null;
+  status?: number | null;
+  orgTypeCodes?: string[];
+  orgUnitCodes?: string[];
+  orgTags?: string[];
+  requiredRelationTypes?: string[];
+}
+
+/**
+ * 菜单命中预览请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface MenuPreviewRequest {
+  tenantId?: string;
+  permissionCodes?: string[];
+  orgTypeCodes?: string[];
+  orgUnitCodes?: string[];
+  orgTags?: string[];
+  relationTypes?: string[];
+  experience?: boolean;
+  menuWhitelist?: string[];
+}
+
+/**
+ * 菜单影响差异项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuImpactDiffItemView {
+  menuCode?: string;
+  menuName?: string;
+  path?: string;
+}
+
+/**
+ * 菜单影响分析请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuImpactPreviewRequest {
+  tenantId?: string;
+  menuId?: number;
+  menuCode?: string;
+  globalRule?: MenuRuleUpdateRequest;
+  tenantRule?: TenantMenuRuleUpdateRequest;
+  previewContext?: MenuPreviewRequest;
+}
+
+/**
+ * 菜单影响分析结果。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuImpactPreviewView {
+  tenantId?: string;
+  menuCode?: string;
+  menuName?: string;
+  tenantOverrideMode?: boolean;
+  baselineMenuCount?: number;
+  targetMenuCount?: number;
+  addedMenuCount?: number;
+  removedMenuCount?: number;
+  baselineMatched?: boolean;
+  targetMatched?: boolean;
+  baselineRuleSummary?: string;
+  targetRuleSummary?: string;
+  changedDimensions?: string[];
+  impactSummary?: string;
+  addedMenus?: MenuImpactDiffItemView[];
+  removedMenus?: MenuImpactDiffItemView[];
+}
+
+/**
+ * 菜单发布单视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuReleaseView {
+  id?: number;
+  tenantId?: string;
+  releaseType?: string;
+  releaseTitle?: string;
+  menuId?: number;
+  menuCode?: string;
+  menuName?: string;
+  baselineRuleSummary?: string;
+  targetRuleSummary?: string;
+  impactSummary?: string;
+  changedDimensions?: string[];
+  addedMenuCount?: number;
+  removedMenuCount?: number;
+  changeRemark?: string;
+  releaseStatus?: string;
+  requestedByUserId?: number;
+  requestedByName?: string;
+  reviewedByUserId?: number;
+  reviewedByName?: string;
+  reviewComment?: string;
+  reviewedTime?: string;
+  appliedByUserId?: number;
+  appliedByName?: string;
+  appliedTime?: string;
+  createTime?: string;
+  updateTime?: string;
+}
+
+/**
+ * 菜单发布单创建请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuReleaseCreateRequest {
+  tenantId?: string;
+  releaseTitle?: string;
+  changeRemark?: string;
+  impactRequest: MenuImpactPreviewRequest;
+}
+
+/**
+ * 菜单发布单审核请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuReleaseReviewRequest {
+  decision: string;
+  reviewComment?: string;
+}
+
+/**
+ * 菜单发布单回滚请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface MenuReleaseRollbackRequest {
+  releaseTitle?: string;
+  changeRemark?: string;
+}
+
+/**
+ * 数据权限命中组织预览项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface DataScopePreviewOrgView {
+  orgUnitId?: number;
+  unitCode?: string;
+  unitName?: string;
+  typeCode?: string;
+  hitSource?: string;
+}
+
+/**
+ * 数据权限角色候选预览项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface DataScopePreviewRoleCandidateView {
+  roleId?: number;
+  roleCode?: string;
+  roleName?: string;
+  dataScope?: DataScopeRule;
+  selected?: boolean;
+  summary?: string;
+  relationTypes?: string[];
+}
+
+/**
+ * 数据权限批量校验样本。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface DataScopeBatchScenarioRequest {
+  scenarioCode?: string;
+  scenarioName?: string;
+  orgUnitIds?: number[];
+  baselineOrgUnitIds?: number[];
+  sampleSql?: string;
+}
+
+/**
+ * 数据权限命中预览结果。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface DataScopePreviewView {
+  effectiveDataScope?: DataScopeRule;
+  effectiveSource?: string;
+  summary?: string;
+  description?: string;
+  directOrgCodes?: string[];
+  directOrgSubtreeCodes?: string[];
+  relationDirectScopes?: Record<string, string[]>;
+  relationSubtreeScopes?: Record<string, string[]>;
+  matchedOrgCount?: number;
+  matchedOrgTruncated?: boolean;
+  matchedOrgs?: DataScopePreviewOrgView[];
+  roleCandidates?: DataScopePreviewRoleCandidateView[];
+  warnings?: string[];
+  affectedRoleCount?: number;
+  affectedUserCount?: number;
+  impactSummary?: string;
+  sampleSqlValid?: boolean;
+  sampleSqlMessage?: string;
+  sampleRewrittenSql?: string;
+  diff?: {
+    baselineSummary?: string;
+    targetSummary?: string;
+    baselineMatchedOrgCount?: number;
+    targetMatchedOrgCount?: number;
+    addedOrgCount?: number;
+    removedOrgCount?: number;
+    unchangedOrgCount?: number;
+    addedOrgs?: DataScopePreviewOrgView[];
+    removedOrgs?: DataScopePreviewOrgView[];
+  };
+}
+
+/**
+ * 数据权限批量校验结果项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface DataScopeBatchScenarioResultView {
+  scenarioCode?: string;
+  scenarioName?: string;
+  preview?: DataScopePreviewView;
+}
+
+/**
+ * 数据权限批量校验结果。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface DataScopeBatchPreviewView {
+  totalScenarios?: number;
+  sampleSqlSuccessCount?: number;
+  warningScenarioCount?: number;
+  scenarios?: DataScopeBatchScenarioResultView[];
+}
+
+/**
+ * 角色数据权限预览请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface RoleDataScopePreviewRequest {
+  tenantId?: string;
+  dataScope?: DataScopeRule;
+  roleId?: number;
+  baselineDataScope?: DataScopeRule;
+  orgUnitIds?: number[];
+  sampleSql?: string;
+  scenarios?: DataScopeBatchScenarioRequest[];
+}
+
+/**
+ * 角色数据权限发布单视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface RoleScopeReleaseView {
+  id?: number;
+  tenantId?: string;
+  roleId?: number;
+  roleCode?: string;
+  roleName?: string;
+  releaseTitle?: string;
+  baselineSummary?: string;
+  targetSummary?: string;
+  impactSummary?: string;
+  matchedOrgCount?: number;
+  affectedUserCount?: number;
+  addedOrgCount?: number;
+  removedOrgCount?: number;
+  changeRemark?: string;
+  releaseStatus?: string;
+  requestedByUserId?: number;
+  requestedByName?: string;
+  reviewedByUserId?: number;
+  reviewedByName?: string;
+  reviewComment?: string;
+  reviewedTime?: string;
+  appliedByUserId?: number;
+  appliedByName?: string;
+  appliedTime?: string;
+  createTime?: string;
+  updateTime?: string;
+}
+
+/**
+ * 角色数据权限发布单创建请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface RoleScopeReleaseCreateRequest {
+  tenantId?: string;
+  releaseTitle?: string;
+  changeRemark?: string;
+  previewRequest: RoleDataScopePreviewRequest;
+}
+
+/**
+ * 角色数据权限发布单审核请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface RoleScopeReleaseReviewRequest {
+  decision: string;
+  reviewComment?: string;
+}
+
+/**
+ * 角色数据权限发布单回滚请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface RoleScopeReleaseRollbackRequest {
+  releaseTitle?: string;
+  changeRemark?: string;
+}
+
+/**
+ * 用户数据权限预览请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export interface UserDataScopePreviewRequest {
+  tenantId?: string;
+  dataScope?: DataScopeRule;
+  userId?: number;
+  baselineDataScope?: DataScopeRule;
+  orgUnitIds?: number[];
+  baselineOrgUnitIds?: number[];
+  roleIds?: number[];
+  baselineRoleIds?: number[];
+  sampleSql?: string;
+  scenarios?: DataScopeBatchScenarioRequest[];
+}
+
+/**
+ * 用户数据权限发布单视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface UserScopeReleaseView {
+  id?: number;
+  tenantId?: string;
+  userId?: number;
+  username?: string;
+  nickname?: string;
+  releaseTitle?: string;
+  baselineSummary?: string;
+  targetSummary?: string;
+  impactSummary?: string;
+  matchedOrgCount?: number;
+  affectedRoleCount?: number;
+  affectedUserCount?: number;
+  addedOrgCount?: number;
+  removedOrgCount?: number;
+  changeRemark?: string;
+  releaseStatus?: string;
+  requestedByUserId?: number;
+  requestedByName?: string;
+  reviewedByUserId?: number;
+  reviewedByName?: string;
+  reviewComment?: string;
+  reviewedTime?: string;
+  appliedByUserId?: number;
+  appliedByName?: string;
+  appliedTime?: string;
+  createTime?: string;
+  updateTime?: string;
+}
+
+/**
+ * 用户数据权限发布单创建请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface UserScopeReleaseCreateRequest {
+  tenantId?: string;
+  releaseTitle?: string;
+  changeRemark?: string;
+  previewRequest: UserDataScopePreviewRequest;
+}
+
+/**
+ * 用户数据权限发布单审核请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface UserScopeReleaseReviewRequest {
+  decision: string;
+  reviewComment?: string;
+}
+
+/**
+ * 用户数据权限发布单回滚请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export interface UserScopeReleaseRollbackRequest {
+  releaseTitle?: string;
+  changeRemark?: string;
 }
 
 /**
@@ -236,6 +758,121 @@ export const updateUser = async (id: number, payload: UserUpdateRequest): Promis
   return request<UserView>(`/api/v1/admin/users/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 预览用户数据权限命中范围。
+ *
+ * @param payload 请求体
+ * @return 预览结果
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const previewUserDataScope = async (payload: UserDataScopePreviewRequest): Promise<DataScopePreviewView> => {
+  return request<DataScopePreviewView>('/api/v1/admin/users/preview-data-scope', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 批量预览用户数据权限。
+ *
+ * @param payload 请求体
+ * @return 批量结果
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const previewUserDataScopeBatch = async (payload: UserDataScopePreviewRequest): Promise<DataScopeBatchPreviewView> => {
+  return request<DataScopeBatchPreviewView>('/api/v1/admin/users/preview-data-scope/batch', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 查询用户数据权限发布单列表。
+ *
+ * @param tenantId 租户ID
+ * @param status 状态
+ * @return 发布单列表
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const fetchUserScopeReleaseRecords = async (tenantId?: string, status?: string): Promise<UserScopeReleaseView[]> => {
+  const query = new URLSearchParams();
+  if (tenantId) {
+    query.set('tenantId', tenantId);
+  }
+  if (status) {
+    query.set('status', status);
+  }
+  const queryString = query.toString();
+  return request<UserScopeReleaseView[]>(`/api/v1/admin/users/scope-releases${queryString ? `?${queryString}` : ''}`);
+};
+
+/**
+ * 创建用户数据权限发布单。
+ *
+ * @param payload 请求体
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const createUserScopeReleaseRecord = async (payload: UserScopeReleaseCreateRequest): Promise<UserScopeReleaseView> => {
+  return request<UserScopeReleaseView>('/api/v1/admin/users/scope-releases', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 审核用户数据权限发布单。
+ *
+ * @param id 发布单ID
+ * @param payload 请求体
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const reviewUserScopeReleaseRecord = async (id: number, payload: UserScopeReleaseReviewRequest): Promise<UserScopeReleaseView> => {
+  return request<UserScopeReleaseView>(`/api/v1/admin/users/scope-releases/${id}/review`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 应用用户数据权限发布单。
+ *
+ * @param id 发布单ID
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const applyUserScopeReleaseRecord = async (id: number): Promise<UserScopeReleaseView> => {
+  return request<UserScopeReleaseView>(`/api/v1/admin/users/scope-releases/${id}/apply`, {
+    method: 'PUT'
+  });
+};
+
+/**
+ * 基于已应用发布单生成用户数据权限回滚单。
+ *
+ * @param id 发布单ID
+ * @param payload 请求体
+ * @return 新发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const createRollbackUserScopeReleaseRecord = async (
+  id: number,
+  payload: UserScopeReleaseRollbackRequest
+): Promise<UserScopeReleaseView> => {
+  return request<UserScopeReleaseView>(`/api/v1/admin/users/scope-releases/${id}/rollback`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
   });
 };
 
@@ -296,6 +933,121 @@ export const updateRole = async (id: number, payload: RoleUpdateRequest): Promis
   return request<RoleView>(`/api/v1/admin/roles/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 预览角色数据权限命中范围。
+ *
+ * @param payload 请求体
+ * @return 预览结果
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const previewRoleDataScope = async (payload: RoleDataScopePreviewRequest): Promise<DataScopePreviewView> => {
+  return request<DataScopePreviewView>('/api/v1/admin/roles/preview-data-scope', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 批量预览角色数据权限。
+ *
+ * @param payload 请求体
+ * @return 批量结果
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const previewRoleDataScopeBatch = async (payload: RoleDataScopePreviewRequest): Promise<DataScopeBatchPreviewView> => {
+  return request<DataScopeBatchPreviewView>('/api/v1/admin/roles/preview-data-scope/batch', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 查询角色数据权限发布单列表。
+ *
+ * @param tenantId 租户ID
+ * @param status 状态
+ * @return 发布单列表
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const fetchRoleScopeReleaseRecords = async (tenantId?: string, status?: string): Promise<RoleScopeReleaseView[]> => {
+  const query = new URLSearchParams();
+  if (tenantId) {
+    query.set('tenantId', tenantId);
+  }
+  if (status) {
+    query.set('status', status);
+  }
+  const queryString = query.toString();
+  return request<RoleScopeReleaseView[]>(`/api/v1/admin/roles/scope-releases${queryString ? `?${queryString}` : ''}`);
+};
+
+/**
+ * 创建角色数据权限发布单。
+ *
+ * @param payload 请求体
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const createRoleScopeReleaseRecord = async (payload: RoleScopeReleaseCreateRequest): Promise<RoleScopeReleaseView> => {
+  return request<RoleScopeReleaseView>('/api/v1/admin/roles/scope-releases', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 审核角色数据权限发布单。
+ *
+ * @param id 发布单ID
+ * @param payload 请求体
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const reviewRoleScopeReleaseRecord = async (id: number, payload: RoleScopeReleaseReviewRequest): Promise<RoleScopeReleaseView> => {
+  return request<RoleScopeReleaseView>(`/api/v1/admin/roles/scope-releases/${id}/review`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 应用角色数据权限发布单。
+ *
+ * @param id 发布单ID
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const applyRoleScopeReleaseRecord = async (id: number): Promise<RoleScopeReleaseView> => {
+  return request<RoleScopeReleaseView>(`/api/v1/admin/roles/scope-releases/${id}/apply`, {
+    method: 'PUT'
+  });
+};
+
+/**
+ * 基于已应用发布单生成角色数据权限回滚单。
+ *
+ * @param id 发布单ID
+ * @param payload 请求体
+ * @return 新发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const createRollbackRoleScopeReleaseRecord = async (
+  id: number,
+  payload: RoleScopeReleaseRollbackRequest
+): Promise<RoleScopeReleaseView> => {
+  return request<RoleScopeReleaseView>(`/api/v1/admin/roles/scope-releases/${id}/rollback`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
   });
 };
 
@@ -366,4 +1118,191 @@ export const saveExperiencePolicy = async (userId: number, payload: ExperiencePo
       method: 'PUT',
       body: JSON.stringify(payload)
     });
+};
+
+/**
+ * 查询菜单治理规则树。
+ *
+ * @return 菜单规则树
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const fetchMenuRules = async (): Promise<MenuAdminView[]> => {
+  return request<MenuAdminView[]>('/api/v1/admin/menus');
+};
+
+/**
+ * 更新菜单组织适配规则。
+ *
+ * @param id 菜单ID
+ * @param payload 请求体
+ * @return 更新后的菜单
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const updateMenuRule = async (id: number, payload: MenuRuleUpdateRequest): Promise<MenuAdminView> => {
+  return request<MenuAdminView>(`/api/v1/admin/menus/${id}/rule`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 查询租户级菜单覆盖树。
+ *
+ * @param tenantId 租户ID
+ * @return 菜单覆盖树
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const fetchTenantMenuRules = async (tenantId?: string): Promise<TenantMenuAdminView[]> => {
+  const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  return request<TenantMenuAdminView[]>(`/api/v1/admin/menus/tenant${query}`);
+};
+
+/**
+ * 更新租户级菜单覆盖。
+ *
+ * @param menuCode 菜单编码
+ * @param payload 请求体
+ * @return 更新后的租户菜单
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const updateTenantMenuRule = async (menuCode: string, payload: TenantMenuRuleUpdateRequest): Promise<TenantMenuAdminView> => {
+  return request<TenantMenuAdminView>(`/api/v1/admin/menus/tenant/${encodeURIComponent(menuCode)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 清除租户级菜单覆盖。
+ *
+ * @param menuCode 菜单编码
+ * @param tenantId 租户ID
+ * @return 清除结果
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const clearTenantMenuRule = async (menuCode: string, tenantId?: string): Promise<string> => {
+  const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  return request<string>(`/api/v1/admin/menus/tenant/${encodeURIComponent(menuCode)}${query}`, {
+    method: 'DELETE'
+  });
+};
+
+/**
+ * 预览指定组织上下文命中的菜单树。
+ *
+ * @param payload 请求体
+ * @return 菜单树
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+export const previewMenuTree = async (payload: MenuPreviewRequest): Promise<MenuView[]> => {
+  return request<MenuView[]>('/api/v1/admin/menus/preview', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 预览菜单规则变更影响。
+ *
+ * @param payload 请求体
+ * @return 影响分析结果
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const previewMenuImpact = async (payload: MenuImpactPreviewRequest): Promise<MenuImpactPreviewView> => {
+  return request<MenuImpactPreviewView>('/api/v1/admin/menus/impact', {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
+};
+
+/**
+ * 查询菜单发布单列表。
+ *
+ * @param tenantId 租户ID
+ * @param status 发布状态
+ * @return 发布单列表
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const fetchMenuReleaseRecords = async (tenantId?: string, status?: string): Promise<MenuReleaseView[]> => {
+  const query = new URLSearchParams();
+  if (tenantId) {
+    query.set('tenantId', tenantId);
+  }
+  if (status) {
+    query.set('status', status);
+  }
+  const queryString = query.toString();
+  return request<MenuReleaseView[]>(`/api/v1/admin/menus/releases${queryString ? `?${queryString}` : ''}`);
+};
+
+/**
+ * 创建菜单发布单。
+ *
+ * @param payload 请求体
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const createMenuReleaseRecord = async (payload: MenuReleaseCreateRequest): Promise<MenuReleaseView> => {
+  return request<MenuReleaseView>('/api/v1/admin/menus/releases', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 审核菜单发布单。
+ *
+ * @param id 发布单ID
+ * @param payload 请求体
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const reviewMenuReleaseRecord = async (id: number, payload: MenuReleaseReviewRequest): Promise<MenuReleaseView> => {
+  return request<MenuReleaseView>(`/api/v1/admin/menus/releases/${id}/review`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 应用菜单发布单。
+ *
+ * @param id 发布单ID
+ * @return 发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const applyMenuReleaseRecord = async (id: number): Promise<MenuReleaseView> => {
+  return request<MenuReleaseView>(`/api/v1/admin/menus/releases/${id}/apply`, {
+    method: 'PUT'
+  });
+};
+
+/**
+ * 基于已应用发布单生成回滚单。
+ *
+ * @param id 发布单ID
+ * @param payload 请求体
+ * @return 新生成的回滚发布单
+ * @author 余炘洋
+ * @date 2026-04-13
+ */
+export const createRollbackMenuReleaseRecord = async (
+  id: number,
+  payload: MenuReleaseRollbackRequest
+): Promise<MenuReleaseView> => {
+  return request<MenuReleaseView>(`/api/v1/admin/menus/releases/${id}/rollback`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {})
+  });
 };

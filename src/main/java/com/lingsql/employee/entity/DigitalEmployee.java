@@ -46,6 +46,36 @@ public class DigitalEmployee {
     @Column(name = "default_question", columnDefinition = "TEXT")
     private String defaultQuestion;
 
+    @Column(name = "schedule_enabled")
+    private Integer scheduleEnabled;
+
+    @Column(name = "schedule_cron")
+    private String scheduleCron;
+
+    @Column(name = "alert_enabled")
+    private Integer alertEnabled;
+
+    @Column(name = "alert_rule_type")
+    private String alertRuleType;
+
+    @Column(name = "alert_threshold")
+    private Integer alertThreshold;
+
+    @Column(name = "push_enabled")
+    private Integer pushEnabled;
+
+    @Column(name = "push_channels")
+    private String pushChannels;
+
+    @Column(name = "push_max_rows")
+    private Integer pushMaxRows;
+
+    @Column(name = "push_title_template")
+    private String pushTitleTemplate;
+
+    @Column(name = "push_message_template", columnDefinition = "TEXT")
+    private String pushMessageTemplate;
+
     @Column(name = "status")
     private Integer status;
 
@@ -60,6 +90,9 @@ public class DigitalEmployee {
 
     @Column(name = "last_run_time")
     private LocalDateTime lastRunTime;
+
+    @Column(name = "last_schedule_time")
+    private LocalDateTime lastScheduleTime;
 
     @Column(name = "last_error_message", columnDefinition = "TEXT")
     private String lastErrorMessage;

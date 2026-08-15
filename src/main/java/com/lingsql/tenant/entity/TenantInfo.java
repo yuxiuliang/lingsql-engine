@@ -95,6 +95,15 @@ public class TenantInfo {
     private String contactEmail;
 
     /**
+     * 默认通知通道列表，逗号分隔。
+     *
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    @Column(name = "notification_channels")
+    private String notificationChannels;
+
+    /**
      * 到期时间。
      *
      * @author 余炘洋

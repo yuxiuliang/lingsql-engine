@@ -2,6 +2,8 @@ package com.lingsql.tenant.model;
 
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * 租户创建请求。
  *
@@ -66,6 +68,14 @@ public class TenantCreateRequest {
      * @date 2026-01-26
      */
     private String contactEmail;
+
+    /**
+     * 默认通知通道列表。
+     *
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    private List<String> notificationChannels;
 
     /**
      * 到期时间。
@@ -154,5 +164,25 @@ public class TenantCreateRequest {
      * @date 2026-01-26
      */
     private String logicColumn;
+
+    /**
+     * 组织模板编码。
+     *
+     * <p>用于在创建租户后自动初始化一套组织类型、节点树和关系语义。</p>
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private String orgTemplateCode;
+
+    /**
+     * 组织模板根节点名称。
+     *
+     * <p>用于开户时把模板默认根节点名称替换成客户自己的组织主体名称。</p>
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    private String orgRootUnitName;
 
 }

@@ -7,11 +7,18 @@ import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.tenant.model.TenantCreateRequest;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleWorkbenchView;
+import com.lingsql.tenant.model.TenantNotificationChannelFailureStatsView;
 import com.lingsql.tenant.model.TenantLifecycleSummaryView;
+import com.lingsql.tenant.model.TenantNotificationChannelHealthView;
+import com.lingsql.tenant.model.TenantNotificationChannelRecentTestView;
+import com.lingsql.tenant.model.TenantNotificationChannelTestRequest;
+import com.lingsql.tenant.model.TenantNotificationChannelTestView;
 import com.lingsql.tenant.model.TenantUpdateRequest;
 import com.lingsql.tenant.model.TenantView;
 import com.lingsql.tenant.service.TenantAdminService;
+import com.lingsql.tenant.service.TenantNotificationChannelHistoryService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -38,6 +46,7 @@ import java.util.List;
 public class TenantAdminController {
 
     private final TenantAdminService tenantAdminService;
+    private final TenantNotificationChannelHistoryService tenantNotificationChannelHistoryService;
     private final AuditOperationExecutor auditOperationExecutor;
 
     /**
@@ -87,6 +96,79 @@ public class TenantAdminController {
             return ApiResponse.forbidden("无权限访问");
         }
         return ApiResponse.success(tenantAdminService.lifecycleWorkbench(limit));
+    }
+
+    /**
+     * 查询租户默认通知通道健康情况。
+     *
+     * @return 健康视图
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    @GetMapping("/notification-channels/health")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
+    public ApiResponse<TenantNotificationChannelHealthView> notificationChannelHealth() {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return ApiResponse.success(tenantAdminService.notificationChannelHealth());
+    }
+
+    /**
+     * 查询最近的通知通道测试记录。
+     *
+     * @param tenantId 租户ID
+     * @param limit    返回条数
+     * @return 最近测试记录
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    @GetMapping("/notification-channels/tests/recent")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
+    public ApiResponse<List<TenantNotificationChannelRecentTestView>> recentNotificationChannelTests(
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) Integer success,
+            @RequestParam(required = false) String channel,
+            @RequestParam(required = false) String operatorKeyword,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
+            @RequestParam(required = false) Integer limit
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return ApiResponse.success(tenantNotificationChannelHistoryService.listRecentTests(
+                tenantId,
+                success,
+                channel,
+                operatorKeyword,
+                startTime,
+                endTime,
+                limit
+        ));
+    }
+
+    /**
+     * 查询通知通道失败问题分布。
+     *
+     * @param tenantId 租户ID
+     * @param limit    统计样本数
+     * @return 失败统计
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    @GetMapping("/notification-channels/tests/stats")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:READ')")
+    public ApiResponse<TenantNotificationChannelFailureStatsView> notificationChannelFailureStats(
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
+            @RequestParam(required = false) Integer limit
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return ApiResponse.success(tenantNotificationChannelHistoryService.summarizeFailures(tenantId, startTime, endTime, limit));
     }
 
     /**
@@ -186,6 +268,34 @@ public class TenantAdminController {
                 request,
                 http,
                 () -> tenantAdminService.updateTenant(id, request)
+        );
+    }
+
+    /**
+     * 测试租户默认通知通道。
+     *
+     * @param request 测试请求
+     * @param http    请求
+     * @return 测试结果
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    @PostMapping("/notification-channels/test")
+    @PreAuthorize("hasAuthority('ADMIN:TENANT:WRITE')")
+    public ApiResponse<TenantNotificationChannelTestView> testNotificationChannels(
+            @RequestBody TenantNotificationChannelTestRequest request,
+            HttpServletRequest http
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        return auditOperationExecutor.execute(
+                "TENANT_NOTIFICATION_CHANNEL_TEST",
+                "TENANT",
+                request,
+                http,
+                () -> tenantAdminService.testNotificationChannels(request),
+                result -> result
         );
     }
 

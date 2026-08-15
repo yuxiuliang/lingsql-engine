@@ -79,6 +79,14 @@ public class TenantView {
     private String contactEmail;
 
     /**
+     * 默认通知通道列表。
+     *
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    private List<String> notificationChannels;
+
+    /**
      * 到期时间。
      *
      * @author 余炘洋

@@ -2,6 +2,8 @@ package com.lingsql.ops;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.config.LingSqlProperties;
+import com.lingsql.ops.model.AlertDispatchChannelResult;
+import com.lingsql.ops.model.AlertDispatchResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -19,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -46,13 +49,119 @@ public class OpsAlertService {
      * @date 2026-02-27
      */
     public boolean sendAlert(String title, String message, Map<String, Object> details) {
+        return sendAlertWithResult(title, message, details).success();
+    }
+
+    /**
+     * 按指定通道发送告警。
+     *
+     * @param title    告警标题
+     * @param message  告警内容
+     * @param details  扩展字段
+     * @param channels 指定通道列表；为空时按全量已配置通道发送
+     * @return 是否发送成功
+     * @author 余炘洋
+     * @date 2026-04-14
+     */
+    public boolean sendAlertToChannels(String title, String message, Map<String, Object> details, List<String> channels) {
+        return sendAlertToChannelsWithResult(title, message, details, channels).success();
+    }
+
+    /**
+     * 发送告警并返回结构化投递结果。
+     *
+     * @param title   告警标题
+     * @param message 告警内容
+     * @param details 扩展字段
+     * @return 投递结果
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    public AlertDispatchResult sendAlertWithResult(String title, String message, Map<String, Object> details) {
+        return sendAlertInternal(title, message, details, null);
+    }
+
+    /**
+     * 按指定通道发送告警并返回结构化投递结果。
+     *
+     * @param title    告警标题
+     * @param message  告警内容
+     * @param details  扩展字段
+     * @param channels 指定通道
+     * @return 投递结果
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    public AlertDispatchResult sendAlertToChannelsWithResult(String title,
+                                                             String message,
+                                                             Map<String, Object> details,
+                                                             List<String> channels) {
+        return sendAlertInternal(title, message, details, channels);
+    }
+
+    /**
+     * 当前系统是否启用了告警总开关。
+     *
+     * @return 是否启用
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    public boolean isAlertEnabled() {
+        LingSqlProperties.Alert alert = properties.getAlert();
+        return alert != null && alert.isEnabled();
+    }
+
+    /**
+     * 查询当前已配置的通知通道。
+     *
+     * @return 已配置通道
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    public List<String> getConfiguredChannels() {
+        LingSqlProperties.Alert alert = properties.getAlert();
+        if (alert == null) {
+            return Collections.emptyList();
+        }
+        List<String> configuredChannels = new ArrayList<>();
+        if (StringUtils.hasText(alert.getWebhookUrl())) {
+            configuredChannels.add("webhook");
+        }
+        if (StringUtils.hasText(alert.getDingTalkWebhookUrl())) {
+            configuredChannels.add("dingtalk");
+        }
+        if (StringUtils.hasText(alert.getWeComWebhookUrl())) {
+            configuredChannels.add("wecom");
+        }
+        return configuredChannels;
+    }
+
+    /**
+     * 查询当前未配置的通知通道。
+     *
+     * @return 未配置通道
+     * @author 余炘洋
+     * @date 2026-04-15
+     */
+    public List<String> getUnconfiguredChannels() {
+        List<String> configuredChannels = getConfiguredChannels();
+        return List.of("webhook", "dingtalk", "wecom").stream()
+                .filter(channel -> !configuredChannels.contains(channel))
+                .toList();
+    }
+
+    private AlertDispatchResult sendAlertInternal(String title,
+                                                  String message,
+                                                  Map<String, Object> details,
+                                                  List<String> channels) {
         LingSqlProperties.Alert alert = properties.getAlert();
         if (alert == null || !alert.isEnabled()) {
-            return false;
+            return AlertDispatchResult.skipped("系统告警总开关未启用");
         }
-        List<AlertTarget> targets = resolveTargets(alert);
+        List<String> normalizedChannels = normalizeChannels(channels);
+        List<AlertTarget> targets = resolveTargets(alert, normalizedChannels);
         if (targets.isEmpty()) {
-            return false;
+            return AlertDispatchResult.skipped(buildNoTargetSummary(normalizedChannels));
         }
         try {
             Duration connectTimeout = resolveDuration(alert.getConnectTimeout(), Duration.ofSeconds(3));
@@ -60,26 +169,28 @@ public class OpsAlertService {
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(connectTimeout)
                     .build();
+            List<AlertDispatchChannelResult> channelResults = new ArrayList<>();
             boolean anySuccess = false;
             boolean allSuccess = true;
             for (AlertTarget target : targets) {
-                boolean success = sendToTarget(client, readTimeout, target, title, message, details);
-                anySuccess = anySuccess || success;
-                allSuccess = allSuccess && success;
+                AlertDispatchChannelResult channelResult = sendToTarget(client, readTimeout, target, title, message, details);
+                channelResults.add(channelResult);
+                anySuccess = anySuccess || channelResult.success();
+                allSuccess = allSuccess && channelResult.success();
             }
-            return alert.isRequireAllChannels() ? allSuccess : anySuccess;
+            return AlertDispatchResult.completed(alert.isRequireAllChannels() ? allSuccess : anySuccess, channelResults);
         } catch (Exception ex) {
             log.warn("告警发送异常: {}", ex.getMessage());
-            return false;
+            return AlertDispatchResult.skipped("告警客户端初始化失败: " + safeMessage(ex.getMessage()));
         }
     }
 
-    private boolean sendToTarget(HttpClient client,
-                                 Duration readTimeout,
-                                 AlertTarget target,
-                                 String title,
-                                 String message,
-                                 Map<String, Object> details) {
+    private AlertDispatchChannelResult sendToTarget(HttpClient client,
+                                                    Duration readTimeout,
+                                                    AlertTarget target,
+                                                    String title,
+                                                    String message,
+                                                    Map<String, Object> details) {
         try {
             Map<String, Object> payload = buildPayloadByChannel(target.channel(), title, message, details);
             String body = objectMapper.writeValueAsString(payload);
@@ -92,29 +203,51 @@ public class OpsAlertService {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             int statusCode = response.statusCode();
             if (statusCode >= 200 && statusCode < 300) {
-                return true;
+                return AlertDispatchChannelResult.success(target.channel(), statusCode);
             }
             log.warn("告警发送失败: channel={}, status={}, body={}", target.channel(), statusCode, response.body());
-            return false;
+            return AlertDispatchChannelResult.failure(target.channel(), statusCode, abbreviate(response.body(), 160));
         } catch (Exception ex) {
             log.warn("告警发送异常: channel={}, message={}", target.channel(), ex.getMessage());
-            return false;
+            return AlertDispatchChannelResult.failure(target.channel(), null, safeMessage(ex.getMessage()));
         }
     }
 
-    private List<AlertTarget> resolveTargets(LingSqlProperties.Alert alert) {
+    private List<AlertTarget> resolveTargets(LingSqlProperties.Alert alert, List<String> channels) {
         List<AlertTarget> targets = new ArrayList<>();
-        addTargetIfPresent(targets, "webhook", alert.getWebhookUrl());
-        addTargetIfPresent(targets, "dingtalk", alert.getDingTalkWebhookUrl());
-        addTargetIfPresent(targets, "wecom", alert.getWeComWebhookUrl());
+        List<String> normalizedChannels = normalizeChannels(channels);
+        addTargetIfPresent(targets, "webhook", alert.getWebhookUrl(), normalizedChannels);
+        addTargetIfPresent(targets, "dingtalk", alert.getDingTalkWebhookUrl(), normalizedChannels);
+        addTargetIfPresent(targets, "wecom", alert.getWeComWebhookUrl(), normalizedChannels);
         return targets;
     }
 
-    private void addTargetIfPresent(List<AlertTarget> targets, String channel, String url) {
+    private void addTargetIfPresent(List<AlertTarget> targets, String channel, String url, List<String> channels) {
         if (!StringUtils.hasText(url)) {
             return;
         }
+        if (channels != null && !channels.isEmpty() && !channels.contains(channel)) {
+            return;
+        }
         targets.add(new AlertTarget(channel, url.trim()));
+    }
+
+    private List<String> normalizeChannels(List<String> channels) {
+        if (channels == null || channels.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return channels.stream()
+                .filter(StringUtils::hasText)
+                .map(value -> value.trim().toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
+    }
+
+    private String buildNoTargetSummary(List<String> normalizedChannels) {
+        if (normalizedChannels == null || normalizedChannels.isEmpty()) {
+            return "未配置可用通知通道";
+        }
+        return "指定通道未配置或不可用: " + String.join(", ", normalizedChannels);
     }
 
     private Map<String, Object> buildPayloadByChannel(String channel,
@@ -205,6 +338,20 @@ public class OpsAlertService {
             return fallback;
         }
         return source;
+    }
+
+    private String safeMessage(String message) {
+        if (!StringUtils.hasText(message)) {
+            return "未知异常";
+        }
+        return abbreviate(message.trim(), 160);
+    }
+
+    private String abbreviate(String value, int maxLength) {
+        if (!StringUtils.hasText(value) || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength) + "...";
     }
 
     private record AlertTarget(String channel, String url) {

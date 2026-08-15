@@ -15,6 +15,7 @@ import {
 } from '@/api/chat';
 import {fetchChatRuntimeConfig} from '@/api/config';
 import {useChatStore} from '@/store/chat';
+import ResultInsightPanel from '@/views/chat/ResultInsightPanel.vue';
 
 /**
  * 对话消息定义。
@@ -556,16 +557,12 @@ const handleSend = async () => {
  */
 const handleRename = async (item: ChatHistoryItem) => {
   try {
-    const promptResult = await ElMessageBox.prompt('请输入新的标题', '重命名历史记录', {
+    const {value} = await ElMessageBox.prompt('请输入新的标题', '重命名历史记录', {
       confirmButtonText: '保存',
       cancelButtonText: '取消',
       inputValue: item.question || '',
       inputPlaceholder: '输入新标题'
-    });
-    if (typeof promptResult === 'string') {
-      return;
-    }
-    const value = promptResult.value;
+    }) as { value: string };
     if (!value || !value.trim()) {
       ElMessage.warning('标题不能为空');
       return;
@@ -817,6 +814,7 @@ onBeforeUnmount(() => {
 
             <template v-if="message.role === 'assistant' && message.data && message.data.length">
               <div class="table-section">
+                <ResultInsightPanel :rows="message.data"/>
                 <div class="table-title">查询结果</div>
                 <el-table class="result-table" :data="message.data" border :max-height="360">
                   <el-table-column

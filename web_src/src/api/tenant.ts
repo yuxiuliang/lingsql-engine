@@ -15,6 +15,7 @@ export interface TenantView {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
+  notificationChannels?: string[];
   expireTime?: string;
   planName?: string;
   quotaBalance?: number;
@@ -105,6 +106,7 @@ export interface TenantCreateRequest {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
+  notificationChannels?: string[];
   expireTime?: string;
   planName?: string;
   jdbcUrl?: string;
@@ -113,6 +115,8 @@ export interface TenantCreateRequest {
   driverClass?: string;
   isolationMode?: string;
   logicColumn?: string;
+  orgTemplateCode?: string;
+  orgRootUnitName?: string;
 }
 
 /**
@@ -128,8 +132,137 @@ export interface TenantUpdateRequest {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
+  notificationChannels?: string[];
   expireTime?: string;
   planName?: string;
+}
+
+/**
+ * 租户通知通道测试请求。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelTestRequest {
+  tenantId?: string;
+  tenantName?: string;
+  channels: string[];
+}
+
+/**
+ * 租户通知通道测试明细。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelTestChannelView {
+  channel?: string;
+  success?: boolean;
+  statusCode?: number | null;
+  detail?: string;
+}
+
+/**
+ * 租户通知通道测试结果。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelTestView {
+  tenantId?: string;
+  tenantName?: string;
+  requestedChannels?: string[];
+  success?: boolean;
+  summary?: string;
+  testTime?: string;
+  channelResults?: TenantNotificationChannelTestChannelView[];
+}
+
+/**
+ * 租户通知通道风险项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelIssueView {
+  tenantId?: string;
+  tenantName?: string;
+  selectedChannels?: string[];
+  unavailableChannels?: string[];
+  reason?: string;
+  suggestion?: string;
+}
+
+/**
+ * 租户通知通道健康视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelHealthView {
+  alertEnabled?: boolean;
+  configuredChannels?: string[];
+  unconfiguredChannels?: string[];
+  tenantUsingNotificationChannels?: number;
+  tenantIssueCount?: number;
+  summary?: string;
+  issues?: TenantNotificationChannelIssueView[];
+}
+
+/**
+ * 租户通知通道最近测试记录。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelRecentTestView {
+  auditLogId?: number;
+  tenantId?: string;
+  tenantName?: string;
+  requestedChannels?: string[];
+  success?: boolean;
+  summary?: string;
+  operatorUsername?: string;
+  createTime?: string;
+  channelResults?: TenantNotificationChannelTestChannelView[];
+}
+
+/**
+ * 通知通道失败通道聚合项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelFailureChannelView {
+  channel?: string;
+  failureCount?: number;
+}
+
+/**
+ * 通知通道失败原因聚合项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelFailureReasonView {
+  reason?: string;
+  count?: number;
+}
+
+/**
+ * 通知通道失败统计视图。
+ *
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export interface TenantNotificationChannelFailureStatsView {
+  tenantId?: string;
+  totalTests?: number;
+  failedTests?: number;
+  successRate?: number;
+  summary?: string;
+  topFailingChannels?: TenantNotificationChannelFailureChannelView[];
+  topFailureReasons?: TenantNotificationChannelFailureReasonView[];
 }
 
 /**
@@ -224,6 +357,95 @@ export const fetchTenantLifecycleWorkbench = async (limit = 50): Promise<TenantL
 };
 
 /**
+ * 查询租户默认通知通道健康情况。
+ *
+ * @return 健康视图
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export const fetchTenantNotificationChannelHealth = async (): Promise<TenantNotificationChannelHealthView> => {
+  return request<TenantNotificationChannelHealthView>('/api/v1/admin/tenants/notification-channels/health');
+};
+
+/**
+ * 查询最近的通知通道测试记录。
+ *
+ * @param params 查询参数
+ * @return 最近测试记录
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export const fetchRecentTenantNotificationChannelTests = async (params: {
+  tenantId?: string;
+  success?: number;
+  channel?: string;
+  operatorKeyword?: string;
+  startTime?: string;
+  endTime?: string;
+  limit?: number;
+} = {}): Promise<TenantNotificationChannelRecentTestView[]> => {
+  const query = new URLSearchParams();
+  if (params.tenantId) {
+    query.set('tenantId', params.tenantId);
+  }
+  if (params.success != null) {
+    query.set('success', String(params.success));
+  }
+  if (params.channel) {
+    query.set('channel', params.channel);
+  }
+  if (params.operatorKeyword) {
+    query.set('operatorKeyword', params.operatorKeyword);
+  }
+  if (params.startTime) {
+    query.set('startTime', params.startTime);
+  }
+  if (params.endTime) {
+    query.set('endTime', params.endTime);
+  }
+  if (params.limit != null) {
+    query.set('limit', String(params.limit));
+  }
+  const suffix = query.toString();
+  return request<TenantNotificationChannelRecentTestView[]>(
+    `/api/v1/admin/tenants/notification-channels/tests/recent${suffix ? `?${suffix}` : ''}`
+  );
+};
+
+/**
+ * 查询通知通道失败问题分布。
+ *
+ * @param params 查询参数
+ * @return 失败统计
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export const fetchTenantNotificationChannelFailureStats = async (params: {
+  tenantId?: string;
+  startTime?: string;
+  endTime?: string;
+  limit?: number;
+} = {}): Promise<TenantNotificationChannelFailureStatsView> => {
+  const query = new URLSearchParams();
+  if (params.tenantId) {
+    query.set('tenantId', params.tenantId);
+  }
+  if (params.startTime) {
+    query.set('startTime', params.startTime);
+  }
+  if (params.endTime) {
+    query.set('endTime', params.endTime);
+  }
+  if (params.limit != null) {
+    query.set('limit', String(params.limit));
+  }
+  const suffix = query.toString();
+  return request<TenantNotificationChannelFailureStatsView>(
+    `/api/v1/admin/tenants/notification-channels/tests/stats${suffix ? `?${suffix}` : ''}`
+  );
+};
+
+/**
  * 续期租户生命周期。
  *
  * @param id 租户ID
@@ -250,5 +472,22 @@ export const extendTenantLifecycle = async (id: number, payload: TenantLifecycle
 export const reactivateTenant = async (id: number): Promise<TenantView> => {
   return request<TenantView>(`/api/v1/admin/tenants/${id}/lifecycle/reactivate`, {
     method: 'POST'
+  });
+};
+
+/**
+ * 测试租户通知通道。
+ *
+ * @param payload 测试请求
+ * @return 测试结果
+ * @author 余炘洋
+ * @date 2026-04-15
+ */
+export const testTenantNotificationChannels = async (
+  payload: TenantNotificationChannelTestRequest
+): Promise<TenantNotificationChannelTestView> => {
+  return request<TenantNotificationChannelTestView>('/api/v1/admin/tenants/notification-channels/test', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   });
 };

@@ -7,6 +7,7 @@ import com.lingsql.common.pagination.PageParam;
 import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.organization.entity.OrgUnit;
 import com.lingsql.organization.entity.UserOrgMembership;
+import com.lingsql.organization.service.OrgGovernanceCatalogService;
 import com.lingsql.organization.repository.OrgUnitRepository;
 import com.lingsql.organization.repository.UserOrgMembershipRepository;
 import com.lingsql.rbac.entity.RbacRole;
@@ -41,6 +42,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -73,6 +75,7 @@ public class UserAdminService {
     private final OrgUnitRepository orgUnitRepository;
     private final UserOrgMembershipRepository userOrgMembershipRepository;
     private final RbacUserDataScopeRepository userDataScopeRepository;
+    private final OrgGovernanceCatalogService orgGovernanceCatalogService;
 
     /**
      * 查询用户列表。
@@ -377,14 +380,14 @@ public class UserAdminService {
                 || INHERIT_SCOPE.equalsIgnoreCase(rule.getScopeType())) {
             return;
         }
-        DataScopeRule normalizedRule = normalizeDataScope(rule);
+        DataScopeRule normalizedRule = normalizeDataScope(rule, user.getTenantId());
         validateUserDataScope(user, normalizedRule);
         LocalDateTime now = LocalDateTime.now();
         RbacUserDataScope entity = new RbacUserDataScope();
         entity.setUserId(user.getId());
         entity.setScopeType(normalizedRule.getScopeType());
         entity.setScopeColumn(normalizedRule.getScopeColumn());
-        entity.setScopeRule(normalizedRule.getScopeRule());
+        entity.setScopeRule(resolvePersistedScopeRule(normalizedRule));
         entity.setStatus(1);
         entity.setCreateTime(now);
         entity.setUpdateTime(now);
@@ -404,7 +407,9 @@ public class UserAdminService {
             return;
         }
         if (!RbacDataScopeType.ORG.equals(rule.getScopeType())
-                && !RbacDataScopeType.ORG_SUBTREE.equals(rule.getScopeType())) {
+                && !RbacDataScopeType.ORG_SUBTREE.equals(rule.getScopeType())
+                && !RbacDataScopeType.RELATION.equals(rule.getScopeType())
+                && !RbacDataScopeType.RELATION_SUBTREE.equals(rule.getScopeType())) {
             return;
         }
         if (!userOrgMembershipRepository.findByUserIdOrderByIsPrimaryDescIdAsc(user.getId()).isEmpty()) {
@@ -555,6 +560,47 @@ public class UserAdminService {
     }
 
     /**
+     * 查询当前用户数据权限覆盖。
+     *
+     * @param userId 用户ID
+     * @return 数据权限规则
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    DataScopeRule resolveCurrentUserDataScope(Long userId) {
+        return resolveUserDataScope(userId);
+    }
+
+    /**
+     * 查询当前用户角色ID列表。
+     *
+     * @param userId 用户ID
+     * @return 角色ID列表
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    List<Long> resolveCurrentUserRoleIds(Long userId) {
+        return userId == null ? List.of() : userRoleRepository.findRoleIdsByUserId(userId);
+    }
+
+    /**
+     * 查询当前用户组织归属ID列表。
+     *
+     * @param userId 用户ID
+     * @return 组织归属ID列表
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    List<Long> resolveCurrentUserOrgUnitIds(Long userId) {
+        if (userId == null) {
+            return List.of();
+        }
+        return userOrgMembershipRepository.findByUserIdOrderByIsPrimaryDescIdAsc(userId).stream()
+                .map(UserOrgMembership::getOrgUnitId)
+                .toList();
+    }
+
+    /**
      * 解析当前真正生效的数据权限。
      *
      * @param userScope 用户覆盖规则
@@ -567,7 +613,7 @@ public class UserAdminService {
         if (userScope != null
                 && StringUtils.hasText(userScope.getScopeType())
                 && !INHERIT_SCOPE.equalsIgnoreCase(userScope.getScopeType())) {
-            return new EffectiveDataScope(normalizeDataScope(userScope), EFFECTIVE_SOURCE_USER);
+            return new EffectiveDataScope(normalizeDataScope(userScope, null), EFFECTIVE_SOURCE_USER);
         }
         if (CollectionUtils.isEmpty(roleIds)) {
             return new EffectiveDataScope(createTenantDataScope(), EFFECTIVE_SOURCE_DEFAULT);
@@ -596,7 +642,13 @@ public class UserAdminService {
                 ? entity.getScopeType().trim().toUpperCase()
                 : RbacDataScopeType.TENANT);
         rule.setScopeColumn(StringUtils.hasText(entity.getScopeColumn()) ? entity.getScopeColumn().trim() : "");
-        rule.setScopeRule(StringUtils.hasText(entity.getScopeRule()) ? entity.getScopeRule().trim() : "");
+        if (isRelationScopeType(rule.getScopeType())) {
+            rule.setScopeRule("");
+            rule.setRelationTypes(parseRelationTypes(entity.getScopeRule()));
+        } else {
+            rule.setScopeRule(StringUtils.hasText(entity.getScopeRule()) ? entity.getScopeRule().trim() : "");
+            rule.setRelationTypes(List.of());
+        }
         return rule;
     }
 
@@ -620,7 +672,13 @@ public class UserAdminService {
                 ? entity.getScopeType().trim().toUpperCase()
                 : RbacDataScopeType.TENANT);
         rule.setScopeColumn(StringUtils.hasText(entity.getScopeColumn()) ? entity.getScopeColumn().trim() : "");
-        rule.setScopeRule(StringUtils.hasText(entity.getScopeRule()) ? entity.getScopeRule().trim() : "");
+        if (isRelationScopeType(rule.getScopeType())) {
+            rule.setScopeRule("");
+            rule.setRelationTypes(parseRelationTypes(entity.getScopeRule()));
+        } else {
+            rule.setScopeRule(StringUtils.hasText(entity.getScopeRule()) ? entity.getScopeRule().trim() : "");
+            rule.setRelationTypes(List.of());
+        }
         return rule;
     }
 
@@ -658,13 +716,19 @@ public class UserAdminService {
         if (RbacDataScopeType.ORG_SUBTREE.equalsIgnoreCase(type)) {
             return 3;
         }
-        if (RbacDataScopeType.ORG.equalsIgnoreCase(type)) {
+        if (RbacDataScopeType.RELATION_SUBTREE.equalsIgnoreCase(type)) {
             return 4;
         }
-        if (RbacDataScopeType.SELF.equalsIgnoreCase(type)) {
+        if (RbacDataScopeType.RELATION.equalsIgnoreCase(type)) {
             return 5;
         }
-        return 6;
+        if (RbacDataScopeType.ORG.equalsIgnoreCase(type)) {
+            return 6;
+        }
+        if (RbacDataScopeType.SELF.equalsIgnoreCase(type)) {
+            return 7;
+        }
+        return 8;
     }
 
     /**
@@ -675,7 +739,7 @@ public class UserAdminService {
      * @author 余炘洋
      * @date 2026-04-11
      */
-    private DataScopeRule normalizeDataScope(DataScopeRule rule) {
+    private DataScopeRule normalizeDataScope(DataScopeRule rule, String tenantId) {
         if (rule == null || !StringUtils.hasText(rule.getScopeType())) {
             return createInheritedDataScope();
         }
@@ -685,11 +749,14 @@ public class UserAdminService {
                 && !RbacDataScopeType.SELF.equals(scopeType)
                 && !RbacDataScopeType.ORG.equals(scopeType)
                 && !RbacDataScopeType.ORG_SUBTREE.equals(scopeType)
+                && !RbacDataScopeType.RELATION.equals(scopeType)
+                && !RbacDataScopeType.RELATION_SUBTREE.equals(scopeType)
                 && !RbacDataScopeType.CUSTOM.equals(scopeType)) {
             throw new BizException(ErrorCode.INVALID_PARAM, "数据权限范围不支持");
         }
         DataScopeRule normalized = new DataScopeRule();
         normalized.setScopeType(scopeType);
+        normalized.setRelationTypes(List.of());
         if (RbacDataScopeType.CUSTOM.equals(scopeType)) {
             String scopeRule = StringUtils.hasText(rule.getScopeRule()) ? rule.getScopeRule().trim() : "";
             if (!StringUtils.hasText(scopeRule)) {
@@ -697,6 +764,17 @@ public class UserAdminService {
             }
             normalized.setScopeColumn("");
             normalized.setScopeRule(scopeRule);
+            return normalized;
+        }
+        if (isRelationScopeType(scopeType)) {
+            List<String> relationTypes = normalizeRelationTypes(rule.getRelationTypes());
+            if (CollectionUtils.isEmpty(relationTypes)) {
+                throw new BizException(ErrorCode.INVALID_PARAM, "关系型数据权限至少选择一个关系类型");
+            }
+            orgGovernanceCatalogService.validateRelationTypes(tenantId, relationTypes, "数据权限关系类型");
+            normalized.setScopeColumn(StringUtils.hasText(rule.getScopeColumn()) ? rule.getScopeColumn().trim() : "");
+            normalized.setScopeRule("");
+            normalized.setRelationTypes(relationTypes);
             return normalized;
         }
         normalized.setScopeColumn(StringUtils.hasText(rule.getScopeColumn()) ? rule.getScopeColumn().trim() : "");
@@ -716,6 +794,7 @@ public class UserAdminService {
         rule.setScopeType(INHERIT_SCOPE);
         rule.setScopeColumn("");
         rule.setScopeRule("");
+        rule.setRelationTypes(List.of());
         return rule;
     }
 
@@ -731,7 +810,82 @@ public class UserAdminService {
         rule.setScopeType(RbacDataScopeType.TENANT);
         rule.setScopeColumn("");
         rule.setScopeRule("");
+        rule.setRelationTypes(List.of());
         return rule;
+    }
+
+    /**
+     * 判断是否为关系型数据权限。
+     *
+     * @param scopeType 范围类型
+     * @return 是否关系型
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private boolean isRelationScopeType(String scopeType) {
+        return RbacDataScopeType.RELATION.equals(scopeType)
+                || RbacDataScopeType.RELATION_SUBTREE.equals(scopeType);
+    }
+
+    /**
+     * 规范化关系类型列表。
+     *
+     * @param relationTypes 原始列表
+     * @return 规范化结果
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> normalizeRelationTypes(List<String> relationTypes) {
+        if (CollectionUtils.isEmpty(relationTypes)) {
+            return List.of();
+        }
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String relationType : relationTypes) {
+            if (StringUtils.hasText(relationType)) {
+                normalized.add(relationType.trim().toUpperCase(Locale.ROOT));
+            }
+        }
+        return new ArrayList<>(normalized);
+    }
+
+    /**
+     * 解析持久化关系类型列表。
+     *
+     * @param rawValue 原始值
+     * @return 关系类型列表
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> parseRelationTypes(String rawValue) {
+        if (!StringUtils.hasText(rawValue)) {
+            return List.of();
+        }
+        String normalized = rawValue.replace('，', ',').replace('；', ',');
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (String item : normalized.split(",")) {
+            if (StringUtils.hasText(item)) {
+                values.add(item.trim().toUpperCase(Locale.ROOT));
+            }
+        }
+        return new ArrayList<>(values);
+    }
+
+    /**
+     * 解析持久化 scopeRule。
+     *
+     * @param rule 数据权限规则
+     * @return 持久化值
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private String resolvePersistedScopeRule(DataScopeRule rule) {
+        if (rule == null) {
+            return "";
+        }
+        if (isRelationScopeType(rule.getScopeType())) {
+            return String.join(",", normalizeRelationTypes(rule.getRelationTypes()));
+        }
+        return rule.getScopeRule();
     }
 
     /**

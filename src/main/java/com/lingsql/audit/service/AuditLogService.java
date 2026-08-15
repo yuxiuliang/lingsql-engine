@@ -360,6 +360,11 @@ public class AuditLogService {
                 || "ROLE".equals(normalized)
                 || "TENANT".equals(normalized)
                 || "MODEL".equals(normalized)
+                || "MENU".equals(normalized)
+                || "TENANT_MENU".equals(normalized)
+                || "MENU_RELEASE".equals(normalized)
+                || "ROLE_SCOPE_RELEASE".equals(normalized)
+                || "USER_SCOPE_RELEASE".equals(normalized)
                 || "ORG_TYPE".equals(normalized)
                 || "ORG_UNIT".equals(normalized)
                 || "ORG_RELATION".equals(normalized);
@@ -402,6 +407,20 @@ public class AuditLogService {
             case "ORG_RELATION_CREATE" -> "创建组织关系";
             case "ORG_RELATION_UPDATE" -> "更新组织关系";
             case "ORG_RELATION_DELETE" -> "删除组织关系";
+            case "MENU_RULE_IMPACT_PREVIEW" -> "预览全局菜单规则影响";
+            case "TENANT_MENU_RULE_IMPACT_PREVIEW" -> "预览租户菜单覆盖影响";
+            case "MENU_RELEASE_CREATE" -> "创建菜单发布单";
+            case "MENU_RELEASE_REVIEW" -> "审核菜单发布单";
+            case "MENU_RELEASE_APPLY" -> "应用菜单发布单";
+            case "MENU_RELEASE_ROLLBACK_CREATE" -> "生成菜单回滚发布单";
+            case "ROLE_SCOPE_RELEASE_CREATE" -> "创建角色数据权限发布单";
+            case "ROLE_SCOPE_RELEASE_REVIEW" -> "审核角色数据权限发布单";
+            case "ROLE_SCOPE_RELEASE_APPLY" -> "应用角色数据权限发布单";
+            case "ROLE_SCOPE_RELEASE_ROLLBACK_CREATE" -> "生成角色数据权限回滚发布单";
+            case "USER_SCOPE_RELEASE_CREATE" -> "创建用户数据权限发布单";
+            case "USER_SCOPE_RELEASE_REVIEW" -> "审核用户数据权限发布单";
+            case "USER_SCOPE_RELEASE_APPLY" -> "应用用户数据权限发布单";
+            case "USER_SCOPE_RELEASE_ROLLBACK_CREATE" -> "生成用户数据权限回滚发布单";
             default -> "执行操作(" + normalized + ")";
         };
     }

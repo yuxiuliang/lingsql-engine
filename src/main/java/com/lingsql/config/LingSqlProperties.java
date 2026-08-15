@@ -5,6 +5,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +22,29 @@ import java.util.List;
 @Validated
 @ConfigurationProperties(prefix = "lingsql")
 public class LingSqlProperties {
+
+    /**
+     * SQL 执行与自愈配置。
+     *
+     * @author 余炘洋
+     * @date 2026-07-29
+     */
+    @Data
+    public static class SqlExecution {
+        /**
+         * 包含首轮在内的最大执行轮次。
+         * 限制上限可避免异常场景重复消耗模型与数据库资源。
+         *
+         * @author 余炘洋
+         * @date 2026-07-29
+         */
+        @Min(1)
+        @Max(5)
+        private int selfHealingMaxAttempts = 3;
+    }
+
+    @Valid
+    private SqlExecution sqlExecution = new SqlExecution();
 
     /**
      * 安全与 SQL 规则配置。
@@ -1024,6 +1050,40 @@ public class LingSqlProperties {
     }
 
     /**
+     * 组织执行治理配置。
+     *
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    @Data
+    public static class OrgExecution {
+        /**
+         * 是否启用组织执行治理。
+         */
+        private boolean enabled = true;
+
+        /**
+         * 是否启用逾期升级。
+         */
+        private boolean overdueEscalationEnabled = true;
+
+        /**
+         * 逾期升级任务 Cron。
+         */
+        private String overdueEscalationCron = "0 0/15 * * * ?";
+
+        /**
+         * 提前多少小时进入“即将逾期”。
+         */
+        private int dueSoonHours = 4;
+
+        /**
+         * 重复升级冷却时间。
+         */
+        private Duration escalationCooldown = Duration.ofHours(4);
+    }
+
+    /**
      * 超级管理员初始化配置。
      *
      * @author 余炘洋
@@ -1159,6 +1219,14 @@ public class LingSqlProperties {
      * @date 2026-02-27
      */
     private TenantLifecycle tenantLifecycle = new TenantLifecycle();
+
+    /**
+     * 组织执行治理配置。
+     *
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private OrgExecution orgExecution = new OrgExecution();
 
     /**
      * 模型资源池配置。

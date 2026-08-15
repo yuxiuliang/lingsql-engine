@@ -71,6 +71,28 @@ public class SqlAgentService {
     }
 
     /**
+     * 失配恢复时强制刷新当前租户的 Schema 缓存。
+     *
+     * @param tenantId 租户标识
+     * @author 余炘洋
+     * @date 2026-07-29
+     */
+    public void refreshSchema(String tenantId) {
+        if (!StringUtils.hasText(tenantId)) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户ID不能为空");
+        }
+        TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId)
+                .orElseThrow(TenantDbConfigErrors::missingConfig);
+        metadataCacheService.evictSchema(tenantId);
+        DataSource dataSource = dataSourceManager.getDataSource(tenantId);
+        List<TableInfo> tables = schemaScanner.scanSchema(tenantId, dataSource, config.getWhiteListTables());
+        if (tables.isEmpty()) {
+            throw new BizException(ErrorCode.CONFIG_INVALID, "当前租户未扫描到可用表结构，无法继续自动纠错");
+        }
+        metadataCacheService.cacheSchema(tenantId, tables);
+    }
+
+    /**
      * 内部 SQL 生成入口，支持重试场景。
      *
      * @param tenantId  租户标识

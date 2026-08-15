@@ -2,7 +2,9 @@ package com.lingsql.rbac.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.organization.entity.OrgUnit;
+import com.lingsql.organization.entity.OrgUnitRelation;
 import com.lingsql.organization.entity.UserOrgMembership;
+import com.lingsql.organization.repository.OrgUnitRelationRepository;
 import com.lingsql.organization.repository.OrgUnitRepository;
 import com.lingsql.organization.repository.UserOrgMembershipRepository;
 import com.lingsql.rbac.entity.RbacPermission;
@@ -37,8 +39,10 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -58,8 +62,35 @@ public class AuthService {
     private static final int MAX_LOGIN_FAILURES = 5;
     private static final Duration LOCK_DURATION = Duration.ofMinutes(30);
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
+    private static final String OWNERSHIP_RELATION = "OWNERSHIP";
+    private static final String SUPERVISE_RELATION = "SUPERVISE";
+    private static final String COOPERATE_RELATION = "COOPERATE";
+    private static final String SERVICE_RELATION = "SERVICE";
+    private static final String MATRIX_RELATION = "MATRIX";
+    private static final Integer ACTIVE_STATUS = 1;
     private static final String LOGIN_ERROR_MESSAGE = "账号、密码或租户信息错误";
     private static final String DUMMY_PASSWORD_HASH = "$2a$10$7EqJtq98hPqEX7fNZaFWoO5.5dQ9K/9e2XcGQnQ8l7uP3BvI6JuaS";
+    private static final List<String> RELATION_SCOPE_ORDER = List.of(
+            SUPERVISE_RELATION,
+            COOPERATE_RELATION,
+            SERVICE_RELATION,
+            OWNERSHIP_RELATION,
+            MATRIX_RELATION
+    );
+    private static final Set<String> SUBTREE_RELATION_TYPES = Set.of(
+            OWNERSHIP_RELATION,
+            SUPERVISE_RELATION,
+            COOPERATE_RELATION,
+            SERVICE_RELATION,
+            MATRIX_RELATION
+    );
+    private static final Set<String> SUPPORTED_RELATION_TYPES = Set.of(
+            OWNERSHIP_RELATION,
+            SUPERVISE_RELATION,
+            COOPERATE_RELATION,
+            SERVICE_RELATION,
+            MATRIX_RELATION
+    );
 
     private final RbacUserRepository userRepository;
     private final RbacUserRoleRepository userRoleRepository;
@@ -76,6 +107,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
     private final OrgUnitRepository orgUnitRepository;
+    private final OrgUnitRelationRepository orgUnitRelationRepository;
     private final UserOrgMembershipRepository userOrgMembershipRepository;
 
     /**
@@ -173,29 +205,26 @@ public class AuthService {
     }
 
     /**
-     * 解析登录用户，支持租户ID为空时按账号唯一识别。
+     * 解析登录用户，要求租户ID与账号同时明确。
      *
-     * @param tenantId 租户ID
-     * @param username 账号
+     * @param tenantId    租户ID
+     * @param username    账号
+     * @param rawPassword 原始密码
      * @return 用户信息
      * @author 余炘洋
      * @date 2026-01-26
      */
     private RbacUser resolveLoginUser(String tenantId, String username, String rawPassword) {
-        if (StringUtils.hasText(tenantId)) {
-            Optional<RbacUser> found = userRepository.findByTenantIdAndUsername(tenantId, username);
-            if (found.isEmpty()) {
-                absorbTiming(rawPassword);
-                throw loginFailure();
-            }
-            return found.get();
-        }
-        List<RbacUser> candidates = userRepository.findTop2ByUsername(username);
-        if (CollectionUtils.isEmpty(candidates) || candidates.size() > 1) {
+        if (!StringUtils.hasText(tenantId) || !StringUtils.hasText(username)) {
             absorbTiming(rawPassword);
             throw loginFailure();
         }
-        return candidates.get(0);
+        Optional<RbacUser> found = userRepository.findByTenantIdAndUsername(tenantId, username);
+        if (found.isEmpty()) {
+            absorbTiming(rawPassword);
+            throw loginFailure();
+        }
+        return found.get();
     }
 
     private void absorbTiming(String rawPassword) {
@@ -229,6 +258,7 @@ public class AuthService {
         response.setExperience(session.isExperience());
         response.setRoles(session.getRoles());
         response.setPermissions(session.getPermissions());
+        response.setRelationScopes(copyRelationScopes(session.getRelationScopes()));
         response.setRefreshToken(refreshToken);
         response.setRefreshExpiresIn(refreshExpiresIn);
         return response;
@@ -279,9 +309,22 @@ public class AuthService {
         session.setRoles(roles == null ? List.of() : roles);
         session.setPermissions(permissions == null ? List.of() : permissions);
         session.setDataScope(sanitizeDataScope(dataScope));
-        session.setOrgUnitIds(resolveUserOrgUnitIds(user.getId()));
-        session.setOrgUnitCodes(resolveUserOrgUnitCodes(session.getOrgUnitIds()));
-        session.setOrgSubtreeCodes(resolveUserOrgSubtreeCodes(user.getTenantId(), session.getOrgUnitIds()));
+        List<Long> orgUnitIds = resolveUserOrgUnitIds(user.getId());
+        List<OrgUnit> memberOrgUnits = resolveUserOrgUnits(orgUnitIds);
+        List<String> memberOrgUnitCodes = collectOrgUnitCodes(memberOrgUnits);
+        List<String> memberOrgTypeCodes = collectOrgTypeCodes(memberOrgUnits);
+        List<String> memberOrgTags = collectOrgTags(memberOrgUnits);
+        List<String> memberOrgSubtreeCodes = resolveUserOrgSubtreeCodes(user.getTenantId(), orgUnitIds);
+        session.setOrgUnitIds(orgUnitIds);
+        session.setMemberOrgUnitCodes(memberOrgUnitCodes);
+        session.setMemberOrgTypeCodes(memberOrgTypeCodes);
+        session.setMemberOrgTags(memberOrgTags);
+        session.setMemberOrgSubtreeCodes(memberOrgSubtreeCodes);
+        ResolvedRelationScopes relationScopes = resolveRelationVisibleCodes(user.getTenantId(), orgUnitIds);
+        session.setRelationDirectScopes(relationScopes.directGroupedCodes());
+        session.setRelationScopes(relationScopes.groupedCodes());
+        session.setOrgUnitCodes(mergeCodes(memberOrgUnitCodes, relationScopes.visibleCodes()));
+        session.setOrgSubtreeCodes(mergeCodes(memberOrgSubtreeCodes, relationScopes.visibleCodes()));
         session.setMenuWhitelist(menuWhitelist == null ? List.of() : menuWhitelist);
         return session;
     }
@@ -301,6 +344,9 @@ public class AuthService {
         boolean experience = user.getIsExperience() != null && user.getIsExperience() == 1;
         if (experience) {
             applyExperiencePolicy(user.getId(), dataScope, menuWhitelist);
+        }
+        if (roleCodes.contains(SUPER_ADMIN_ROLE)) {
+            dataScope = toRule(RbacDataScopeType.ALL, null, null);
         }
         return buildSession(user, roleCodes, permCodes, dataScope, menuWhitelist);
     }
@@ -388,13 +434,19 @@ public class AuthService {
         if (RbacDataScopeType.ORG_SUBTREE.equalsIgnoreCase(type)) {
             return 3;
         }
-        if (RbacDataScopeType.ORG.equalsIgnoreCase(type)) {
+        if (RbacDataScopeType.RELATION_SUBTREE.equalsIgnoreCase(type)) {
             return 4;
         }
-        if (RbacDataScopeType.SELF.equalsIgnoreCase(type)) {
+        if (RbacDataScopeType.RELATION.equalsIgnoreCase(type)) {
             return 5;
         }
-        return 4;
+        if (RbacDataScopeType.ORG.equalsIgnoreCase(type)) {
+            return 6;
+        }
+        if (RbacDataScopeType.SELF.equalsIgnoreCase(type)) {
+            return 7;
+        }
+        return 8;
     }
 
     /**
@@ -453,7 +505,13 @@ public class AuthService {
         DataScopeRule rule = new DataScopeRule();
         rule.setScopeType(StringUtils.hasText(scopeType) ? scopeType.toUpperCase() : RbacDataScopeType.TENANT);
         rule.setScopeColumn(StringUtils.hasText(scopeColumn) ? scopeColumn : "");
-        rule.setScopeRule(StringUtils.hasText(scopeRule) ? scopeRule : "");
+        if (isRelationScopeType(rule.getScopeType())) {
+            rule.setScopeRule("");
+            rule.setRelationTypes(parseRelationTypes(scopeRule));
+        } else {
+            rule.setScopeRule(StringUtils.hasText(scopeRule) ? scopeRule : "");
+            rule.setRelationTypes(List.of());
+        }
         return rule;
     }
 
@@ -472,7 +530,35 @@ public class AuthService {
         if (!StringUtils.hasText(rule.getScopeRule())) {
             rule.setScopeRule("");
         }
+        if (rule.getRelationTypes() == null) {
+            rule.setRelationTypes(new ArrayList<>());
+        }
         return rule;
+    }
+
+    /**
+     * 判断是否为关系型数据权限。
+     *
+     * @param scopeType 范围类型
+     * @return 是否关系型
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private boolean isRelationScopeType(String scopeType) {
+        return RbacDataScopeType.RELATION.equalsIgnoreCase(scopeType)
+                || RbacDataScopeType.RELATION_SUBTREE.equalsIgnoreCase(scopeType);
+    }
+
+    /**
+     * 解析关系类型列表。
+     *
+     * @param rawValue 原始配置
+     * @return 关系类型列表
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> parseRelationTypes(String rawValue) {
+        return parseNormalizedValues(rawValue);
     }
 
     /**
@@ -504,17 +590,98 @@ public class AuthService {
      * @author 余炘洋
      * @date 2026-04-11
      */
-    private List<String> resolveUserOrgUnitCodes(List<Long> orgUnitIds) {
+    private List<OrgUnit> resolveUserOrgUnits(List<Long> orgUnitIds) {
         if (CollectionUtils.isEmpty(orgUnitIds)) {
             return List.of();
         }
+        return orgUnitRepository.findByIdIn(orgUnitIds);
+    }
+
+    /**
+     * 收集直接归属组织编码列表。
+     *
+     * @param orgUnits 直接归属组织节点
+     * @return 组织编码列表
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> collectOrgUnitCodes(List<OrgUnit> orgUnits) {
+        if (CollectionUtils.isEmpty(orgUnits)) {
+            return List.of();
+        }
         LinkedHashSet<String> codes = new LinkedHashSet<>();
-        for (OrgUnit orgUnit : orgUnitRepository.findByIdIn(orgUnitIds)) {
+        for (OrgUnit orgUnit : orgUnits) {
             if (StringUtils.hasText(orgUnit.getUnitCode())) {
-                codes.add(orgUnit.getUnitCode().trim().toUpperCase());
+                codes.add(orgUnit.getUnitCode().trim().toUpperCase(Locale.ROOT));
             }
         }
         return new ArrayList<>(codes);
+    }
+
+    /**
+     * 收集直接归属组织类型编码列表。
+     *
+     * @param orgUnits 直接归属组织节点
+     * @return 组织类型编码列表
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> collectOrgTypeCodes(List<OrgUnit> orgUnits) {
+        if (CollectionUtils.isEmpty(orgUnits)) {
+            return List.of();
+        }
+        LinkedHashSet<String> codes = new LinkedHashSet<>();
+        for (OrgUnit orgUnit : orgUnits) {
+            if (StringUtils.hasText(orgUnit.getTypeCode())) {
+                codes.add(orgUnit.getTypeCode().trim().toUpperCase(Locale.ROOT));
+            }
+        }
+        return new ArrayList<>(codes);
+    }
+
+    /**
+     * 收集直接归属组织标签列表。
+     *
+     * @param orgUnits 直接归属组织节点
+     * @return 组织标签列表
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> collectOrgTags(List<OrgUnit> orgUnits) {
+        if (CollectionUtils.isEmpty(orgUnits)) {
+            return List.of();
+        }
+        LinkedHashSet<String> tags = new LinkedHashSet<>();
+        for (OrgUnit orgUnit : orgUnits) {
+            tags.addAll(parseNormalizedValues(orgUnit.getTagText()));
+        }
+        return new ArrayList<>(tags);
+    }
+
+    /**
+     * 解析并规范化逗号/分号分隔的取值列表。
+     *
+     * @param rawValue 原始文本
+     * @return 规范化后的取值列表
+     * @author 余炘洋
+     * @date 2026-04-12
+     */
+    private List<String> parseNormalizedValues(String rawValue) {
+        if (!StringUtils.hasText(rawValue)) {
+            return List.of();
+        }
+        String normalized = rawValue
+                .replace('，', ',')
+                .replace('；', ';')
+                .replace('\n', ',')
+                .replace('\r', ',');
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (String item : normalized.split("[,;]+")) {
+            if (StringUtils.hasText(item)) {
+                values.add(item.trim().toUpperCase(Locale.ROOT));
+            }
+        }
+        return new ArrayList<>(values);
     }
 
     /**
@@ -531,24 +698,127 @@ public class AuthService {
             return List.of();
         }
         List<OrgUnit> tenantUnits = orgUnitRepository.findByTenantId(tenantId);
-        Map<Long, OrgUnit> selectedMapping = tenantUnits.stream()
+        List<Long> matchedRootIds = tenantUnits.stream()
                 .filter(unit -> unit.getId() != null && orgUnitIds.contains(unit.getId()))
+                .map(OrgUnit::getId)
+                .toList();
+        if (matchedRootIds.isEmpty()) {
+            return List.of();
+        }
+        return resolveSubtreeCodes(tenantUnits, matchedRootIds);
+    }
+
+    /**
+     * 解析组织关系可扩展访问的编码列表。
+     *
+     * <p>当前统一按“目标组织及下级”扩展关系语义：</p>
+     * <p>`OWNERSHIP / SUPERVISE / COOPERATE / SERVICE / MATRIX` 均会并入当前会话可见范围。</p>
+     *
+     * @param tenantId   租户ID
+     * @param orgUnitIds 当前用户直属组织节点
+     * @return 可扩展访问的组织编码列表
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private ResolvedRelationScopes resolveRelationVisibleCodes(String tenantId, List<Long> orgUnitIds) {
+        if (!StringUtils.hasText(tenantId) || CollectionUtils.isEmpty(orgUnitIds)) {
+            return ResolvedRelationScopes.empty();
+        }
+        List<OrgUnitRelation> relations = orgUnitRelationRepository
+                .findByTenantIdAndStatusAndSourceOrgUnitIdIn(tenantId, ACTIVE_STATUS, orgUnitIds);
+        if (CollectionUtils.isEmpty(relations)) {
+            return ResolvedRelationScopes.empty();
+        }
+        List<OrgUnit> tenantUnits = orgUnitRepository.findByTenantId(tenantId);
+        if (CollectionUtils.isEmpty(tenantUnits)) {
+            return ResolvedRelationScopes.empty();
+        }
+        Map<Long, OrgUnit> unitMapping = tenantUnits.stream()
+                .filter(unit -> unit.getId() != null)
+                .collect(Collectors.toMap(OrgUnit::getId, item -> item, (left, right) -> left));
+        LinkedHashSet<String> visibleCodes = new LinkedHashSet<>();
+        Map<String, LinkedHashSet<String>> groupedCodes = new LinkedHashMap<>();
+        Map<String, LinkedHashSet<String>> directGroupedCodes = new LinkedHashMap<>();
+        for (OrgUnitRelation relation : relations) {
+            if (relation == null || relation.getTargetOrgUnitId() == null) {
+                continue;
+            }
+            String relationType = normalizeRelationType(relation.getRelationType());
+            if (!SUPPORTED_RELATION_TYPES.contains(relationType)) {
+                continue;
+            }
+            OrgUnit target = unitMapping.get(relation.getTargetOrgUnitId());
+            if (target == null || !StringUtils.hasText(target.getUnitCode())) {
+                continue;
+            }
+            String normalizedCode = target.getUnitCode().trim().toUpperCase();
+            visibleCodes.add(normalizedCode);
+            LinkedHashSet<String> typeCodes = groupedCodes.computeIfAbsent(relationType, key -> new LinkedHashSet<>());
+            LinkedHashSet<String> directTypeCodes = directGroupedCodes.computeIfAbsent(relationType, key -> new LinkedHashSet<>());
+            typeCodes.add(normalizedCode);
+            directTypeCodes.add(normalizedCode);
+            if (SUBTREE_RELATION_TYPES.contains(relationType)) {
+                List<String> subtreeCodes = resolveSubtreeCodes(tenantUnits, List.of(target.getId()));
+                typeCodes.addAll(subtreeCodes);
+                visibleCodes.addAll(subtreeCodes);
+            }
+        }
+        if (groupedCodes.isEmpty()) {
+            return ResolvedRelationScopes.empty();
+        }
+        Map<String, List<String>> normalizedGroupedCodes = new LinkedHashMap<>();
+        Map<String, List<String>> normalizedDirectGroupedCodes = new LinkedHashMap<>();
+        for (String relationType : RELATION_SCOPE_ORDER) {
+            LinkedHashSet<String> codes = groupedCodes.get(relationType);
+            if (codes == null || codes.isEmpty()) {
+                codes = new LinkedHashSet<>();
+            }
+            if (!codes.isEmpty()) {
+                normalizedGroupedCodes.put(relationType, new ArrayList<>(codes));
+            }
+            LinkedHashSet<String> directCodes = directGroupedCodes.get(relationType);
+            if (directCodes != null && !directCodes.isEmpty()) {
+                normalizedDirectGroupedCodes.put(relationType, new ArrayList<>(directCodes));
+            }
+        }
+        return new ResolvedRelationScopes(normalizedGroupedCodes, normalizedDirectGroupedCodes, new ArrayList<>(visibleCodes));
+    }
+
+    /**
+     * 按根节点解析自身及下级组织编码。
+     *
+     * @param tenantUnits 租户内全部组织节点
+     * @param rootIds     根节点ID列表
+     * @return 编码列表
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private List<String> resolveSubtreeCodes(List<OrgUnit> tenantUnits, List<Long> rootIds) {
+        if (CollectionUtils.isEmpty(tenantUnits) || CollectionUtils.isEmpty(rootIds)) {
+            return List.of();
+        }
+        Map<Long, OrgUnit> rootMapping = tenantUnits.stream()
+                .filter(unit -> unit.getId() != null && rootIds.contains(unit.getId()))
                 .collect(Collectors.toMap(OrgUnit::getId, item -> item));
-        if (selectedMapping.isEmpty()) {
+        if (rootMapping.isEmpty()) {
             return List.of();
         }
         LinkedHashSet<String> codes = new LinkedHashSet<>();
         for (OrgUnit unit : tenantUnits) {
-            if (!StringUtils.hasText(unit.getUnitCode())) {
+            if (!StringUtils.hasText(unit.getUnitCode()) || unit.getId() == null) {
                 continue;
             }
-            for (OrgUnit selected : selectedMapping.values()) {
-                if (!StringUtils.hasText(selected.getTreePath())) {
+            for (OrgUnit root : rootMapping.values()) {
+                if (root == null || root.getId() == null) {
                     continue;
                 }
-                if (Objects.equals(unit.getId(), selected.getId())
-                        || (StringUtils.hasText(unit.getTreePath())
-                        && unit.getTreePath().startsWith(selected.getTreePath() + "/"))) {
+                if (Objects.equals(unit.getId(), root.getId())) {
+                    codes.add(unit.getUnitCode().trim().toUpperCase());
+                    break;
+                }
+                if (StringUtils.hasText(root.getTreePath())
+                        && StringUtils.hasText(unit.getTreePath())
+                        && unit.getTreePath().startsWith(root.getTreePath() + "/")) {
                     codes.add(unit.getUnitCode().trim().toUpperCase());
                     break;
                 }
@@ -557,8 +827,86 @@ public class AuthService {
         return new ArrayList<>(codes);
     }
 
-    private boolean isSuperAdmin(RbacUserSession session) {
-        return session != null && session.getRoles() != null && session.getRoles().contains(SUPER_ADMIN_ROLE);
+    /**
+     * 合并组织编码列表并去重，保持原有顺序优先。
+     *
+     * @param primary   主列表
+     * @param secondary 追加列表
+     * @return 合并结果
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private List<String> mergeCodes(List<String> primary, List<String> secondary) {
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        if (!CollectionUtils.isEmpty(primary)) {
+            merged.addAll(primary.stream()
+                    .filter(StringUtils::hasText)
+                    .map(String::trim)
+                    .map(item -> item.toUpperCase(Locale.ROOT))
+                    .toList());
+        }
+        if (!CollectionUtils.isEmpty(secondary)) {
+            merged.addAll(secondary.stream()
+                    .filter(StringUtils::hasText)
+                    .map(String::trim)
+                    .map(item -> item.toUpperCase(Locale.ROOT))
+                    .toList());
+        }
+        return new ArrayList<>(merged);
+    }
+
+    /**
+     * 标准化组织关系类型。
+     *
+     * @param relationType 原始关系类型
+     * @return 标准化结果
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private String normalizeRelationType(String relationType) {
+        if (!StringUtils.hasText(relationType)) {
+            return "";
+        }
+        return relationType.trim().toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * 复制关系语义映射，避免响应对象与会话共享可变引用。
+     *
+     * @param relationScopes 关系语义映射
+     * @return 复制后的映射
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private Map<String, List<String>> copyRelationScopes(Map<String, List<String>> relationScopes) {
+        Map<String, List<String>> copied = new LinkedHashMap<>();
+        if (relationScopes == null || relationScopes.isEmpty()) {
+            return copied;
+        }
+        for (Map.Entry<String, List<String>> entry : relationScopes.entrySet()) {
+            if (!StringUtils.hasText(entry.getKey()) || CollectionUtils.isEmpty(entry.getValue())) {
+                continue;
+            }
+            copied.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+        }
+        return copied;
+    }
+
+    /**
+     * 关系语义解析结果。
+     *
+     * @param groupedCodes 按关系类型分组的编码
+     * @param visibleCodes 合并后的可见编码
+     * @author 余炘洋
+     * @date 2026-04-11
+     */
+    private record ResolvedRelationScopes(Map<String, List<String>> groupedCodes,
+                                         Map<String, List<String>> directGroupedCodes,
+                                         List<String> visibleCodes) {
+
+        private static ResolvedRelationScopes empty() {
+            return new ResolvedRelationScopes(new LinkedHashMap<>(), new LinkedHashMap<>(), List.of());
+        }
     }
 
     private Duration resolveRefreshTtl() {

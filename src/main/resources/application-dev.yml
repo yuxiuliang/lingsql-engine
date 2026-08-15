@@ -2,11 +2,7 @@ spring:
   application:
     name: lingsql-engine
 
-  # 1. 开启 Java 21 虚拟线程（高并发核心）
-  threads:
-    virtual:
-      enabled: true
-  # 2. 管理库配置 (存放租户连接信息的表)
+  # 1. 管理库配置 (存放租户连接信息的表)
   datasource:
     url: jdbc:mysql://localhost:3306/lingsql_engine_db?useSSL=false&allowPublicKeyRetrieval=true
     username: root
@@ -18,7 +14,7 @@ spring:
       idle-timeout: 600000
       connection-timeout: 30000
 
-  # 3. JPA 配置
+  # 2. JPA 配置
   jpa:
     hibernate:
       ddl-auto: update # 自动建表/更新表结构
@@ -67,6 +63,8 @@ management:
       enabled: true
 
 lingsql:
+  sql-execution:
+    self-healing-max-attempts: ${LINGSQL_SQL_EXECUTION_SELF_HEALING_MAX_ATTEMPTS:3}
   security:
     default-limit: 100
     data-encryption-enabled: ${LINGSQL_DATA_ENCRYPTION_ENABLED:true}
@@ -144,6 +142,12 @@ lingsql:
     risk-alert-cron: "${LINGSQL_TENANT_RISK_ALERT_CRON:0 30 9 * * ?}"
     risk-alert-threshold: ${LINGSQL_TENANT_RISK_ALERT_THRESHOLD:70}
     risk-alert-top-n: ${LINGSQL_TENANT_RISK_ALERT_TOP_N:20}
+  org-execution:
+    enabled: ${LINGSQL_ORG_EXECUTION_ENABLED:true}
+    overdue-escalation-enabled: ${LINGSQL_ORG_EXECUTION_OVERDUE_ESCALATION_ENABLED:true}
+    overdue-escalation-cron: "${LINGSQL_ORG_EXECUTION_OVERDUE_ESCALATION_CRON:0 0/15 * * * ?}"
+    due-soon-hours: ${LINGSQL_ORG_EXECUTION_DUE_SOON_HOURS:4}
+    escalation-cooldown: ${LINGSQL_ORG_EXECUTION_ESCALATION_COOLDOWN:4h}
   chat:
     max-question-length: 4000
   ai:

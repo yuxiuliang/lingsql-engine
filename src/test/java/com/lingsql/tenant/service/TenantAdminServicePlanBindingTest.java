@@ -5,6 +5,8 @@ import com.lingsql.billing.entity.BillingPlan;
 import com.lingsql.billing.repository.BillingPlanRepository;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.executor.SqlTaskTracker;
+import com.lingsql.ops.OpsAlertService;
+import com.lingsql.organization.service.OrganizationAdminService;
 import com.lingsql.rbac.repository.RbacPermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleDataScopeRepository;
 import com.lingsql.rbac.repository.RbacRolePermissionRepository;
@@ -65,12 +67,14 @@ class TenantAdminServicePlanBindingTest {
         TenantUpdateRequest request = new TenantUpdateRequest();
         request.setTenantName("admin");
         request.setPlanName("测试");
+        request.setNotificationChannels(List.of("webhook"));
 
         TenantView view = service.updateTenant(1L, request);
 
         assertEquals(9999999L, view.getQuotaBalance());
         assertEquals("PRO", view.getServiceLevel());
         assertEquals("ENTERPRISE", view.getTenantType());
+        assertEquals(List.of("webhook"), view.getNotificationChannels());
         verify(billingBalanceService).resetBalance("1", 9999999L);
     }
 
@@ -90,7 +94,9 @@ class TenantAdminServicePlanBindingTest {
                 Mockito.mock(SqlTaskTracker.class),
                 billingBalanceService,
                 billingPlanRepository,
-                lifecycleService
+                lifecycleService,
+                Mockito.mock(OrganizationAdminService.class),
+                Mockito.mock(OpsAlertService.class)
         );
     }
 }

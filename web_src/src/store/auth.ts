@@ -1,5 +1,5 @@
 import {defineStore} from 'pinia';
-import type {MenuView, UserProfileView} from '@/api/auth';
+import type {MenuView, RelationScopeMap, UserProfileView} from '@/api/auth';
 
 /**
  * 读取本地数组缓存。
@@ -23,6 +23,36 @@ const readArray = (key: string): string[] => {
 };
 
 /**
+ * 读取本地关系语义缓存。
+ *
+ * @param key 缓存键
+ * @return 关系语义映射
+ * @author 余炘洋
+ * @date 2026-04-11
+ */
+const readRelationScopeMap = (key: string): RelationScopeMap => {
+  const raw = localStorage.getItem(key);
+  if (!raw) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    return Object.entries(parsed).reduce<RelationScopeMap>((acc, [relationType, codes]) => {
+      if (!relationType || !Array.isArray(codes)) {
+        return acc;
+      }
+      acc[relationType] = codes.filter((item): item is string => typeof item === 'string' && !!item.trim());
+      return acc;
+    }, {});
+  } catch (error) {
+    return {};
+  }
+};
+
+/**
  * 认证状态定义。
  *
  * @author 余炘洋
@@ -41,6 +71,7 @@ export interface AuthState {
   experience: boolean;
   roles: string[];
   permissions: string[];
+  relationScopes: RelationScopeMap;
   menus: MenuView[];
   sessionReady: boolean;
 }
@@ -65,6 +96,7 @@ export const useAuthStore = defineStore('auth', {
     experience: localStorage.getItem('experience') === '1',
     roles: readArray('roles'),
     permissions: readArray('permissions'),
+    relationScopes: readRelationScopeMap('relationScopes'),
     menus: [],
     sessionReady: false
   }),
@@ -86,6 +118,20 @@ export const useAuthStore = defineStore('auth', {
      */
     isAuthenticated: (state): boolean => {
       return state.sessionReady && !!state.userId;
+    },
+    /**
+     * 判断是否具备指定权限。
+     *
+     * @author 余炘洋
+     * @date 2026-04-13
+     */
+    hasPermission: (state) => {
+      return (permissionCode: string): boolean => {
+        if (!permissionCode) {
+          return false;
+        }
+        return (state.permissions || []).includes(permissionCode);
+      };
     }
   },
   actions: {
@@ -109,7 +155,8 @@ export const useAuthStore = defineStore('auth', {
       roles: string[] = [],
       permissions: string[] = [],
       tenantName = '',
-      refreshToken = ''
+      refreshToken = '',
+      relationScopes: RelationScopeMap = {}
     ) {
       this.token = token || '';
       this.refreshToken = refreshToken || '';
@@ -121,6 +168,7 @@ export const useAuthStore = defineStore('auth', {
       this.experience = experience;
       this.roles = roles;
       this.permissions = permissions;
+      this.relationScopes = relationScopes || {};
       this.sessionReady = true;
       if (this.isSysAdmin) {
         this.activeTenantId = '';
@@ -143,6 +191,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem('experience', this.experience ? '1' : '0');
       localStorage.setItem('roles', JSON.stringify(roles || []));
       localStorage.setItem('permissions', JSON.stringify(permissions || []));
+      localStorage.setItem('relationScopes', JSON.stringify(this.relationScopes || {}));
       localStorage.setItem('activeTenantId', this.activeTenantId || '');
       localStorage.setItem('activeTenantName', this.activeTenantName || '');
     },
@@ -175,6 +224,7 @@ export const useAuthStore = defineStore('auth', {
       this.experience = false;
       this.roles = [];
       this.permissions = [];
+      this.relationScopes = {};
       this.menus = [];
       this.sessionReady = false;
       localStorage.removeItem('userId');
@@ -189,6 +239,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('experience');
       localStorage.removeItem('roles');
       localStorage.removeItem('permissions');
+      localStorage.removeItem('relationScopes');
     },
     /**
      * 用后端会话信息刷新状态。
@@ -208,6 +259,7 @@ export const useAuthStore = defineStore('auth', {
       this.experience = !!profile.experience;
       this.roles = profile.roles || [];
       this.permissions = profile.permissions || [];
+      this.relationScopes = profile.relationScopes || {};
       if (this.isSysAdmin) {
         if (!this.activeTenantId) {
           this.activeTenantId = '';
@@ -227,6 +279,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.setItem('experience', this.experience ? '1' : '0');
       localStorage.setItem('roles', JSON.stringify(this.roles || []));
       localStorage.setItem('permissions', JSON.stringify(this.permissions || []));
+      localStorage.setItem('relationScopes', JSON.stringify(this.relationScopes || {}));
       localStorage.setItem('activeTenantId', this.activeTenantId || '');
       localStorage.setItem('activeTenantName', this.activeTenantName || '');
     },

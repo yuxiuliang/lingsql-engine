@@ -3,31 +3,82 @@ import {computed, reactive, ref, watch} from 'vue';
 import {ElMessage} from 'element-plus';
 import {useAuthStore} from '@/store/auth';
 import {
+  fetchOrgGovernanceCatalog,
+  fetchOrgUnits,
+  type OrgGovernanceCatalogView,
+  type OrgGovernanceOptionView,
+  type OrgUnitView
+} from '@/api/organization';
+import {
+  applyRoleScopeReleaseRecord,
+  createRoleScopeReleaseRecord,
+  createRollbackRoleScopeReleaseRecord,
   createRole,
+  DataScopeBatchPreviewView,
+  DataScopeBatchScenarioRequest,
+  DataScopePreviewView,
   DataScopeRule,
   fetchPermissions,
   fetchRoles,
+  fetchRoleScopeReleaseRecords,
   PermissionView,
+  previewRoleDataScope,
+  previewRoleDataScopeBatch,
   RoleCreateRequest,
+  RoleDataScopePreviewRequest,
+  RoleScopeReleaseCreateRequest,
+  RoleScopeReleaseRollbackRequest,
+  RoleScopeReleaseReviewRequest,
+  RoleScopeReleaseView,
   RoleUpdateRequest,
   RoleView,
+  reviewRoleScopeReleaseRecord,
   updateRole
 } from '@/api/rbac';
 
 const authStore = useAuthStore();
 const roles = ref<RoleView[]>([]);
 const permissions = ref<PermissionView[]>([]);
+const orgTree = ref<OrgUnitView[]>([]);
 const loading = ref(false);
 const dialogVisible = ref(false);
 const editingId = ref<number | null>(null);
+const previewLoading = ref(false);
+const previewResult = ref<DataScopePreviewView | null>(null);
+const batchPreviewLoading = ref(false);
+const batchPreviewResult = ref<DataScopeBatchPreviewView | null>(null);
+const previewOrgUnitIds = ref<number[]>([]);
+const baselineDataScope = ref<DataScopeRule | null>(null);
+const sampleSql = ref('');
+const governanceCatalog = ref<OrgGovernanceCatalogView | null>(null);
+const releaseRecords = ref<RoleScopeReleaseView[]>([]);
+const releaseLoading = ref(false);
+const releaseSubmitting = ref(false);
 const scopeTypeOptions = [
   {label: '全部数据', value: 'ALL'},
   {label: '本租户', value: 'TENANT'},
   {label: '仅本人', value: 'SELF'},
   {label: '指定组织', value: 'ORG'},
   {label: '组织及下级', value: 'ORG_SUBTREE'},
+  {label: '关系目标组织', value: 'RELATION'},
+  {label: '关系目标组织及下级', value: 'RELATION_SUBTREE'},
   {label: '自定义条件', value: 'CUSTOM'}
 ];
+
+const defaultRelationTypeLabelMapping: Record<string, string> = {
+  SUPERVISE: '主管',
+  COOPERATE: '协同',
+  SERVICE: '服务',
+  OWNERSHIP: '归口',
+  MATRIX: '矩阵'
+};
+
+const releaseStatusLabelMap: Record<string, string> = {
+  DRAFT: '待审核',
+  APPROVED: '已通过',
+  REJECTED: '已驳回',
+  APPLIED: '已应用'
+};
 
 const form = reactive<RoleCreateRequest & RoleUpdateRequest>({
   tenantId: '',
@@ -38,9 +89,14 @@ const form = reactive<RoleCreateRequest & RoleUpdateRequest>({
   dataScope: {
     scopeType: 'TENANT',
     scopeColumn: '',
-    scopeRule: ''
+    scopeRule: '',
+    relationTypes: []
   }
 });
+
+const batchScenarios = ref<DataScopeBatchScenarioRequest[]>([
+  {scenarioName: '样本场景 1', orgUnitIds: [], sampleSql: ''}
+]);
 
 /**
  * 创建默认数据权限表单。
@@ -53,7 +109,8 @@ const createDefaultDataScope = (): DataScopeRule => {
   return {
     scopeType: 'TENANT',
     scopeColumn: '',
-    scopeRule: ''
+    scopeRule: '',
+    relationTypes: []
   };
 };
 
@@ -72,6 +129,8 @@ const formatScopeType = (scopeType?: string) => {
     SELF: '仅本人',
     ORG: '指定组织',
     ORG_SUBTREE: '组织及下级',
+    RELATION: '关系目标组织',
+    RELATION_SUBTREE: '关系目标组织及下级',
     CUSTOM: '自定义条件'
   };
   return mapping[scopeType || 'TENANT'] || scopeType || '本租户';
@@ -91,7 +150,8 @@ const buildDataScopePayload = (): DataScopeRule => {
   return {
     scopeType,
     scopeColumn,
-    scopeRule
+    scopeRule,
+    relationTypes: (form.dataScope?.relationTypes || []).filter(Boolean)
   };
 };
 
@@ -103,6 +163,13 @@ const buildDataScopePayload = (): DataScopeRule => {
  * @date 2026-04-11
  */
 const validateDataScope = () => {
+  if (form.dataScope?.scopeType === 'RELATION' || form.dataScope?.scopeType === 'RELATION_SUBTREE') {
+    if ((form.dataScope?.relationTypes || []).length) {
+      return true;
+    }
+    ElMessage.warning('选择关系型数据权限时必须至少选择一个关系类型');
+    return false;
+  }
   if (form.dataScope?.scopeType !== 'CUSTOM') {
     return true;
   }
@@ -153,6 +220,61 @@ const hasTenantSelected = computed(() => {
   return !isSysAdmin.value || !!authStore.activeTenantId;
 });
 
+const resolveCatalogOptions = (
+  options?: OrgGovernanceOptionView[],
+  fallbackNameMapping?: Record<string, string>
+) => {
+  const mapping = new Map<string, {label: string; value: string}>();
+  (options || []).forEach((item) => {
+    if (!item?.code) {
+      return;
+    }
+    const code = item.code.trim().toUpperCase();
+    const name = item.name?.trim() || fallbackNameMapping?.[code] || code;
+    mapping.set(code, {
+      label: name === code ? code : `${name} (${code})`,
+      value: code
+    });
+  });
+  Object.entries(fallbackNameMapping || {}).forEach(([code, name]) => {
+    if (!mapping.has(code)) {
+      mapping.set(code, {
+        label: `${name} (${code})`,
+        value: code
+      });
+    }
+  });
+  return Array.from(mapping.values());
+};
+
+const relationTypeOptions = computed(() => resolveCatalogOptions(
+  governanceCatalog.value?.relationTypeOptions,
+  defaultRelationTypeLabelMapping
+));
+
+const currentUserId = computed(() => authStore.userId || 0);
+
+/**
+ * 组织节点选项。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+const orgOptions = computed(() => {
+  const options: Array<{label: string; value: number}> = [];
+  const walk = (nodes: OrgUnitView[], prefix = '') => {
+    nodes.forEach((node) => {
+      options.push({
+        label: `${prefix}${node.unitName} [${node.typeName || node.typeCode}]`,
+        value: node.id
+      });
+      walk(node.children || [], `${prefix}└ `);
+    });
+  };
+  walk(orgTree.value);
+  return options;
+});
+
 /**
  * 加载角色列表。
  *
@@ -189,6 +311,61 @@ const loadPermissions = async () => {
 };
 
 /**
+ * 加载组织树。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+const loadOrgs = async () => {
+  try {
+    if (!hasTenantSelected.value) {
+      orgTree.value = [];
+      return;
+    }
+    orgTree.value = await fetchOrgUnits(activeTenantId.value || undefined);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '加载组织架构失败';
+    if (message.includes('无权限')) {
+      orgTree.value = [];
+      return;
+    }
+    ElMessage.error(message);
+  }
+};
+
+const loadGovernanceCatalog = async () => {
+  try {
+    if (!hasTenantSelected.value) {
+      governanceCatalog.value = null;
+      return;
+    }
+    governanceCatalog.value = await fetchOrgGovernanceCatalog(activeTenantId.value || undefined);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '加载组织治理字典失败';
+    if (message.includes('无权限')) {
+      governanceCatalog.value = null;
+      return;
+    }
+    ElMessage.error(message);
+  }
+};
+
+const loadReleaseRecords = async () => {
+  try {
+    if (!hasTenantSelected.value) {
+      releaseRecords.value = [];
+      return;
+    }
+    releaseLoading.value = true;
+    releaseRecords.value = await fetchRoleScopeReleaseRecords(activeTenantId.value || undefined);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载角色数据权限发布单失败');
+  } finally {
+    releaseLoading.value = false;
+  }
+};
+
+/**
  * 新增角色。
  *
  * @author 余炘洋
@@ -208,6 +385,12 @@ const handleCreate = () => {
     permIds: [],
     dataScope: createDefaultDataScope()
   });
+  previewOrgUnitIds.value = [];
+  previewResult.value = null;
+  batchScenarios.value = [{scenarioName: '样本场景 1', orgUnitIds: [], sampleSql: ''}];
+  batchPreviewResult.value = null;
+  baselineDataScope.value = createDefaultDataScope();
+  sampleSql.value = '';
   dialogVisible.value = true;
 };
 
@@ -229,9 +412,21 @@ const handleEdit = (row: RoleView) => {
     dataScope: {
       scopeType: row.dataScope?.scopeType || 'TENANT',
       scopeColumn: row.dataScope?.scopeColumn || '',
-      scopeRule: row.dataScope?.scopeRule || ''
+      scopeRule: row.dataScope?.scopeRule || '',
+      relationTypes: row.dataScope?.relationTypes || []
     }
   });
+  previewOrgUnitIds.value = [];
+  previewResult.value = null;
+  batchScenarios.value = [{scenarioName: '样本场景 1', orgUnitIds: row ? [] : [], sampleSql: ''}];
+  batchPreviewResult.value = null;
+  baselineDataScope.value = {
+    scopeType: row.dataScope?.scopeType || 'TENANT',
+    scopeColumn: row.dataScope?.scopeColumn || '',
+    scopeRule: row.dataScope?.scopeRule || '',
+    relationTypes: row.dataScope?.relationTypes || []
+  };
+  sampleSql.value = '';
   dialogVisible.value = true;
 };
 
@@ -300,12 +495,194 @@ const handleRefresh = () => {
   loadRoles();
 };
 
+/**
+ * 预览角色数据权限命中范围。
+ *
+ * @author 余炘洋
+ * @date 2026-04-12
+ */
+const handlePreviewDataScope = async () => {
+  const payload: RoleDataScopePreviewRequest = {
+    tenantId: activeTenantId.value || undefined,
+    dataScope: buildDataScopePayload(),
+    roleId: editingId.value || undefined,
+    baselineDataScope: baselineDataScope.value || createDefaultDataScope(),
+    orgUnitIds: previewOrgUnitIds.value || [],
+    sampleSql: sampleSql.value || undefined
+  };
+  previewLoading.value = true;
+  try {
+    previewResult.value = await previewRoleDataScope(payload);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '预览数据权限失败');
+  } finally {
+    previewLoading.value = false;
+  }
+};
+
+const handleAddBatchScenario = () => {
+  batchScenarios.value.push({
+    scenarioName: `样本场景 ${batchScenarios.value.length + 1}`,
+    orgUnitIds: [],
+    sampleSql: sampleSql.value || ''
+  });
+};
+
+const handleRemoveBatchScenario = (index: number) => {
+  if (batchScenarios.value.length <= 1) {
+    ElMessage.warning('至少保留一个样本场景');
+    return;
+  }
+  batchScenarios.value.splice(index, 1);
+};
+
+const handlePreviewBatchDataScope = async () => {
+  const scenarios = batchScenarios.value.map((item, index) => ({
+    scenarioCode: item.scenarioCode || `SCENARIO_${index + 1}`,
+    scenarioName: item.scenarioName || `样本场景 ${index + 1}`,
+    orgUnitIds: item.orgUnitIds || [],
+    sampleSql: item.sampleSql || undefined
+  }));
+  const payload: RoleDataScopePreviewRequest = {
+    tenantId: activeTenantId.value || undefined,
+    dataScope: buildDataScopePayload(),
+    roleId: editingId.value || undefined,
+    baselineDataScope: baselineDataScope.value || createDefaultDataScope(),
+    scenarios
+  };
+  batchPreviewLoading.value = true;
+  try {
+    batchPreviewResult.value = await previewRoleDataScopeBatch(payload);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量预览数据权限失败');
+  } finally {
+    batchPreviewLoading.value = false;
+  }
+};
+
+const handleCreateScopeRelease = async () => {
+  if (!editingId.value) {
+    ElMessage.warning('请先选择已有角色后再生成发布单');
+    return;
+  }
+  const changeRemark = window.prompt('可选：请输入本次角色数据权限变更说明', '') || '';
+  const payload: RoleScopeReleaseCreateRequest = {
+    tenantId: activeTenantId.value || undefined,
+    changeRemark: changeRemark.trim() || undefined,
+    previewRequest: {
+      tenantId: activeTenantId.value || undefined,
+      roleId: editingId.value,
+      dataScope: buildDataScopePayload(),
+      baselineDataScope: baselineDataScope.value || createDefaultDataScope(),
+      orgUnitIds: previewOrgUnitIds.value || [],
+      sampleSql: sampleSql.value || undefined
+    }
+  };
+  releaseSubmitting.value = true;
+  try {
+    await createRoleScopeReleaseRecord(payload);
+    ElMessage.success('角色数据权限发布单已创建');
+    await loadReleaseRecords();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '创建角色数据权限发布单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
+const handleReviewScopeRelease = async (record: RoleScopeReleaseView, decision: 'APPROVED' | 'REJECTED') => {
+  if (!record?.id) {
+    return;
+  }
+  const reviewComment = window.prompt(
+    decision === 'APPROVED' ? '可选：请输入审核通过说明' : '可选：请输入驳回原因',
+    ''
+  ) || '';
+  const payload: RoleScopeReleaseReviewRequest = {
+    decision,
+    reviewComment: reviewComment.trim() || undefined
+  };
+  releaseSubmitting.value = true;
+  try {
+    await reviewRoleScopeReleaseRecord(record.id, payload);
+    ElMessage.success(decision === 'APPROVED' ? '发布单已审核通过' : '发布单已驳回');
+    await loadReleaseRecords();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '审核角色数据权限发布单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
+const handleApplyScopeRelease = async (record: RoleScopeReleaseView) => {
+  if (!record?.id) {
+    return;
+  }
+  if (!window.confirm(`确认应用发布单“${record.releaseTitle || record.roleName || record.roleCode}”吗？`)) {
+    return;
+  }
+  releaseSubmitting.value = true;
+  try {
+    await applyRoleScopeReleaseRecord(record.id);
+    ElMessage.success('角色数据权限发布单已应用');
+    await Promise.all([
+      loadRoles(),
+      loadReleaseRecords()
+    ]);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '应用角色数据权限发布单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
+const handleCreateRollbackScopeRelease = async (record: RoleScopeReleaseView) => {
+  if (!record?.id) {
+    return;
+  }
+  const changeRemark = window.prompt('可选：请输入本次角色数据权限回滚说明', '') || '';
+  const payload: RoleScopeReleaseRollbackRequest = {
+    changeRemark: changeRemark.trim() || undefined
+  };
+  releaseSubmitting.value = true;
+  try {
+    await createRollbackRoleScopeReleaseRecord(record.id, payload);
+    ElMessage.success('角色数据权限回滚单已生成');
+    await loadReleaseRecords();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '生成角色数据权限回滚单失败');
+  } finally {
+    releaseSubmitting.value = false;
+  }
+};
+
+const resolveReleaseStatusLabel = (status?: string) => {
+  return releaseStatusLabelMap[status || 'DRAFT'] || status || '待审核';
+};
+
+const resolveReleaseStatusType = (status?: string) => {
+  if (status === 'APPROVED') {
+    return 'success';
+  }
+  if (status === 'REJECTED') {
+    return 'danger';
+  }
+  if (status === 'APPLIED') {
+    return 'primary';
+  }
+  return 'warning';
+};
+
 watch(
   () => activeTenantId.value,
   () => {
     dialogVisible.value = false;
     editingId.value = null;
+    previewResult.value = null;
     loadRoles();
+    loadOrgs();
+    loadGovernanceCatalog();
+    loadReleaseRecords();
   },
   {immediate: true}
 );
@@ -354,7 +731,87 @@ loadPermissions();
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" title="角色信息" width="560px" :close-on-click-modal="false">
+    <el-card v-if="hasTenantSelected" class="card" shadow="never">
+      <div class="toolbar">
+        <div class="filters">
+          <span class="tips">角色数据权限发布单</span>
+        </div>
+        <div class="toolbar-actions">
+          <el-button size="small" :loading="releaseLoading" @click="loadReleaseRecords">刷新发布单</el-button>
+        </div>
+      </div>
+
+      <el-table :data="releaseRecords" border v-loading="releaseLoading">
+        <el-table-column prop="createTime" label="创建时间" min-width="160"/>
+        <el-table-column prop="releaseTitle" label="发布单标题" min-width="220" show-overflow-tooltip/>
+        <el-table-column prop="roleName" label="角色" min-width="160" show-overflow-tooltip/>
+        <el-table-column label="状态" width="110">
+          <template #default="{row}">
+            <el-tag :type="resolveReleaseStatusType(row.releaseStatus)">{{ resolveReleaseStatusLabel(row.releaseStatus) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="impactSummary" label="影响摘要" min-width="260" show-overflow-tooltip/>
+        <el-table-column prop="requestedByName" label="创建人" min-width="140" show-overflow-tooltip/>
+        <el-table-column prop="reviewedByName" label="审核人" min-width="140" show-overflow-tooltip/>
+        <el-table-column prop="appliedByName" label="应用人" min-width="140" show-overflow-tooltip/>
+        <el-table-column label="操作" width="230" fixed="right">
+          <template #default="{row}">
+            <el-tag
+              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId === currentUserId"
+              type="warning"
+              effect="plain"
+            >
+              需他人审核
+            </el-tag>
+            <el-button
+              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId !== currentUserId"
+              link
+              type="success"
+              :disabled="releaseSubmitting"
+              @click="handleReviewScopeRelease(row, 'APPROVED')"
+            >
+              审核通过
+            </el-button>
+            <el-button
+              v-if="row.releaseStatus === 'DRAFT' && row.requestedByUserId !== currentUserId"
+              link
+              type="danger"
+              :disabled="releaseSubmitting"
+              @click="handleReviewScopeRelease(row, 'REJECTED')"
+            >
+              驳回
+            </el-button>
+            <el-tag
+              v-if="row.releaseStatus === 'APPROVED' && row.requestedByUserId === currentUserId"
+              type="warning"
+              effect="plain"
+            >
+              需他人应用
+            </el-tag>
+            <el-button
+              v-if="row.releaseStatus === 'APPROVED' && row.requestedByUserId !== currentUserId"
+              link
+              type="primary"
+              :disabled="releaseSubmitting"
+              @click="handleApplyScopeRelease(row)"
+            >
+              应用
+            </el-button>
+            <el-button
+              v-if="row.releaseStatus === 'APPLIED'"
+              link
+              type="warning"
+              :disabled="releaseSubmitting"
+              @click="handleCreateRollbackScopeRelease(row)"
+            >
+              生成回滚单
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-dialog v-model="dialogVisible" title="角色信息" width="760px" :close-on-click-modal="false">
       <el-form label-width="110px">
         <el-form-item label="当前租户" v-if="isSysAdmin">
           <el-tag type="success">{{ activeTenantName || activeTenantId || '未选择' }}</el-tag>
@@ -393,10 +850,22 @@ loadPermissions();
             title="组织范围会基于用户绑定的组织归属生效，角色本身不直接选择组织节点。"
           />
         </el-form-item>
+        <el-form-item v-if="form.dataScope?.scopeType === 'RELATION' || form.dataScope?.scopeType === 'RELATION_SUBTREE'">
+          <el-alert
+            type="warning"
+            :closable="false"
+            title="关系型数据权限会基于用户所属组织的关系语义命中目标组织，适用于主管、服务、矩阵等跨组织访问场景。"
+          />
+        </el-form-item>
+        <el-form-item label="关系类型" v-if="form.dataScope?.scopeType === 'RELATION' || form.dataScope?.scopeType === 'RELATION_SUBTREE'">
+          <el-select v-model="form.dataScope!.relationTypes" multiple filterable allow-create default-first-option style="width: 100%">
+            <el-option v-for="item in relationTypeOptions" :key="item.value" :label="`${item.label} (${item.value})`" :value="item.value"/>
+          </el-select>
+        </el-form-item>
         <el-form-item label="范围字段">
           <el-input
             v-model="form.dataScope!.scopeColumn"
-            placeholder="SELF/ORG/ORG_SUBTREE 时可填写字段名，如 creator_id 或 org_code"
+            placeholder="SELF/ORG/ORG_SUBTREE/RELATION/RELATION_SUBTREE 时可填写字段名，如 creator_id 或 org_code"
           />
         </el-form-item>
         <el-form-item label="自定义规则" v-if="form.dataScope?.scopeType === 'CUSTOM'">
@@ -406,6 +875,173 @@ loadPermissions();
             :rows="3"
             placeholder="例如 status = 1 and dept_code in ('A', 'B')"
           />
+        </el-form-item>
+        <el-form-item label="样本组织">
+          <el-select v-model="previewOrgUnitIds" multiple filterable clearable style="width: 100%" placeholder="用于预览角色数据权限命中范围，不会参与保存">
+            <el-option v-for="org in orgOptions" :key="org.value" :value="org.value" :label="org.label"/>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="样本 SQL">
+          <el-input
+            v-model="sampleSql"
+            type="textarea"
+            :rows="4"
+            placeholder="可选，输入一条典型查询用于验证当前权限是否会通过安全校验，并查看改写后的 SQL"
+          />
+        </el-form-item>
+        <el-form-item>
+          <div class="preview-toolbar">
+            <el-button type="primary" plain :loading="previewLoading" @click="handlePreviewDataScope">预览权限命中</el-button>
+            <el-button plain :loading="batchPreviewLoading" @click="handlePreviewBatchDataScope">批量校验</el-button>
+            <el-button v-if="editingId && previewResult" plain :loading="releaseSubmitting" @click="handleCreateScopeRelease">生成发布单</el-button>
+            <span class="preview-tip">建议至少选择一个样本组织，便于展开组织型/关系型权限的命中范围。</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="批量样本">
+          <div class="batch-panel">
+            <div
+              v-for="(item, index) in batchScenarios"
+              :key="`role-batch-${index}`"
+              class="batch-item"
+            >
+              <div class="batch-item-head">
+                <el-input v-model="item.scenarioName" placeholder="场景名称，如 门店负责人 / 校区管理员 / 总部审批人"/>
+                <el-button link type="danger" @click="handleRemoveBatchScenario(index)">删除</el-button>
+              </div>
+              <el-select v-model="item.orgUnitIds" multiple filterable clearable style="width: 100%" placeholder="选择该场景的样本组织">
+                <el-option v-for="org in orgOptions" :key="`${index}-${org.value}`" :value="org.value" :label="org.label"/>
+              </el-select>
+              <el-input
+                v-model="item.sampleSql"
+                type="textarea"
+                :rows="2"
+                placeholder="可选：该场景单独样本 SQL，不填则使用上方统一样本 SQL"
+              />
+            </div>
+            <el-button plain @click="handleAddBatchScenario">新增样本场景</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="previewResult">
+          <div class="preview-panel">
+            <div class="preview-summary">{{ previewResult.summary || '暂无预览摘要' }}</div>
+            <div class="preview-description">{{ previewResult.description || '暂无预览说明' }}</div>
+            <div class="preview-impact">{{ previewResult.impactSummary || '暂无影响范围说明' }}</div>
+            <div v-if="previewResult.sampleSqlMessage" class="preview-sql-result">
+              <el-alert
+                :type="previewResult.sampleSqlValid ? 'success' : 'error'"
+                :closable="false"
+                :title="previewResult.sampleSqlMessage"
+              />
+              <el-input
+                v-if="previewResult.sampleRewrittenSql"
+                class="preview-sql-textarea"
+                type="textarea"
+                :rows="4"
+                :model-value="previewResult.sampleRewrittenSql"
+                readonly
+              />
+            </div>
+            <div v-if="previewResult.warnings?.length" class="preview-warning-list">
+              <el-alert
+                v-for="item in previewResult.warnings"
+                :key="item"
+                type="warning"
+                :closable="false"
+                :title="item"
+              />
+            </div>
+            <div class="preview-stat-grid">
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">直属组织</div>
+                <div class="preview-stat-value">{{ (previewResult.directOrgCodes || []).join(' / ') || '无' }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">直属组织及下级</div>
+                <div class="preview-stat-value">{{ (previewResult.directOrgSubtreeCodes || []).join(' / ') || '无' }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">命中组织数</div>
+                <div class="preview-stat-value">{{ previewResult.matchedOrgCount || 0 }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">生效来源</div>
+                <div class="preview-stat-value">{{ previewResult.effectiveSource || 'ROLE_CONFIG' }}</div>
+              </div>
+              <div class="preview-stat-item">
+                <div class="preview-stat-label">受影响用户数</div>
+                <div class="preview-stat-value">{{ previewResult.affectedUserCount || 0 }}</div>
+              </div>
+            </div>
+            <div v-if="previewResult.diff" class="diff-panel">
+              <div class="diff-title">变更前后差异</div>
+              <div class="diff-summary-grid">
+                <div class="diff-summary-item">
+                  <div class="diff-summary-label">基线</div>
+                  <div class="diff-summary-value">{{ previewResult.diff.baselineSummary || '无' }}</div>
+                </div>
+                <div class="diff-summary-item">
+                  <div class="diff-summary-label">调整后</div>
+                  <div class="diff-summary-value">{{ previewResult.diff.targetSummary || '无' }}</div>
+                </div>
+                <div class="diff-summary-item">
+                  <div class="diff-summary-label">新增组织</div>
+                  <div class="diff-summary-value success">{{ previewResult.diff.addedOrgCount || 0 }}</div>
+                </div>
+                <div class="diff-summary-item">
+                  <div class="diff-summary-label">移除组织</div>
+                  <div class="diff-summary-value danger">{{ previewResult.diff.removedOrgCount || 0 }}</div>
+                </div>
+              </div>
+              <div v-if="previewResult.diff.addedOrgs?.length" class="preview-tag-list">
+                <el-tag v-for="item in previewResult.diff.addedOrgs" :key="`added-${item.orgUnitId}-${item.hitSource}`" type="success" class="preview-tag">
+                  + {{ item.unitName || item.unitCode }}
+                </el-tag>
+              </div>
+              <div v-if="previewResult.diff.removedOrgs?.length" class="preview-tag-list">
+                <el-tag v-for="item in previewResult.diff.removedOrgs" :key="`removed-${item.orgUnitId}-${item.hitSource}`" type="danger" class="preview-tag">
+                  - {{ item.unitName || item.unitCode }}
+                </el-tag>
+              </div>
+            </div>
+            <div v-if="previewResult.matchedOrgs?.length" class="preview-tag-list">
+              <el-tag v-for="item in previewResult.matchedOrgs" :key="`${item.orgUnitId}-${item.hitSource}`" class="preview-tag">
+                {{ item.unitName || item.unitCode }} · {{ item.hitSource }}
+              </el-tag>
+            </div>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="batchPreviewResult">
+          <div class="preview-panel">
+            <div class="preview-summary">批量校验结果</div>
+            <div class="preview-description">
+              共 {{ batchPreviewResult.totalScenarios || 0 }} 个场景，样本 SQL 通过 {{ batchPreviewResult.sampleSqlSuccessCount || 0 }} 个，存在告警 {{ batchPreviewResult.warningScenarioCount || 0 }} 个。
+            </div>
+            <el-table :data="batchPreviewResult.scenarios || []" border>
+              <el-table-column prop="scenarioName" label="场景" min-width="180"/>
+              <el-table-column label="命中组织数" width="120">
+                <template #default="{row}">
+                  {{ row.preview?.matchedOrgCount || 0 }}
+                </template>
+              </el-table-column>
+              <el-table-column label="样本 SQL" width="120">
+                <template #default="{row}">
+                  <el-tag :type="row.preview?.sampleSqlValid ? 'success' : 'info'">
+                    {{ row.preview?.sampleSqlValid ? '通过' : '未验证/失败' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="影响摘要" min-width="260" show-overflow-tooltip>
+                <template #default="{row}">
+                  {{ row.preview?.impactSummary || row.preview?.summary || '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column label="告警" min-width="220" show-overflow-tooltip>
+                <template #default="{row}">
+                  {{ (row.preview?.warnings || []).join('；') || '-' }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -459,5 +1095,166 @@ loadPermissions();
 .tips {
   color: #94a3b8;
   font-size: 13px;
+}
+
+.preview-toolbar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.preview-tip {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.batch-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.batch-item {
+  border: 1px solid #dbe4f0;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.batch-item-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.preview-panel {
+  width: 100%;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 16px;
+}
+
+.preview-summary {
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.preview-description {
+  margin-top: 8px;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.preview-impact {
+  margin-top: 8px;
+  color: #1d4ed8;
+  line-height: 1.7;
+}
+
+.preview-sql-result {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.preview-sql-textarea {
+  width: 100%;
+}
+
+.preview-warning-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-stat-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.preview-stat-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.preview-stat-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.preview-stat-value {
+  margin-top: 8px;
+  color: #0f172a;
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+.preview-tag-list {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview-tag {
+  margin-right: 0;
+}
+
+.diff-panel {
+  margin-top: 14px;
+}
+
+.diff-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 10px;
+}
+
+.diff-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.diff-summary-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.diff-summary-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.diff-summary-value {
+  margin-top: 8px;
+  color: #0f172a;
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+.diff-summary-value.success {
+  color: #15803d;
+}
+
+.diff-summary-value.danger {
+  color: #b91c1c;
 }
 </style>

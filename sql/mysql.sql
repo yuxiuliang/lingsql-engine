@@ -43,6 +43,7 @@ CREATE TABLE `t_lingsql_engine_tenant`
     `contact_name`  varchar(64)  DEFAULT NULL COMMENT '联系人',
     `contact_phone` varchar(32)  DEFAULT NULL COMMENT '联系电话',
     `contact_email` varchar(128) DEFAULT NULL COMMENT '联系邮箱',
+    `notification_channels` varchar(128) DEFAULT NULL COMMENT '默认通知通道列表，逗号分隔',
     `expire_time`   datetime     DEFAULT NULL COMMENT '到期时间',
     `plan_name`     varchar(128) DEFAULT NULL COMMENT '套餐名称',
     `quota_balance` bigint       DEFAULT 0 COMMENT '余额',
@@ -56,6 +57,25 @@ CREATE TABLE `t_lingsql_engine_tenant`
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='租户信息表';
+
+-- 租户通知分组表
+CREATE TABLE `t_lingsql_engine_tenant_notification_group`
+(
+    `id`           bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`    varchar(64)  NOT NULL COMMENT '租户ID',
+    `group_code`   varchar(64)  NOT NULL COMMENT '分组编码',
+    `group_name`   varchar(128) NOT NULL COMMENT '分组名称',
+    `channels`     varchar(255) DEFAULT NULL COMMENT '通知通道列表，逗号分隔',
+    `remark`       varchar(255) DEFAULT NULL COMMENT '备注',
+    `is_deleted`   tinyint      NOT NULL DEFAULT '0' COMMENT '删除标记: 1-删除, 0-正常',
+    `create_time`  datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`  datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_tng_tenant_group` (`tenant_id`, `group_code`),
+    KEY `idx_tng_tenant_deleted` (`tenant_id`, `is_deleted`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='租户通知分组表';
 
 -- 计费策略版本表
 CREATE TABLE `t_lingsql_engine_billing_policy_version`
@@ -178,11 +198,22 @@ CREATE TABLE `t_lingsql_engine_digital_employee`
     `scenario`         varchar(255) DEFAULT NULL COMMENT '业务场景',
     `prompt_template`  text COMMENT '提示词模板',
     `default_question` text COMMENT '默认执行问题',
+    `schedule_enabled` tinyint      NOT NULL DEFAULT '0' COMMENT '是否启用定时执行: 1-启用, 0-停用',
+    `schedule_cron`    varchar(64)  DEFAULT NULL COMMENT '定时执行 Cron',
+    `alert_enabled`    tinyint      NOT NULL DEFAULT '0' COMMENT '是否启用告警: 1-启用, 0-停用',
+    `alert_rule_type`  varchar(32)  DEFAULT NULL COMMENT '告警规则类型',
+    `alert_threshold`  int          DEFAULT NULL COMMENT '结果行数阈值',
+    `push_enabled`     tinyint      NOT NULL DEFAULT '0' COMMENT '是否启用结果推送: 1-启用, 0-停用',
+    `push_channels`    varchar(128) DEFAULT NULL COMMENT '结果推送通道列表，逗号分隔',
+    `push_max_rows`    int          DEFAULT NULL COMMENT '结果推送预览最大行数',
+    `push_title_template` varchar(255) DEFAULT NULL COMMENT '结果推送标题模板',
+    `push_message_template` text COMMENT '结果推送摘要模板',
     `status`           tinyint      DEFAULT '1' COMMENT '状态: 1-启用, 0-停用',
     `run_count`        bigint       NOT NULL DEFAULT 0 COMMENT '累计运行次数',
     `success_count`    bigint       NOT NULL DEFAULT 0 COMMENT '累计成功次数',
     `last_run_status`  tinyint      DEFAULT NULL COMMENT '最近运行状态: 1-成功, 0-失败',
     `last_run_time`    datetime     DEFAULT NULL COMMENT '最近运行时间',
+    `last_schedule_time` datetime   DEFAULT NULL COMMENT '最近一次计划触发时间',
     `last_error_message` text COMMENT '最近错误信息',
     `remark`           varchar(255) DEFAULT NULL COMMENT '备注',
     `is_deleted`       tinyint      NOT NULL DEFAULT '0' COMMENT '删除标记: 1-删除, 0-正常',
@@ -211,6 +242,10 @@ CREATE TABLE `t_lingsql_engine_digital_employee_run_log`
     `result_rows`  int         DEFAULT NULL COMMENT '结果行数',
     `request_id`   varchar(64) DEFAULT NULL COMMENT '请求ID',
     `duration_ms`  bigint      DEFAULT NULL COMMENT '执行耗时(毫秒)',
+    `alert_delivery_status` tinyint DEFAULT NULL COMMENT '告警投递状态: 1-成功, 0-失败, NULL-未触发',
+    `alert_delivery_detail` text COMMENT '告警投递诊断明细',
+    `push_delivery_status`  tinyint DEFAULT NULL COMMENT '结果推送状态: 1-成功, 0-失败, NULL-未触发',
+    `push_delivery_detail`  text COMMENT '结果推送诊断明细',
     `create_time`  datetime    DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
     KEY `idx_de_run_employee_time` (`employee_id`, `create_time`),
@@ -577,6 +612,82 @@ CREATE TABLE `t_lingsql_engine_user_experience_policy`
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='体验账号策略表';
 
+-- 组织关系执行台账
+CREATE TABLE `t_lingsql_engine_org_relation_execution`
+(
+    `id`                   bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`            varchar(64)  NOT NULL COMMENT '租户ID',
+    `relation_id`          bigint       NOT NULL COMMENT '组织关系ID',
+    `relation_type`        varchar(64)  NOT NULL COMMENT '关系类型',
+    `relation_name`        varchar(128) DEFAULT NULL COMMENT '关系名称',
+    `scene_code`           varchar(64)  DEFAULT NULL COMMENT '场景编码',
+    `scene_name`           varchar(128) DEFAULT NULL COMMENT '场景名称',
+    `execution_title`      varchar(255) NOT NULL COMMENT '执行标题',
+    `execution_content`    text         DEFAULT NULL COMMENT '执行内容',
+    `priority`             varchar(16)  NOT NULL COMMENT '优先级',
+    `sla_hours`            int          DEFAULT NULL COMMENT 'SLA时长(小时)',
+    `due_time`             datetime     DEFAULT NULL COMMENT '截止时间',
+    `escalation_status`    varchar(32)  DEFAULT NULL COMMENT '升级状态',
+    `escalation_level`     int          DEFAULT NULL COMMENT '升级级别',
+    `last_escalated_time`  datetime     DEFAULT NULL COMMENT '最近升级时间',
+    `status`               varchar(32)  NOT NULL COMMENT '状态',
+    `source_org_unit_id`   bigint       NOT NULL COMMENT '源组织ID',
+    `source_org_unit_code` varchar(128) DEFAULT NULL COMMENT '源组织编码',
+    `source_org_unit_name` varchar(255) DEFAULT NULL COMMENT '源组织名称',
+    `target_org_unit_id`   bigint       NOT NULL COMMENT '目标组织ID',
+    `target_org_unit_code` varchar(128) DEFAULT NULL COMMENT '目标组织编码',
+    `target_org_unit_name` varchar(255) DEFAULT NULL COMMENT '目标组织名称',
+    `route_scope_summary`  varchar(512) DEFAULT NULL COMMENT '路由范围说明',
+    `scope_unit_count`     int          DEFAULT NULL COMMENT '路由范围节点数',
+    `scope_unit_codes_json` text        DEFAULT NULL COMMENT '路由范围编码快照',
+    `requested_by_user_id` bigint       NOT NULL COMMENT '创建人ID',
+    `requested_by_name`    varchar(128) DEFAULT NULL COMMENT '创建人名称',
+    `assignee_user_id`     bigint       DEFAULT NULL COMMENT '处理人ID',
+    `assignee_name`        varchar(128) DEFAULT NULL COMMENT '处理人名称',
+    `result_summary`       text         DEFAULT NULL COMMENT '处理结果',
+    `started_time`         datetime     DEFAULT NULL COMMENT '开始处理时间',
+    `completed_time`       datetime     DEFAULT NULL COMMENT '完成时间',
+    `create_time`          datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`          datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_org_relation_execution_tenant_create` (`tenant_id`, `create_time`, `id`),
+    KEY `idx_org_relation_execution_tenant_status` (`tenant_id`, `status`),
+    KEY `idx_org_relation_execution_tenant_relation_type` (`tenant_id`, `relation_type`),
+    KEY `idx_org_relation_execution_relation_id` (`relation_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='组织关系执行台账';
+
+-- 组织关系执行轨迹
+CREATE TABLE `t_lingsql_engine_org_relation_execution_timeline`
+(
+    `id`                    bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`             varchar(64)  NOT NULL COMMENT '租户ID',
+    `execution_id`          bigint       NOT NULL COMMENT '执行项ID',
+    `event_type`            varchar(32)  NOT NULL COMMENT '事件类型',
+    `event_summary`         varchar(255) NOT NULL COMMENT '事件摘要',
+    `event_detail`          text         DEFAULT NULL COMMENT '事件详情',
+    `actor_user_id`         bigint       DEFAULT NULL COMMENT '操作人ID',
+    `actor_name`            varchar(128) DEFAULT NULL COMMENT '操作人名称',
+    `before_status`         varchar(32)  DEFAULT NULL COMMENT '变更前状态',
+    `after_status`          varchar(32)  DEFAULT NULL COMMENT '变更后状态',
+    `before_assignee_name`  varchar(128) DEFAULT NULL COMMENT '变更前处理人',
+    `after_assignee_name`   varchar(128) DEFAULT NULL COMMENT '变更后处理人',
+    `before_priority`       varchar(16)  DEFAULT NULL COMMENT '变更前优先级',
+    `after_priority`        varchar(16)  DEFAULT NULL COMMENT '变更后优先级',
+    `before_sla_hours`      int          DEFAULT NULL COMMENT '变更前SLA时长',
+    `after_sla_hours`       int          DEFAULT NULL COMMENT '变更后SLA时长',
+    `before_due_time`       datetime     DEFAULT NULL COMMENT '变更前截止时间',
+    `after_due_time`        datetime     DEFAULT NULL COMMENT '变更后截止时间',
+    `before_result_summary` text         DEFAULT NULL COMMENT '变更前结果摘要',
+    `after_result_summary`  text         DEFAULT NULL COMMENT '变更后结果摘要',
+    `create_time`           datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_org_relation_execution_timeline_tenant_execution` (`tenant_id`, `execution_id`, `create_time`, `id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='组织关系执行轨迹';
+
 -- 管理操作审计日志
 CREATE TABLE `t_lingsql_engine_audit_log`
 (
@@ -601,6 +712,121 @@ CREATE TABLE `t_lingsql_engine_audit_log`
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_general_ci COMMENT ='管理操作审计日志';
+
+-- 菜单治理发布单
+CREATE TABLE `t_lingsql_engine_menu_release_record`
+(
+    `id`                    bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`             varchar(64)  NOT NULL COMMENT '租户ID',
+    `release_type`          varchar(32)  NOT NULL COMMENT '发布类型：GLOBAL_RULE / TENANT_RULE',
+    `release_title`         varchar(255) NOT NULL COMMENT '发布单标题',
+    `menu_id`               bigint       DEFAULT NULL COMMENT '全局菜单ID',
+    `menu_code`             varchar(128) NOT NULL COMMENT '菜单编码',
+    `menu_name`             varchar(255) NOT NULL COMMENT '菜单名称',
+    `baseline_rule_summary` text         DEFAULT NULL COMMENT '基线规则摘要',
+    `target_rule_summary`   text         DEFAULT NULL COMMENT '目标规则摘要',
+    `impact_summary`        text         DEFAULT NULL COMMENT '影响摘要',
+    `changed_dimensions_json` text       DEFAULT NULL COMMENT '变更维度快照(JSON)',
+    `added_menu_count`      int          DEFAULT 0 COMMENT '新增命中菜单数',
+    `removed_menu_count`    int          DEFAULT 0 COMMENT '移除命中菜单数',
+    `impact_request_json`   text         DEFAULT NULL COMMENT '影响分析请求快照(JSON)',
+    `impact_snapshot_json`  text         DEFAULT NULL COMMENT '影响分析结果快照(JSON)',
+    `change_remark`         text         DEFAULT NULL COMMENT '变更说明',
+    `release_status`        varchar(32)  NOT NULL COMMENT '发布状态：DRAFT / APPROVED / REJECTED / APPLIED',
+    `requested_by_user_id`  bigint       NOT NULL COMMENT '创建人ID',
+    `requested_by_name`     varchar(128) DEFAULT NULL COMMENT '创建人名称',
+    `reviewed_by_user_id`   bigint       DEFAULT NULL COMMENT '审核人ID',
+    `reviewed_by_name`      varchar(128) DEFAULT NULL COMMENT '审核人名称',
+    `review_comment`        text         DEFAULT NULL COMMENT '审核意见',
+    `reviewed_time`         datetime     DEFAULT NULL COMMENT '审核时间',
+    `applied_by_user_id`    bigint       DEFAULT NULL COMMENT '应用人ID',
+    `applied_by_name`       varchar(128) DEFAULT NULL COMMENT '应用人名称',
+    `applied_time`          datetime     DEFAULT NULL COMMENT '应用时间',
+    `create_time`           datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`           datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_menu_release_tenant_status` (`tenant_id`, `release_status`, `create_time`, `id`),
+    KEY `idx_menu_release_menu_code` (`menu_code`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='菜单治理发布单';
+
+-- 角色数据权限发布单
+CREATE TABLE `t_lingsql_engine_role_scope_release_record`
+(
+    `id`                  bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`           varchar(64)  NOT NULL COMMENT '租户ID',
+    `release_title`       varchar(255) NOT NULL COMMENT '发布单标题',
+    `role_id`             bigint       NOT NULL COMMENT '角色ID',
+    `role_code`           varchar(128) NOT NULL COMMENT '角色编码',
+    `role_name`           varchar(255) NOT NULL COMMENT '角色名称',
+    `baseline_summary`    text         DEFAULT NULL COMMENT '基线摘要',
+    `target_summary`      text         DEFAULT NULL COMMENT '目标摘要',
+    `impact_summary`      text         DEFAULT NULL COMMENT '影响摘要',
+    `matched_org_count`   int          DEFAULT 0 COMMENT '命中组织数',
+    `affected_user_count` int          DEFAULT 0 COMMENT '受影响用户数',
+    `added_org_count`     int          DEFAULT 0 COMMENT '新增组织数',
+    `removed_org_count`   int          DEFAULT 0 COMMENT '移除组织数',
+    `preview_request_json` text        DEFAULT NULL COMMENT '预览请求快照(JSON)',
+    `preview_snapshot_json` text       DEFAULT NULL COMMENT '预览结果快照(JSON)',
+    `change_remark`       text         DEFAULT NULL COMMENT '变更说明',
+    `release_status`      varchar(32)  NOT NULL COMMENT '发布状态：DRAFT / APPROVED / REJECTED / APPLIED',
+    `requested_by_user_id` bigint      NOT NULL COMMENT '创建人ID',
+    `requested_by_name`   varchar(128) DEFAULT NULL COMMENT '创建人名称',
+    `reviewed_by_user_id` bigint       DEFAULT NULL COMMENT '审核人ID',
+    `reviewed_by_name`    varchar(128) DEFAULT NULL COMMENT '审核人名称',
+    `review_comment`      text         DEFAULT NULL COMMENT '审核意见',
+    `reviewed_time`       datetime     DEFAULT NULL COMMENT '审核时间',
+    `applied_by_user_id`  bigint       DEFAULT NULL COMMENT '应用人ID',
+    `applied_by_name`     varchar(128) DEFAULT NULL COMMENT '应用人名称',
+    `applied_time`        datetime     DEFAULT NULL COMMENT '应用时间',
+    `create_time`         datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`         datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_role_scope_release_tenant_status` (`tenant_id`, `release_status`, `create_time`, `id`),
+    KEY `idx_role_scope_release_role_id` (`role_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='角色数据权限发布单';
+
+-- 用户数据权限发布单
+CREATE TABLE `t_lingsql_engine_user_scope_release_record`
+(
+    `id`                  bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id`           varchar(64)  NOT NULL COMMENT '租户ID',
+    `release_title`       varchar(255) NOT NULL COMMENT '发布单标题',
+    `user_id`             bigint       NOT NULL COMMENT '用户ID',
+    `username`            varchar(128) NOT NULL COMMENT '用户账号',
+    `nickname`            varchar(255) DEFAULT NULL COMMENT '用户昵称',
+    `baseline_summary`    text         DEFAULT NULL COMMENT '基线摘要',
+    `target_summary`      text         DEFAULT NULL COMMENT '目标摘要',
+    `impact_summary`      text         DEFAULT NULL COMMENT '影响摘要',
+    `matched_org_count`   int          DEFAULT 0 COMMENT '命中组织数',
+    `affected_role_count` int          DEFAULT 0 COMMENT '受影响角色数',
+    `affected_user_count` int          DEFAULT 0 COMMENT '受影响用户数',
+    `added_org_count`     int          DEFAULT 0 COMMENT '新增组织数',
+    `removed_org_count`   int          DEFAULT 0 COMMENT '移除组织数',
+    `preview_request_json` text        DEFAULT NULL COMMENT '预览请求快照(JSON)',
+    `preview_snapshot_json` text       DEFAULT NULL COMMENT '预览结果快照(JSON)',
+    `change_remark`       text         DEFAULT NULL COMMENT '变更说明',
+    `release_status`      varchar(32)  NOT NULL COMMENT '发布状态：DRAFT / APPROVED / REJECTED / APPLIED',
+    `requested_by_user_id` bigint      NOT NULL COMMENT '创建人ID',
+    `requested_by_name`   varchar(128) DEFAULT NULL COMMENT '创建人名称',
+    `reviewed_by_user_id` bigint       DEFAULT NULL COMMENT '审核人ID',
+    `reviewed_by_name`    varchar(128) DEFAULT NULL COMMENT '审核人名称',
+    `review_comment`      text         DEFAULT NULL COMMENT '审核意见',
+    `reviewed_time`       datetime     DEFAULT NULL COMMENT '审核时间',
+    `applied_by_user_id`  bigint       DEFAULT NULL COMMENT '应用人ID',
+    `applied_by_name`     varchar(128) DEFAULT NULL COMMENT '应用人名称',
+    `applied_time`        datetime     DEFAULT NULL COMMENT '应用时间',
+    `create_time`         datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`         datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_user_scope_release_tenant_status` (`tenant_id`, `release_status`, `create_time`, `id`),
+    KEY `idx_user_scope_release_user_id` (`user_id`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='用户数据权限发布单';
 
 -- SQL 执行日志
 CREATE TABLE `t_lingsql_engine_sql_execute_log`

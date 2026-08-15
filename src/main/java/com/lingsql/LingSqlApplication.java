@@ -30,8 +30,6 @@ public class LingSqlApplication {
      * @date 2026-01-22
      */
     public static void main(String[] args) {
-        // 开启虚拟线程支持 (Java 21)
-        System.setProperty("jdk.virtualThreadScheduler.parallelism", "10");
         SpringApplication.run(LingSqlApplication.class, args);
         System.out.println("🚀 LingSQL 语数引擎启动成功！");
     }

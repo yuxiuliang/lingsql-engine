@@ -188,6 +188,7 @@ class SqlGuardrailTest {
 
         RbacUserSession session = new RbacUserSession();
         session.setDataScope(rule);
+        session.setMemberOrgUnitCodes(List.of("CS001", "CS002"));
         session.setOrgUnitCodes(List.of("CS001", "CS002"));
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(session, "token", List.of())
@@ -218,6 +219,7 @@ class SqlGuardrailTest {
 
         RbacUserSession session = new RbacUserSession();
         session.setDataScope(rule);
+        session.setMemberOrgSubtreeCodes(List.of("HN", "HN_CS", "HN_CS_YL"));
         session.setOrgSubtreeCodes(List.of("HN", "HN_CS", "HN_CS_YL"));
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(session, "token", List.of())
@@ -232,6 +234,67 @@ class SqlGuardrailTest {
         } catch (Exception ex) {
             fail("组织子树条件完整时不应抛出异常: " + ex.getMessage());
         }
+    }
+
+    @Test
+    void rewriteShouldUseDirectOrgCodesInsteadOfRelationExpandedCodesForOrgScope() {
+        LingSqlProperties properties = createProperties(100);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        Mockito.when(metadataExtService.resolveIsolationField(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        SqlRewriter rewriter = new SqlRewriter(properties, metadataExtService);
+
+        DataScopeRule rule = new DataScopeRule();
+        rule.setScopeType(RbacDataScopeType.ORG);
+        rule.setScopeColumn("org_code");
+
+        RbacUserSession session = new RbacUserSession();
+        session.setDataScope(rule);
+        session.setMemberOrgUnitCodes(List.of("SRC"));
+        session.setOrgUnitCodes(List.of("SRC", "OWN", "OWN_CHILD"));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(session, "token", List.of())
+        );
+
+        String rewritten = rewriter.rewrite(
+                "SELECT order_id FROM orders WHERE amount > 0 LIMIT 50",
+                createTenantConfig("PHYSICAL", "tenant_id"),
+                "TENANT_A"
+        );
+
+        assertTrue(rewritten.contains("SRC"), "直属组织编码应参与改写");
+        assertTrue(!rewritten.contains("OWN"), "关系扩展编码不应被 ORG 范围直接注入");
+    }
+
+    @Test
+    void rewriteShouldInjectRelationScopedCodesWhenRelationScopeConfigured() {
+        LingSqlProperties properties = createProperties(100);
+        MetadataExtService metadataExtService = Mockito.mock(MetadataExtService.class);
+        Mockito.when(metadataExtService.resolveIsolationField(anyString(), anyString()))
+                .thenReturn(Optional.empty());
+        SqlRewriter rewriter = new SqlRewriter(properties, metadataExtService);
+
+        DataScopeRule rule = new DataScopeRule();
+        rule.setScopeType(RbacDataScopeType.RELATION_SUBTREE);
+        rule.setScopeColumn("org_code");
+        rule.setRelationTypes(List.of("SERVICE"));
+
+        RbacUserSession session = new RbacUserSession();
+        session.setDataScope(rule);
+        session.setRelationDirectScopes(java.util.Map.of("SERVICE", List.of("SRV")));
+        session.setRelationScopes(java.util.Map.of("SERVICE", List.of("SRV", "SRV_CHILD")));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(session, "token", List.of())
+        );
+
+        String rewritten = rewriter.rewrite(
+                "SELECT order_id FROM orders WHERE amount > 0 LIMIT 50",
+                createTenantConfig("PHYSICAL", "tenant_id"),
+                "TENANT_A"
+        );
+
+        assertTrue(rewritten.contains("SRV"), "关系型数据权限应注入关系目标组织编码");
+        assertTrue(rewritten.contains("SRV_CHILD"), "关系型子树权限应注入关系目标下级编码");
     }
 
     private LingSqlProperties createProperties(int limit) {

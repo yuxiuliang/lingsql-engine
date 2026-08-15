@@ -58,6 +58,18 @@ public class DigitalEmployeeRunLog {
     @Column(name = "duration_ms")
     private Long durationMs;
 
+    @Column(name = "alert_delivery_status")
+    private Integer alertDeliveryStatus;
+
+    @Column(name = "alert_delivery_detail", columnDefinition = "TEXT")
+    private String alertDeliveryDetail;
+
+    @Column(name = "push_delivery_status")
+    private Integer pushDeliveryStatus;
+
+    @Column(name = "push_delivery_detail", columnDefinition = "TEXT")
+    private String pushDeliveryDetail;
+
     @Column(name = "create_time")
     private LocalDateTime createTime;
 }

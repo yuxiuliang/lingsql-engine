@@ -1,0 +1,36 @@
+CREATE TABLE IF NOT EXISTS `t_lingsql_engine_menu_release_record`
+(
+  `id`                    bigint       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `tenant_id`             varchar(64)  NOT NULL COMMENT '租户ID',
+  `release_type`          varchar(32)  NOT NULL COMMENT '发布类型：GLOBAL_RULE / TENANT_RULE',
+  `release_title`         varchar(255) NOT NULL COMMENT '发布单标题',
+  `menu_id`               bigint       DEFAULT NULL COMMENT '全局菜单ID',
+  `menu_code`             varchar(128) NOT NULL COMMENT '菜单编码',
+  `menu_name`             varchar(255) NOT NULL COMMENT '菜单名称',
+  `baseline_rule_summary` text         DEFAULT NULL COMMENT '基线规则摘要',
+  `target_rule_summary`   text         DEFAULT NULL COMMENT '目标规则摘要',
+  `impact_summary`        text         DEFAULT NULL COMMENT '影响摘要',
+  `changed_dimensions_json` text       DEFAULT NULL COMMENT '变更维度快照(JSON)',
+  `added_menu_count`      int          DEFAULT 0 COMMENT '新增命中菜单数',
+  `removed_menu_count`    int          DEFAULT 0 COMMENT '移除命中菜单数',
+  `impact_request_json`   text         DEFAULT NULL COMMENT '影响分析请求快照(JSON)',
+  `impact_snapshot_json`  text         DEFAULT NULL COMMENT '影响分析结果快照(JSON)',
+  `change_remark`         text         DEFAULT NULL COMMENT '变更说明',
+  `release_status`        varchar(32)  NOT NULL COMMENT '发布状态：DRAFT / APPROVED / REJECTED / APPLIED',
+  `requested_by_user_id`  bigint       NOT NULL COMMENT '创建人ID',
+  `requested_by_name`     varchar(128) DEFAULT NULL COMMENT '创建人名称',
+  `reviewed_by_user_id`   bigint       DEFAULT NULL COMMENT '审核人ID',
+  `reviewed_by_name`      varchar(128) DEFAULT NULL COMMENT '审核人名称',
+  `review_comment`        text         DEFAULT NULL COMMENT '审核意见',
+  `reviewed_time`         datetime     DEFAULT NULL COMMENT '审核时间',
+  `applied_by_user_id`    bigint       DEFAULT NULL COMMENT '应用人ID',
+  `applied_by_name`       varchar(128) DEFAULT NULL COMMENT '应用人名称',
+  `applied_time`          datetime     DEFAULT NULL COMMENT '应用时间',
+  `create_time`           datetime     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`           datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_menu_release_tenant_status` (`tenant_id`, `release_status`, `create_time` DESC, `id` DESC),
+  KEY `idx_menu_release_menu_code` (`menu_code`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_general_ci COMMENT ='菜单治理发布单';

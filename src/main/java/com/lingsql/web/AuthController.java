@@ -107,6 +107,7 @@ public class AuthController {
             view.setRoles(session.getRoles());
             view.setPermissions(session.getPermissions());
             view.setDataScope(session.getDataScope());
+            view.setRelationScopes(session.getRelationScopes());
         }
         return ApiResponse.success(view);
     }

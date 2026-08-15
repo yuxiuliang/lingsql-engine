@@ -25,6 +25,18 @@ public interface DigitalEmployeeRepository extends JpaRepository<DigitalEmployee
     List<DigitalEmployee> findByIsDeleted(Integer isDeleted);
 
     /**
+     * 查询启用且已开启定时的数字员工。
+     *
+     * @param isDeleted       删除标记
+     * @param status          状态
+     * @param scheduleEnabled 定时开关
+     * @return 数字员工列表
+     * @author 余炘洋
+     * @date 2026-04-14
+     */
+    List<DigitalEmployee> findByIsDeletedAndStatusAndScheduleEnabled(Integer isDeleted, Integer status, Integer scheduleEnabled);
+
+    /**
      * 按主键与删除状态查询数字员工。
      *
      * @param id        主键ID

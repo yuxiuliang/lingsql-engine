@@ -119,6 +119,20 @@ public class MetadataCacheService {
     }
 
     /**
+     * 清理指定租户的 Schema 缓存，供受控自愈流程重新读取元数据。
+     *
+     * @param tenantId 租户标识
+     * @author 余炘洋
+     * @date 2026-07-29
+     */
+    public void evictSchema(String tenantId) {
+        String cacheKey = buildSchemaCacheKey(tenantId);
+        if (cacheKey != null) {
+            redisTemplate.delete(cacheKey);
+        }
+    }
+
+    /**
      * 构建 Schema 缓存 Key。
      *
      * @param tenantId 租户标识
