@@ -8,13 +8,13 @@
 #   ./scripts/ops/commercial_acceptance_gate.sh
 #
 # 可选环境变量:
-#   COMMERCIAL_REQUIRE_SLO=false
+#   COMMERCIAL_REQUIRE_SLO=true
 #   COMMERCIAL_REPORT_FILE=./reports/commercial_acceptance.md
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COMMERCIAL_REQUIRE_SLO="${COMMERCIAL_REQUIRE_SLO:-false}"
+COMMERCIAL_REQUIRE_SLO="${COMMERCIAL_REQUIRE_SLO:-true}"
 COMMERCIAL_REPORT_FILE="${COMMERCIAL_REPORT_FILE:-./reports/commercial_acceptance.md}"
 
 log_info() {
@@ -122,8 +122,8 @@ $(awk -F'|' '{printf "- %s: %s\n", $1, $2}' "${tmp_status}")
 EOF
 
   log_info "商用验收报告已写入: ${COMMERCIAL_REPORT_FILE}"
-  if [[ "${fail_count}" -gt 0 ]]; then
-    log_error "商用验收存在失败项，请按报告逐项整改。"
+  if [[ "${fail_count}" -gt 0 || "${skip_count}" -gt 0 ]]; then
+    log_error "商用验收存在失败或跳过项，请按报告逐项整改。"
     exit 2
   fi
   log_info "商用验收通过。"

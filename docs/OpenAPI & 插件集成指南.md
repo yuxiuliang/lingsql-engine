@@ -1,5 +1,7 @@
 # LingSQL Engine OpenAPI & 插件集成指南
 
+> **当前状态说明（2026-08-15）**：本文保留部分目标 API 和 SDK 设计供架构评审，不代表对应 SDK、插件安装器或远程插件已经发布。当前正式实现边界以 `README.md` 和 [Agent 插件底座架构](Agent插件底座架构.md) 为准。项目只维护 Java 后端和 TypeScript/Vue 管理端，不提供 Python SDK。
+
 > **版本**: v1.0
 > **更新日期**: 2026-01-29
 > **文档状态**: 正式发布
@@ -977,48 +979,7 @@ console.log('结果:', result.result);
 client.enableAutoRefresh(loginResp.refreshToken);
 ```
 
-### 7.4 Python SDK 示例
-
-```python
-# 1. 安装 SDK
-# pip install lingsql-sdk
-
-from lingsql import LingSqlClient
-
-# 2. 初始化客户端
-client = LingSqlClient(
-    base_url="https://api.lingsql.com",
-    timeout=30
-)
-
-# 3. 登录
-login_resp = client.auth.login(
-    username="admin",
-    password="password123",
-    tenant_id="tenant_001"
-)
-
-client.set_token(login_resp.access_token)
-
-# 4. 发起问答
-result = client.chat.ask(
-    question="查询本月销售额超过10万的产品",
-    model_name="QWEN-PLUS"
-)
-
-print(f"SQL: {result.sql}")
-print(f"结果: {result.result}")
-
-# 5. 上下文管理器（自动处理 Token）
-with LingSqlClient.connect(
-    base_url="https://api.lingsql.com",
-    username="admin",
-    password="password123"
-) as client:
-    result = client.chat.ask(question="查询本月销售额")
-```
-
-### 7.5 SDK 核心类设计
+### 7.4 SDK 核心类设计
 
 ```java
 /**
@@ -1088,6 +1049,8 @@ public class LingSqlClient {
 ---
 
 ## 8. 插件开发规范
+
+> 本章是目标设计草案，不是当前可安装插件的发布协议。当前仓库已经具备纯 Java、类型安全的受控插件 SPI、注册中心和统一执行网关，但可信 JAR 加载、插件管理 API、MCP 远程插件和第三方发布流程尚未完成。外部开发者暂时不能按本章示例直接打包安装。
 
 ### 8.1 插件架构
 
@@ -1545,11 +1508,9 @@ async function callApi<T>(request: () => Promise<T>): Promise<T> {
 
 ### Q6: SDK 支持哪些语言？
 
-- Java (JDK 11+)
-- JavaScript/TypeScript (Node.js 16+)
-- Python (3.8+)
-- Go (1.18+) - 计划中
-- .NET (6.0+) - 计划中
+- 当前未发布官方 SDK。
+- Java 25 后端和 TypeScript/Vue 管理端可按已实现的 HTTP API 集成。
+- Python、Go 和 .NET SDK 不在当前产品范围内。
 
 ### Q7: 如何贡献插件？
 

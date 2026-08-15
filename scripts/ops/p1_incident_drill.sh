@@ -54,25 +54,14 @@ main() {
     exit 1
   fi
 
+  if [[ -z "${DETECTED_AT}" || -z "${ACKED_AT}" || -z "${MITIGATED_AT}" ]]; then
+    log_error "必须提供真实演练的 DETECTED_AT、ACKED_AT、MITIGATED_AT，禁止自动生成演练时间。"
+    exit 1
+  fi
   local detected_ts acked_ts mitigated_ts
-  if [[ -n "${DETECTED_AT}" ]]; then
-    detected_ts="$(parse_ts "${DETECTED_AT}")"
-  else
-    detected_ts="$(date +%s)"
-    DETECTED_AT="$(date -d "@${detected_ts}" -Iseconds)"
-  fi
-  if [[ -n "${ACKED_AT}" ]]; then
-    acked_ts="$(parse_ts "${ACKED_AT}")"
-  else
-    acked_ts=$((detected_ts + 180))
-    ACKED_AT="$(date -d "@${acked_ts}" -Iseconds)"
-  fi
-  if [[ -n "${MITIGATED_AT}" ]]; then
-    mitigated_ts="$(parse_ts "${MITIGATED_AT}")"
-  else
-    mitigated_ts=$((acked_ts + 900))
-    MITIGATED_AT="$(date -d "@${mitigated_ts}" -Iseconds)"
-  fi
+  detected_ts="$(parse_ts "${DETECTED_AT}")"
+  acked_ts="$(parse_ts "${ACKED_AT}")"
+  mitigated_ts="$(parse_ts "${MITIGATED_AT}")"
 
   if [[ "${acked_ts}" -lt "${detected_ts}" ]]; then
     log_error "ACKED_AT 不能早于 DETECTED_AT"

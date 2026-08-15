@@ -24,9 +24,9 @@ INSERT INTO `t_lingsql_engine_digital_employee`
 (`tenant_id`, `employee_code`, `employee_name`, `role_name`, `scenario`, `prompt_template`,
  `default_question`, `status`, `run_count`, `success_count`, `remark`, `is_deleted`)
 VALUES
-('1', 'EMP_SALES_DAILY', '销售日报助理', '销售分析师', '日报分析',
+('sys_tenant', 'EMP_SALES_DAILY', '销售日报助理', '销售分析师', '日报分析',
  '请将结果整理为“核心指标+异常提示+下一步建议”三段结构。', '统计昨日销售额、订单数和客单价', 1, 0, 0, '商业演示模板', 0),
-('1', 'EMP_RISK_ALERT', '经营风险预警员', '运营分析师', '风险巡检',
+('sys_tenant', 'EMP_RISK_ALERT', '经营风险预警员', '运营分析师', '风险巡检',
  '请重点关注环比下滑超过15%的指标，并给出两条行动建议。', '统计近7天销售额、利润率和退货率变化趋势', 1, 0, 0, '商业演示模板', 0)
 ON DUPLICATE KEY UPDATE
   `employee_name` = VALUES(`employee_name`),

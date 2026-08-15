@@ -100,6 +100,7 @@ const handleCreate = () => {
 const handleEdit = (row: AiModelConfig) => {
   editingId.value = row.id || null;
   Object.assign(form, row);
+  form.apiKey = '';
   dialogVisible.value = true;
 };
 
@@ -330,7 +331,13 @@ loadModelHealth();
           <el-input v-model="form.baseUrl" placeholder="例如：http://localhost:8000"/>
         </el-form-item>
         <el-form-item label="访问密钥">
-          <el-input v-model="form.apiKey" type="password" placeholder="API Key" show-password autocomplete="new-password"/>
+          <el-input
+            v-model="form.apiKey"
+            type="password"
+            :placeholder="editingId && form.apiKeyConfigured ? '留空保持原 API Key' : 'API Key'"
+            show-password
+            autocomplete="new-password"
+          />
         </el-form-item>
         <el-form-item label="是否启用">
           <el-select v-model="form.isActive" style="width: 100%">

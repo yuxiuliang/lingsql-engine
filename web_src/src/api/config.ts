@@ -12,6 +12,7 @@ export interface TenantDbConfig {
   jdbcUrl: string;
   username?: string;
   password?: string;
+  passwordConfigured?: boolean;
   driverClass?: string;
   isolationMode?: string;
   logicColumn?: string;
@@ -36,6 +37,7 @@ export interface AiModelConfig {
   modelVersion?: string;
   baseUrl?: string;
   apiKey?: string;
+  apiKeyConfigured?: boolean;
   isActive?: number;
   weight?: number;
   priority?: number;

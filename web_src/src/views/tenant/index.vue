@@ -179,6 +179,7 @@ const handleCreate = () => {
 const handleEdit = (row: TenantDbConfig) => {
   editingId.value = row.id || null;
   Object.assign(form, row);
+  form.password = '';
   form.driverClass = form.driverClass || DEFAULT_MYSQL_DRIVER_CLASS;
   syncJdbcForm(form.jdbcUrl);
   dialogVisible.value = true;
@@ -273,7 +274,7 @@ const buildTenantConfigPayload = (jdbcUrl: string): TenantDbConfig => ({
   tenantId: form.tenantId?.trim() || '',
   jdbcUrl,
   username: form.username?.trim() || '',
-  password: form.password || '',
+  password: form.password || undefined,
   driverClass: form.driverClass?.trim() || DEFAULT_MYSQL_DRIVER_CLASS,
   logicColumn: form.logicColumn?.trim() || '',
   whiteListTables: form.whiteListTables?.trim() || '',
@@ -648,7 +649,13 @@ loadTenants();
             <el-input v-model="form.username" placeholder="数据库账号"/>
           </el-form-item>
           <el-form-item label="密码">
-            <el-input v-model="form.password" type="password" placeholder="数据库密码" show-password autocomplete="new-password"/>
+            <el-input
+              v-model="form.password"
+              type="password"
+              :placeholder="editingId && form.passwordConfigured ? '留空保持原数据库密码' : '数据库密码'"
+              show-password
+              autocomplete="new-password"
+            />
           </el-form-item>
           <el-form-item label="驱动类">
             <el-input v-model="form.driverClass" placeholder="com.mysql.cj.jdbc.Driver"/>

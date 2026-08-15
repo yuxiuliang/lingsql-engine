@@ -10,6 +10,8 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-lingsql_engine_db}
+      MYSQL_USER: ${MYSQL_APP_USERNAME:-lingsql_app}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD}
       TZ: Asia/Shanghai
     ports:
       - "${MYSQL_PORT:-3306}:3306"
@@ -55,8 +57,8 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       SERVER_PORT: 8000
       LINGSQL_DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-lingsql_engine_db}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-      LINGSQL_DB_USERNAME: root
-      LINGSQL_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      LINGSQL_DB_USERNAME: ${MYSQL_APP_USERNAME:-lingsql_app}
+      LINGSQL_DB_PASSWORD: ${MYSQL_APP_PASSWORD}
       LINGSQL_REDIS_HOST: redis
       LINGSQL_REDIS_PORT: 6379
       LINGSQL_REDIS_PASSWORD: ${REDIS_PASSWORD}

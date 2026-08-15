@@ -1,5 +1,6 @@
 package com.lingsql.web;
 
+import com.lingsql.agent.model.AiModelConfig;
 import com.lingsql.agent.repository.AiModelConfigRepository;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.billing.BillingAdminService;
@@ -20,15 +21,34 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
 class AdminSecurityResponseTest {
+
+    @Test
+    void configSerializationShouldOnlyExposeSecretConfiguredStatus() throws Exception {
+        TenantDbConfig tenantConfig = new TenantDbConfig();
+        tenantConfig.setPassword("database-secret");
+        AiModelConfig modelConfig = new AiModelConfig();
+        modelConfig.setApiKey("model-secret");
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        String tenantJson = objectMapper.writeValueAsString(tenantConfig);
+        String modelJson = objectMapper.writeValueAsString(modelConfig);
+
+        assertFalse(tenantJson.contains("database-secret"));
+        assertFalse(modelJson.contains("model-secret"));
+        assertTrue(tenantJson.contains("\"passwordConfigured\":true"));
+        assertTrue(modelJson.contains("\"apiKeyConfigured\":true"));
+    }
 
     @BeforeEach
     void bindSysAdmin() {

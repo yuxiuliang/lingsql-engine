@@ -48,11 +48,19 @@ validate_positive_int() {
   fi
 }
 
-validate_non_negative_number() {
+validate_positive_number() {
   local name="$1"
   local value="$2"
-  if ! awk -v v="${value}" 'BEGIN { exit (v >= 0) ? 0 : 1 }'; then
-    log_error "${name} 必须大于等于 0，当前值: ${value}"
+  if ! awk -v v="${value}" 'BEGIN { exit (v > 0) ? 0 : 1 }'; then
+    log_error "${name} 必须大于 0，当前值: ${value}"
+    exit 1
+  fi
+}
+
+validate_success_rate() {
+  local value="$1"
+  if ! awk -v v="${value}" 'BEGIN { exit (v > 0 && v <= 100) ? 0 : 1 }'; then
+    log_error "SLA_SUCCESS_RATE 必须在 (0, 100] 范围内，当前值: ${value}"
     exit 1
   fi
 }
@@ -66,8 +74,8 @@ main() {
   validate_positive_int "TOTAL_REQUESTS" "${TOTAL_REQUESTS}"
   validate_positive_int "CONCURRENCY" "${CONCURRENCY}"
   validate_positive_int "TIMEOUT_SECONDS" "${TIMEOUT_SECONDS}"
-  validate_non_negative_number "SLA_SUCCESS_RATE" "${SLA_SUCCESS_RATE}"
-  validate_non_negative_number "SLA_P95_MS" "${SLA_P95_MS}"
+  validate_success_rate "${SLA_SUCCESS_RATE}"
+  validate_positive_number "SLA_P95_MS" "${SLA_P95_MS}"
 
   local url="${BASE_URL%/}${TARGET_PATH}"
   local tmp_file sorted_file

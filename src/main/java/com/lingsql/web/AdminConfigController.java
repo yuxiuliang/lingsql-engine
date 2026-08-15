@@ -120,7 +120,8 @@ public class AdminConfigController {
         }
         try {
             Class.forName(driverClass);
-            try (Connection ignored = DriverManager.getConnection(url, request.getUsername(), request.getPassword())) {
+            String password = resolveTenantPassword(request);
+            try (Connection ignored = DriverManager.getConnection(url, request.getUsername(), password)) {
                 return ApiResponse.success("连接成功");
             }
         } catch (Exception ex) {
@@ -150,7 +151,9 @@ public class AdminConfigController {
         config.setTenantId(normalizeTenantId(request.getTenantId()));
         config.setJdbcUrl(request.getJdbcUrl());
         config.setUsername(request.getUsername());
-        config.setPassword(request.getPassword());
+        if (StringUtils.hasText(request.getPassword())) {
+            config.setPassword(request.getPassword());
+        }
         config.setDriverClass(request.getDriverClass());
         config.setIsolationMode(request.getIsolationMode());
         config.setLogicColumn(request.getLogicColumn());
@@ -255,7 +258,9 @@ public class AdminConfigController {
         config.setModelName(request.getModelName());
         config.setModelVersion(request.getModelVersion());
         config.setBaseUrl(request.getBaseUrl());
-        config.setApiKey(request.getApiKey());
+        if (StringUtils.hasText(request.getApiKey())) {
+            config.setApiKey(request.getApiKey());
+        }
         config.setIsActive(request.getIsActive());
         config.setWeight(request.getWeight());
         config.setPriority(request.getPriority());
@@ -520,5 +525,22 @@ public class AdminConfigController {
             log.warn("映射表达式语法校验失败: mapping={}", mapping, ex);
             throw new BizException(ErrorCode.INVALID_PARAM, "映射表达式语法错误", ex);
         }
+    }
+
+    /**
+     * 解析连接测试使用的数据库密码。编辑已有配置时，空密码沿用已保存值。
+     *
+     * @param request 数据源配置
+     * @return 数据库密码
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    private String resolveTenantPassword(TenantDbConfig request) {
+        if (StringUtils.hasText(request.getPassword()) || request.getId() == null) {
+            return request.getPassword();
+        }
+        return tenantDbConfigRepository.findById(request.getId())
+                .map(TenantDbConfig::getPassword)
+                .orElse(null);
     }
 }

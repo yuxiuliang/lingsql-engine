@@ -1,5 +1,6 @@
 package com.lingsql.agent.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -7,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import com.lingsql.security.SensitiveStringAttributeConverter;
 import lombok.Data;
 
@@ -77,7 +79,20 @@ public class AiModelConfig {
      */
     @Column(name = "api_key")
     @Convert(converter = SensitiveStringAttributeConverter.class)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String apiKey;
+
+    /**
+     * 判断访问密钥是否已配置，不返回密钥内容。
+     *
+     * @return 是否已配置访问密钥
+     * @author 余炘洋
+     * @date 2026-08-15
+     */
+    @Transient
+    public boolean isApiKeyConfigured() {
+        return apiKey != null && !apiKey.isBlank();
+    }
 
     /**
      * 是否启用。
