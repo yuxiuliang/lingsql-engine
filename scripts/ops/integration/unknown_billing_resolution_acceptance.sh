@@ -38,6 +38,18 @@ mysql_query() {
     mysql --batch --skip-column-names -uroot "${MYSQL_DATABASE}" -e "${sql}"
 }
 
+arm_usage_missing_fault() {
+  docker compose -f "${ROOT_DIR}/docker-compose.yml" -f "${ROOT_DIR}/docker-compose.integration.yml" \
+    exec -T model-stub node -e '
+      fetch("http://127.0.0.1:18080/__ci/fault/usage-missing", {method: "POST"})
+        .then(async response => {
+          const body = await response.json();
+          if (!response.ok || body.status !== "ARMED" || body.remaining !== 2) process.exit(2);
+        })
+        .catch(() => process.exit(2));
+    '
+}
+
 open_acceptance_session() {
   local response
   response="$(api_request POST '/api/v1/admin/billing/acceptance/sessions' \
@@ -158,6 +170,7 @@ main() {
   local usage_receipt usage_replay cancel_receipt cancel_replay acceptance_receipt ledger_response ledger
   session_id="$(open_acceptance_session)"
   require_value "计费验收会话 ID" "${session_id}"
+  arm_usage_missing_fault || { log_error "无法武装确定性缺失 usage 故障"; exit 2; }
 
   request_usage="$(submit_usage_missing '[CI_UNKNOWN_USAGE_SETTLE]')"
   request_cancel="$(submit_usage_missing '[CI_UNKNOWN_USAGE_CANCEL]')"

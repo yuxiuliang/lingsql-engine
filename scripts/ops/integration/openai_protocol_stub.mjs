@@ -3,6 +3,9 @@ import http from "node:http";
 const DEFAULT_PORT = 18080;
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 const CHAT_PATH = "/v1/chat/completions";
+const USAGE_FAULT_PATH = "/__ci/fault/usage-missing";
+const USAGE_FAULT_COUNT = 2;
+let forcedMissingUsageRemaining = 0;
 
 function resolvePort(value) {
   const port = Number.parseInt(value ?? String(DEFAULT_PORT), 10);
@@ -133,6 +136,16 @@ const server = http.createServer(async (request, response) => {
     sendJson(response, 200, {status: "UP", mode: "DETERMINISTIC_INTEGRATION_STUB"});
     return;
   }
+  if (request.method === "POST" && request.url === USAGE_FAULT_PATH) {
+    const remoteAddress = request.socket.remoteAddress ?? "";
+    if (remoteAddress !== "127.0.0.1" && remoteAddress !== "::1" && remoteAddress !== "::ffff:127.0.0.1") {
+      sendJson(response, 403, {error: {message: "故障开关仅允许容器本机调用。"}});
+      return;
+    }
+    forcedMissingUsageRemaining = USAGE_FAULT_COUNT;
+    sendJson(response, 200, {status: "ARMED", remaining: forcedMissingUsageRemaining});
+    return;
+  }
   if (request.method !== "POST" || request.url !== CHAT_PATH) {
     sendJson(response, 404, {error: {message: "仅开放 OpenAI Chat Completions 集成端点。"}});
     return;
@@ -144,7 +157,13 @@ const server = http.createServer(async (request, response) => {
       ? payload.model.trim()
       : "QWEN-PLUS";
     const content = resolveCompletion(payload);
-    const fault = deterministicFault(payload.messages);
+    const forcedFault = forcedMissingUsageRemaining > 0;
+    if (forcedFault) {
+      forcedMissingUsageRemaining -= 1;
+    }
+    const fault = forcedFault
+      ? {omitUsage: true, responseId: `chatcmpl-ci-forced-unknown-${forcedMissingUsageRemaining + 1}`}
+      : deterministicFault(payload.messages);
     const completion = completionResponse(model, content);
     completion.id = fault.responseId;
     if (fault.omitUsage) {
