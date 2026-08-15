@@ -51,12 +51,15 @@ open_acceptance_session() {
 }
 
 submit_usage_missing() {
-  local marker="$1" response request_id
+  local marker="$1" response request_id failure_code
   response="$(api_request POST '/api/v1/chat/ask' \
     "$(jq -cn --arg question "2026年8月已完成订单的销售额是多少？ ${marker}" '{question:$question}')" \
     "${DEMO_TOKEN}" "${LINGSQL_DEMO_TENANT_ID}")"
-  [[ "$(jq -r '.code // 0' <<< "${response}")" != "200" ]] || {
-    log_error "确定性协议桩缺失 usage 后请求仍成功，未真实制造 UNKNOWN"
+  failure_code="$(jq -r '.data.failureCode // empty' <<< "${response}")"
+  [[ "$(jq -r '.code // 0' <<< "${response}")" == "200" \
+    && -n "${failure_code}" \
+    && "$(jq -r '(.data.sql // "") == "" and ((.data.data // []) | length == 0)' <<< "${response}")" == "true" ]] || {
+    log_error "缺失 usage 后未形成无 SQL、无数据的结构化失败响应"
     exit 2
   }
   request_id="$(jq -r '.requestId // empty' <<< "${response}")"
