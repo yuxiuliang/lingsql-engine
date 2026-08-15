@@ -123,6 +123,6 @@ public interface BillingLedgerEventRepository extends JpaRepository<BillingLedge
 
         Long getCloseTotal();
 
-        java.sql.Timestamp getLatestTime();
+        LocalDateTime getLatestTime();
     }
 }

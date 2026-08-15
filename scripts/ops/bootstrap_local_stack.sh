@@ -110,17 +110,35 @@ init_schema() {
     log_error "未找到 schema 文件: ${SCHEMA_FILE}"
     exit 1
   fi
-  local table_count
-  table_count="$(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
+  local expected_tables expected_count expected_sql found_count
+  expected_tables="$(awk -F'`' '/^CREATE TABLE `/ {print $2}' "${SCHEMA_FILE}")"
+  expected_count="$(printf '%s\n' "${expected_tables}" | awk 'NF {count++} END {print count+0}')"
+  if [[ "${expected_count}" -le 0 ]]; then
+    log_error "未能从基线文件解析必需表，拒绝继续初始化。"
+    exit 1
+  fi
+  expected_sql="$(printf '%s\n' "${expected_tables}" | awk 'NF {printf "%s\047%s\047", separator, $0; separator=","}')"
+  found_count="$(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
     mysql -N -uroot "-p${MYSQL_ROOT_PASSWORD}" -e \
-    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${MYSQL_DATABASE}' AND table_name='t_lingsql_engine_tenant';")"
-  if [[ "${table_count}" -gt 0 ]]; then
-    log_info "数据库结构已存在，跳过基线 DDL；版本升级请执行受控迁移脚本。"
+    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${MYSQL_DATABASE}' AND table_name IN (${expected_sql});")"
+  if [[ "${found_count}" -eq "${expected_count}" ]]; then
+    log_info "数据库基线结构完整，跳过基线 DDL；版本升级请执行受控迁移脚本。"
     return 0
+  fi
+  if [[ "${found_count}" -gt 0 ]]; then
+    log_error "检测到部分初始化结构（${found_count}/${expected_count}），拒绝覆盖；请先备份并按迁移流程修复。"
+    exit 1
   fi
   log_info "开始初始化数据库结构..."
   docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
     mysql -uroot "-p${MYSQL_ROOT_PASSWORD}" "${MYSQL_DATABASE}" < "${SCHEMA_FILE}"
+  found_count="$(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" exec -T mysql \
+    mysql -N -uroot "-p${MYSQL_ROOT_PASSWORD}" -e \
+    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${MYSQL_DATABASE}' AND table_name IN (${expected_sql});")"
+  if [[ "${found_count}" -ne "${expected_count}" ]]; then
+    log_error "数据库结构初始化不完整（${found_count}/${expected_count}）。"
+    exit 1
+  fi
   log_info "数据库结构初始化完成。"
 }
 

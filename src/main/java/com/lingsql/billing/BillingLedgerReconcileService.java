@@ -59,7 +59,7 @@ public class BillingLedgerReconcileService {
                     reserve,
                     close,
                     diff,
-                    record.getLatestTime() == null ? null : record.getLatestTime().toLocalDateTime()
+                    record.getLatestTime()
             );
         }
     }

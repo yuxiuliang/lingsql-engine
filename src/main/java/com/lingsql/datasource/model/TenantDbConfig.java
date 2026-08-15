@@ -118,7 +118,7 @@ public class TenantDbConfig {
      * @author 余炘洋
      * @date 2026-01-22
      */
-    @Column(name = "white_list_tables")
+    @Column(name = "white_list_tables", columnDefinition = "TEXT")
     private String whiteListTables;
 
     /**
@@ -127,7 +127,7 @@ public class TenantDbConfig {
      * @author 余炘洋
      * @date 2026-01-22
      */
-    @Column(name = "white_list_columns")
+    @Column(name = "white_list_columns", columnDefinition = "TEXT")
     private String whiteListColumns;
 
     /**
@@ -136,7 +136,7 @@ public class TenantDbConfig {
      * @author 余炘洋
      * @date 2026-01-22
      */
-    @Column(name = "sensitive_columns")
+    @Column(name = "sensitive_columns", columnDefinition = "TEXT")
     private String sensitiveColumns;
 
     /**
