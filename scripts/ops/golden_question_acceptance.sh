@@ -19,6 +19,7 @@ GQ_PHASE="${GQ_PHASE:-FIRST}"
 GQ_PARENT_EVIDENCE="${GQ_PARENT_EVIDENCE:-}"
 GQ_OUTPUT_DIR="${GQ_OUTPUT_DIR:-}"
 GQ_EVIDENCE_SETTLE_SECONDS="${GQ_EVIDENCE_SETTLE_SECONDS:-10}"
+GQ_COMPARATOR_JAR="${GQ_COMPARATOR_JAR:-./dist/lingsql-engine.jar}"
 
 log_info() { echo "[INFO] $*"; }
 log_error() { echo "[ERROR] $*" >&2; }
@@ -124,37 +125,20 @@ validate_runtime_fingerprint() {
     >> "${EVIDENCE_FILE}"
 }
 
-compare_scalar() {
-  local case_json="$1" response_file="$2"
-  local row column expected abs_tol rel_tol actual
-  row="$(jq -r '.expected.rowIndex' <<< "${case_json}")"
-  column="$(jq -r '.expected.column' <<< "${case_json}")"
-  expected="$(jq -r '.expected.value' <<< "${case_json}")"
-  abs_tol="$(jq -r '.expected.absoluteTolerance' <<< "${case_json}")"
-  rel_tol="$(jq -r '.expected.relativeTolerance' <<< "${case_json}")"
-  actual="$(jq -r --argjson row "${row}" --arg column "${column}" '.data.data[$row][$column] // empty' "${response_file}")"
-  [[ "${actual}" =~ ^-?[0-9]+([.][0-9]+)?([eE][+-]?[0-9]+)?$ ]] || return 1
-  awk -v a="${actual}" -v e="${expected}" -v at="${abs_tol}" -v rt="${rel_tol}" \
-    'BEGIN { d=a-e; if(d<0)d=-d; re=e; if(re<0)re=-re; t=at; if(re*rt>t)t=re*rt; exit(d<=t?0:1) }'
+compare_business_result() {
+  local case_id="$1" response_file="$2" exit_code
+  run_result_comparator "${GQ_SUITE_FILE}" "${case_id}" "${response_file}" && return 0
+  exit_code=$?
+  if [[ "${exit_code}" -eq 2 ]]; then
+    log_error "验收比较器拒绝了 Suite 或响应结构: ${case_id}"
+    exit 2
+  fi
+  return "${exit_code}"
 }
 
-compare_rowset() {
-  local case_json="$1" response_file="$2" columns expected_rows order_sensitive actual_rows
-  columns="$(jq -c '.expected.columns' <<< "${case_json}")"
-  order_sensitive="$(jq -r '.expected.orderSensitive' <<< "${case_json}")"
-  if ! jq -e --argjson columns "${columns}" '
-      (.data.data | type == "array") and
-      all(.data.data[]; . as $row | all($columns[]; . as $column | $row | has($column)))
-    ' "${response_file}" >/dev/null; then
-    return 1
-  fi
-  actual_rows="$(jq -cS --argjson columns "${columns}" '[.data.data[] | . as $row | reduce $columns[] as $c ({}; .[$c]=$row[$c])]' "${response_file}")"
-  expected_rows="$(jq -cS --argjson columns "${columns}" '[.expected.rows[] | . as $row | reduce $columns[] as $c ({}; .[$c]=$row[$c])]' <<< "${case_json}")"
-  if [[ "${order_sensitive}" != "true" ]]; then
-    actual_rows="$(jq -cS 'sort_by(tojson)' <<< "${actual_rows}")"
-    expected_rows="$(jq -cS 'sort_by(tojson)' <<< "${expected_rows}")"
-  fi
-  [[ "${actual_rows}" == "${expected_rows}" ]]
+run_result_comparator() {
+  java -Dloader.main=com.lingsql.acceptance.GoldenQuestionResultComparator \
+    -cp "${GQ_COMPARATOR_JAR}" org.springframework.boot.loader.launch.PropertiesLauncher "$@"
 }
 
 append_business_evidence() {
@@ -166,16 +150,15 @@ append_business_evidence() {
   api_code="$(jq -r '.code // 0' "${response_file}")"
   request_id="$(jq -r '.requestId // empty' "${response_file}")"
   sql="$(jq -r '.data.sql // empty' "${response_file}")"
-  digest="$(jq -cS '.data.data // []' "${response_file}" | sha256sum | awk '{print $1}')"
+  digest="$(sha256sum "${response_file}" | awk '{print $1}')"
   if [[ "${http_code}" != "200" || "${api_code}" != "200" ]]; then
     reason="API_FAILURE"
   elif [[ -z "${request_id}" ]]; then
     reason="MISSING_REQUEST_ID"
   elif ! [[ "${sql}" =~ ^[[:space:]]*(SELECT|WITH)[[:space:]] ]]; then
     reason="NOT_READ_ONLY_SQL"
-  elif [[ "${kind}" == "SCALAR_NUMBER" ]] && compare_scalar "${case_json}" "${response_file}"; then
-    correct=true; reason="MATCH"
-  elif [[ "${kind}" == "ROWSET" ]] && compare_rowset "${case_json}" "${response_file}"; then
+  elif [[ "${kind}" == "SCALAR_NUMBER" || "${kind}" == "ROWSET" ]] \
+      && compare_business_result "${id}" "${response_file}"; then
     correct=true; reason="MATCH"
   fi
   jq -cn --arg id "${id}" --arg priority "${priority}" --arg phase "${GQ_PHASE}" \
@@ -331,16 +314,23 @@ EOF
 }
 
 main() {
-  local command_name login_body login_response parent_sha run_cases_json security_cases_json
-  for command_name in curl jq sha256sum awk sort sed date mktemp chmod basename; do require_cmd "${command_name}"; done
+  local command_name login_body login_response parent_sha run_cases_json security_cases_json comparator_commit expected_commit
+  for command_name in curl jq sha256sum awk sort sed date mktemp chmod basename java; do require_cmd "${command_name}"; done
   require_value "GQ_SUITE_FILE" "${GQ_SUITE_FILE}"; require_value "PILOT_TENANT_ID" "${PILOT_TENANT_ID}"
   require_value "PILOT_USERNAME" "${PILOT_USERNAME}"; require_value "PILOT_PASSWORD" "${PILOT_PASSWORD}"
   PILOT_CONTROL_TOKEN="$(acceptance_resolve_control_token \
     "${BASE_URL}" "${PILOT_CONTROL_TOKEN}" "${PILOT_CONTROL_TENANT_ID}" \
     "${PILOT_CONTROL_USERNAME}" "${PILOT_CONTROL_PASSWORD}")"
   [[ -f "${GQ_SUITE_FILE}" ]] || { log_error "黄金问题 JSON 不存在"; exit 1; }
+  [[ -f "${GQ_COMPARATOR_JAR}" ]] || { log_error "验收比较器制品不存在: ${GQ_COMPARATOR_JAR}"; exit 1; }
   [[ "${GQ_PHASE}" == "FIRST" || "${GQ_PHASE}" == "RETEST" ]] || { log_error "GQ_PHASE 仅允许 FIRST 或 RETEST"; exit 1; }
   validate_suite
+  expected_commit="$(jq -r '.environment.releaseCommit' "${GQ_SUITE_FILE}")"
+  comparator_commit="$(run_result_comparator --build-commit)"
+  [[ "${comparator_commit}" == "${expected_commit}" ]] || {
+    log_error "验收比较器提交与冻结 Suite 不一致: expected=${expected_commit}, actual=${comparator_commit:-<empty>}"
+    exit 2
+  }
   SUITE_SHA256="$(sha256sum "${GQ_SUITE_FILE}" | awk '{print $1}')"
   if [[ "${GQ_PHASE}" == "RETEST" ]]; then
     require_value "GQ_PARENT_EVIDENCE" "${GQ_PARENT_EVIDENCE}"; [[ -f "${GQ_PARENT_EVIDENCE}" ]] || { log_error "首次证据不存在"; exit 1; }
