@@ -4,7 +4,10 @@ import com.lingsql.rbac.entity.RbacUser;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -80,4 +83,30 @@ public interface RbacUserRepository extends JpaRepository<RbacUser, Long> {
      * @date 2026-01-26
      */
     long countByTenantIdAndStatus(String tenantId, Integer status);
+
+    /**
+     * 统计当前可登录且绑定指定有效角色的租户账号。
+     *
+     * @param tenantId 租户标识
+     * @param roleCode 角色编码
+     * @param activeStatus 启用状态
+     * @param now 当前时间
+     * @return 可登录账号数量
+     */
+    @Query("""
+            SELECT COUNT(u)
+              FROM RbacUser u, RbacUserRole ur, RbacRole r
+             WHERE u.tenantId = :tenantId
+               AND u.status = :activeStatus
+               AND (u.lockUntil IS NULL OR u.lockUntil <= :now)
+               AND ur.userId = u.id
+               AND r.id = ur.roleId
+               AND r.tenantId = :tenantId
+               AND r.roleCode = :roleCode
+               AND r.status = :activeStatus
+            """)
+    long countLoginReadyUsersByTenantAndRole(@Param("tenantId") String tenantId,
+                                              @Param("roleCode") String roleCode,
+                                              @Param("activeStatus") Integer activeStatus,
+                                              @Param("now") LocalDateTime now);
 }

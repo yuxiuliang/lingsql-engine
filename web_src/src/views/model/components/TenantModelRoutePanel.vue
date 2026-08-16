@@ -4,6 +4,7 @@ import {ElMessage} from 'element-plus';
 import {useTenantModelRoutes} from '@/composables/model-route/useTenantModelRoutes';
 import TenantModelRouteTable from './TenantModelRouteTable.vue';
 import TenantModelRouteToolbar from './TenantModelRouteToolbar.vue';
+import TenantFirstQuestionReadinessSummary from './TenantFirstQuestionReadinessSummary.vue';
 
 const {
   tenantOptions,
@@ -13,6 +14,7 @@ const {
   saving,
   selectedCount,
   eligibleCount,
+  readiness,
   initialize,
   selectTenant,
   refresh,
@@ -85,6 +87,8 @@ onMounted(handleInitialize);
       show-icon
       class="tenant-model-route-panel__alert"
     />
+
+    <TenantFirstQuestionReadinessSummary :readiness="readiness" :loading="loading"/>
 
     <TenantModelRouteTable
       :rows="rows"

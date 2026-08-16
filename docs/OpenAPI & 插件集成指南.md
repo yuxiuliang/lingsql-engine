@@ -717,6 +717,27 @@ Authorization: Bearer {systemAdminToken}
 
 返回的 `activeModels` 和 `modelRouteFingerprint` 只描述该租户的授权路由；40 题证据中的每次物理调用指纹必须与其一致。
 
+#### 4.2.10 查询租户首问就绪状态
+
+READY 开户回执只证明登录、计费和数据源前置事实已经提交，不能作为可以开始真实问数的依据。系统管理员应在 Schema 同步和模型授权完成后查询统一门禁：
+
+```http
+GET /api/v1/admin/tenant-readiness/tenant-pilot/first-question
+Authorization: Bearer {systemAdminToken}
+```
+
+该接口要求 `ADMIN:TENANT:READ` 和系统管理员身份，返回 `ready`、`status`、完整 `checks[]` 以及 `failureReasons[]`。检查项采用稳定编码：
+
+| 检查码 | 通过条件 |
+| :--- | :--- |
+| `TENANT_ACTIVE` | 租户存在、未删除、已启用且生命周期允许访问核心能力 |
+| `TENANT_ADMIN_LOGIN` | 至少一个启用、未锁定且绑定有效 `TENANT_ADMIN` 角色的账号 |
+| `BILLING_AVAILABLE` | 当前套餐存在且启用，租户可用余额大于 0 |
+| `DATASOURCE_SCHEMA_READY` | 数据源已启用，Schema 已成功同步且存在同步时间 |
+| `MODEL_ROUTE_READY` | 至少一个租户授权模型同时处于启用和最近真实探测 `HEALTHY` 状态 |
+
+只有 `status=READY_TO_ASK` 且 `ready=true` 时才能开始租户管理员三问或 40 题验收。该接口只读取现有事实，不会自动启用租户、补余额、同步 Schema 或修改模型授权。
+
 ### 4.3 元数据管理
 
 #### 4.3.1 获取 Schema 列表
@@ -1692,6 +1713,7 @@ async function callApi<T>(request: () => Promise<T>): Promise<T> {
 | **发布与验收** |
 | GET | `/api/v1/admin/runtime/fingerprint?modelTenantId={tenantId}` | 当前 Git SHA、Flyway、数据快照与指定租户授权模型路由指纹 | ADMIN:TENANT:READ + 系统管理员 |
 | GET/PUT | `/api/v1/admin/tenant-model-routes/{tenantId}` | 查询或完整替换租户模型授权路由 | ADMIN:MODEL:READ/WRITE + 系统管理员 |
+| GET | `/api/v1/admin/tenant-readiness/{tenantId}/first-question` | 汇总租户开始真实问数前的五项只读门禁 | ADMIN:TENANT:READ + 系统管理员 |
 
 ---
 

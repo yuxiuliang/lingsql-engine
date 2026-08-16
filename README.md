@@ -150,6 +150,8 @@ cp .env.example .env
 - **Token 审计 API**：
   - `GET /api/v1/admin/audit/token-overview`（按租户/用户/来源/关键词/时间窗聚合 Token 消耗与成功率）
   - `GET /api/v1/admin/billing/readiness/snapshot`（计费商用就绪快照）
+- **试点就绪 API**：
+  - `GET /api/v1/admin/tenant-readiness/{tenantId}/first-question`（汇总租户状态、管理员、套餐余额、Schema 和模型授权五项首问门禁）
 - **数字员工 API**：
   - `GET /api/v1/admin/digital-employees`（数字员工列表）
   - `POST /api/v1/admin/digital-employees/{id}/run`（执行数字员工）

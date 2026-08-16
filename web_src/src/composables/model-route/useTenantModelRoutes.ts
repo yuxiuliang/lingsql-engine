@@ -7,6 +7,10 @@ import {
   type TenantModelRouteView
 } from '@/api/model-route';
 import {fetchTenants, type TenantView} from '@/api/tenant';
+import {
+  fetchTenantFirstQuestionReadiness,
+  type TenantFirstQuestionReadinessView
+} from '@/api/tenant-readiness';
 
 export interface TenantModelRouteRow {
   modelConfigId: number;
@@ -37,6 +41,7 @@ export const useTenantModelRoutes = () => {
   const tenants = ref<TenantView[]>([]);
   const models = ref<ModelHealthView[]>([]);
   const routes = ref<TenantModelRouteView[]>([]);
+  const readiness = shallowRef<TenantFirstQuestionReadinessView>();
   const selectedTenantId = shallowRef('');
   const loading = shallowRef(false);
   const saving = shallowRef(false);
@@ -73,9 +78,7 @@ export const useTenantModelRoutes = () => {
       models.value = modelItems;
       const firstTenant = tenantItems.find((tenant) => tenant.status === 1) ?? tenantItems[0];
       selectedTenantId.value = firstTenant?.tenantId ?? '';
-      routes.value = selectedTenantId.value
-        ? await fetchTenantModelRoutes(selectedTenantId.value)
-        : [];
+      await refreshTenantFacts();
     } finally {
       loading.value = false;
     }
@@ -93,7 +96,7 @@ export const useTenantModelRoutes = () => {
       tenants.value = tenantItems;
       models.value = modelItems;
       if (selectedTenantId.value) {
-        routes.value = await fetchTenantModelRoutes(selectedTenantId.value);
+        await refreshTenantFacts();
       }
     } finally {
       loading.value = false;
@@ -107,7 +110,7 @@ export const useTenantModelRoutes = () => {
     }
     loading.value = true;
     try {
-      routes.value = await fetchTenantModelRoutes(selectedTenantId.value);
+      await refreshTenantFacts();
     } finally {
       loading.value = false;
     }
@@ -150,6 +153,7 @@ export const useTenantModelRoutes = () => {
     saving.value = true;
     try {
       routes.value = await replaceTenantModelRoutes(selectedTenantId.value, commands);
+      readiness.value = await fetchTenantFirstQuestionReadiness(selectedTenantId.value);
       return routes.value;
     } finally {
       saving.value = false;
@@ -165,6 +169,20 @@ export const useTenantModelRoutes = () => {
       : route);
   };
 
+  const refreshTenantFacts = async () => {
+    if (!selectedTenantId.value) {
+      routes.value = [];
+      readiness.value = undefined;
+      return;
+    }
+    const [routeItems, readinessView] = await Promise.all([
+      fetchTenantModelRoutes(selectedTenantId.value),
+      fetchTenantFirstQuestionReadiness(selectedTenantId.value)
+    ]);
+    routes.value = routeItems;
+    readiness.value = readinessView;
+  };
+
   return {
     tenantOptions,
     rows,
@@ -173,6 +191,7 @@ export const useTenantModelRoutes = () => {
     saving: readonly(saving),
     selectedCount,
     eligibleCount,
+    readiness: readonly(readiness),
     initialize,
     selectTenant,
     refresh,

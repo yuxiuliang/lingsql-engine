@@ -25,4 +25,25 @@ public interface TenantModelRouteRepository extends JpaRepository<TenantModelRou
     int deleteByTenantId(@Param("tenantId") String tenantId);
 
     boolean existsByModelConfigId(Long modelConfigId);
+
+    /**
+     * 统计租户当前可用于真实调用的授权模型。
+     *
+     * @param tenantId 租户标识
+     * @param activeStatus 启用状态
+     * @param probeStatus 真实探测状态
+     * @return 可用授权数量
+     */
+    @Query("""
+            SELECT COUNT(route)
+              FROM TenantModelRoute route, AiModelConfig model
+             WHERE route.tenantId = :tenantId
+               AND route.status = :activeStatus
+               AND model.id = route.modelConfigId
+               AND model.isActive = :activeStatus
+               AND model.lastProbeStatus = :probeStatus
+            """)
+    long countUsableRoutes(@Param("tenantId") String tenantId,
+                           @Param("activeStatus") Integer activeStatus,
+                           @Param("probeStatus") String probeStatus);
 }
