@@ -152,6 +152,7 @@ jobs:
           GQ_SUITE_FILE: ${{ vars.RELEASE_GATE_GQ_SUITE_FILE }}
           GQ_EXPECTED_SUITE_SHA256: ${{ vars.RELEASE_GATE_GQ_SUITE_SHA256 }}
           GQ_PHASE: FIRST
+          GQ_EVIDENCE_PURPOSE: CUSTOMER_UAT
           GQ_OUTPUT_DIR: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}
           PILOT_TENANT_ID: ${{ secrets.RELEASE_GATE_PILOT_TENANT_ID }}
           PILOT_USERNAME: ${{ secrets.RELEASE_GATE_PILOT_USERNAME }}

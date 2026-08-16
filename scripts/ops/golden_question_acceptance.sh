@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# LingSQL 40题黄金问题正式验收 runner。JSON 是签字真源；脚本仅生成自动化证据，不代替双方签字。
+# LingSQL 40题黄金问题 runner。客户验收与内部演练必须显式分类，禁止混用证据。
 
 set -euo pipefail
 
@@ -17,6 +17,7 @@ PILOT_CONTROL_PASSWORD="${PILOT_CONTROL_PASSWORD:-}"
 GQ_SUITE_FILE="${GQ_SUITE_FILE:-}"
 GQ_EXPECTED_SUITE_SHA256="${GQ_EXPECTED_SUITE_SHA256:-}"
 GQ_PHASE="${GQ_PHASE:-FIRST}"
+GQ_EVIDENCE_PURPOSE="${GQ_EVIDENCE_PURPOSE:-}"
 GQ_PARENT_EVIDENCE="${GQ_PARENT_EVIDENCE:-}"
 GQ_PARENT_EVIDENCE_SHA256="${GQ_PARENT_EVIDENCE_SHA256:-}"
 GQ_OUTPUT_DIR="${GQ_OUTPUT_DIR:-}"
@@ -382,14 +383,26 @@ build_report() {
         || "${final_all}" -ne 40 ) ]]; then
     automated_pass=false
   fi
+  local report_title boundary_text signature_block
   conclusion="自动门禁不通过"
-  [[ "${automated_pass}" == "true" ]] && conclusion="自动门禁通过，等待双方签字"
+  report_title="LingSQL 40题内部演练报告"
+  boundary_text="本报告仅证明虚构或内部数据环境下的工程演练结果，不构成客户验收、合同履约或商用上线证据。"
+  signature_block=""
+  if [[ "${GQ_EVIDENCE_PURPOSE}" == "CUSTOMER_UAT" ]]; then
+    report_title="LingSQL 40题黄金问题正式验收报告"
+    boundary_text="远端报告只保留脱敏汇总；JSONL 是仅存放于受控交付环境的明细证据，不得上传为公共或仓库 Artifact。网络、模型、数据或超时异常均已按错误计入，runner 不自动排除样本。自动门禁通过不等于客户验收通过；客户口径负责人和交付负责人核对冻结 JSON、受控原始材料与本报告并签字后，才可形成合同验收结论。"
+    signature_block=$'客户口径负责人：____________ 日期：____________\n\n交付负责人：____________ 日期：____________'
+    [[ "${automated_pass}" == "true" ]] && conclusion="自动门禁通过，等待双方签字"
+  elif [[ "${automated_pass}" == "true" ]]; then
+    conclusion="内部演练自动门禁通过，不构成客户验收"
+  fi
   evidence_sha256="$(sha256sum "${EVIDENCE_FILE}" | awk '{print $1}')"
   cat > "${REPORT_FILE}" <<EOF
-# LingSQL 40题黄金问题正式验收报告
+# ${report_title}
 
 - 运行 ID: ${RUN_ID}
 - 阶段: ${GQ_PHASE}
+- 证据用途: ${GQ_EVIDENCE_PURPOSE}
 - Suite SHA-256: ${SUITE_SHA256}
 - 受控证据 SHA-256: ${evidence_sha256}
 - P0 首次正确: ${first_p0}/20（门槛 18/20）
@@ -410,11 +423,9 @@ $(jq -r 'select(.type=="business" or .type=="security") | "| \(.id) | \(.priorit
 
 ## 证据与签字边界
 
-远端报告只保留脱敏汇总；JSONL 是仅存放于受控交付环境的明细证据，不得上传为公共或仓库 Artifact。网络、模型、数据或超时异常均已按错误计入，runner 不自动排除样本。自动门禁通过不等于客户验收通过；客户口径负责人和交付负责人核对冻结 JSON、受控原始材料与本报告并签字后，才可形成合同验收结论。
+${boundary_text}
 
-客户口径负责人：____________ 日期：____________
-
-交付负责人：____________ 日期：____________
+${signature_block}
 EOF
   [[ "${automated_pass}" == "true" ]] || return 2
 }
@@ -426,12 +437,14 @@ main() {
   require_value "GQ_EXPECTED_SUITE_SHA256" "${GQ_EXPECTED_SUITE_SHA256}"
   [[ "${GQ_EXPECTED_SUITE_SHA256}" =~ ^[0-9a-f]{64}$ ]] || { log_error "GQ_EXPECTED_SUITE_SHA256 格式不合法"; exit 1; }
   require_value "PILOT_USERNAME" "${PILOT_USERNAME}"; require_value "PILOT_PASSWORD" "${PILOT_PASSWORD}"
+  [[ "${GQ_PHASE}" == "FIRST" || "${GQ_PHASE}" == "RETEST" ]] || { log_error "GQ_PHASE 仅允许 FIRST 或 RETEST"; exit 1; }
+  [[ "${GQ_EVIDENCE_PURPOSE}" == "INTERNAL_REHEARSAL" || "${GQ_EVIDENCE_PURPOSE}" == "CUSTOMER_UAT" ]] \
+    || { log_error "GQ_EVIDENCE_PURPOSE 仅允许 INTERNAL_REHEARSAL 或 CUSTOMER_UAT"; exit 1; }
   PILOT_CONTROL_TOKEN="$(acceptance_resolve_control_token \
     "${BASE_URL}" "${PILOT_CONTROL_TOKEN}" "${PILOT_CONTROL_TENANT_ID}" \
     "${PILOT_CONTROL_USERNAME}" "${PILOT_CONTROL_PASSWORD}")"
   [[ -f "${GQ_SUITE_FILE}" ]] || { log_error "黄金问题 JSON 不存在"; exit 1; }
   [[ -f "${GQ_COMPARATOR_JAR}" ]] || { log_error "验收比较器制品不存在: ${GQ_COMPARATOR_JAR}"; exit 1; }
-  [[ "${GQ_PHASE}" == "FIRST" || "${GQ_PHASE}" == "RETEST" ]] || { log_error "GQ_PHASE 仅允许 FIRST 或 RETEST"; exit 1; }
   source_suite_file="${GQ_SUITE_FILE}"
   SUITE_SHA256="$(sha256sum "${source_suite_file}" | awk '{print $1}')"
   [[ "${SUITE_SHA256}" == "${GQ_EXPECTED_SUITE_SHA256}" ]] || { log_error "冻结 Suite SHA-256 与受保护配置不一致"; exit 2; }
@@ -461,18 +474,21 @@ main() {
     [[ "${parent_sha}" == "${SUITE_SHA256}" ]] || { log_error "复测 Suite SHA-256 与首次证据不一致"; exit 2; }
     validate_parent_evidence
     parent_run_id="$(jq -r 'select(.type=="run")|.runId' "${GQ_PARENT_EVIDENCE}")"
+    [[ "$(jq -r 'select(.type=="run")|.evidencePurpose // empty' "${GQ_PARENT_EVIDENCE}")" == "${GQ_EVIDENCE_PURPOSE}" ]] \
+      || { log_error "复测证据用途与首次证据不一致"; exit 2; }
   else
     [[ -z "${GQ_PARENT_EVIDENCE}" ]] || { log_error "FIRST 不允许指定 GQ_PARENT_EVIDENCE"; exit 1; }
     [[ -z "${GQ_PARENT_EVIDENCE_SHA256}" ]] || { log_error "FIRST 不允许指定 GQ_PARENT_EVIDENCE_SHA256"; exit 1; }
   fi
-  RUN_ID="$(date -u +%Y%m%dT%H%M%S%NZ)-${GQ_PHASE,,}-$(printf '%s' "${SUITE_SHA256}" | cut -c1-8)"
+  RUN_ID="$(date -u +%Y%m%dT%H%M%S%NZ)-${GQ_EVIDENCE_PURPOSE,,}-${GQ_PHASE,,}-$(printf '%s' "${SUITE_SHA256}" | cut -c1-8)"
   [[ -n "${GQ_OUTPUT_DIR}" ]] || GQ_OUTPUT_DIR="./reports/golden-question-${RUN_ID}"
   [[ ! -e "${GQ_OUTPUT_DIR}" ]] || { log_error "拒绝覆盖已存在输出: ${GQ_OUTPUT_DIR}"; exit 2; }
   mkdir -p "${GQ_OUTPUT_DIR}"; EVIDENCE_FILE="${GQ_OUTPUT_DIR}/evidence.jsonl"; REPORT_FILE="${GQ_OUTPUT_DIR}/report.md"
   REQUEST_IDS_FILE="${TMP_DIR}/request-ids.txt"; : > "${EVIDENCE_FILE}"; : > "${REQUEST_IDS_FILE}"; chmod 600 "${EVIDENCE_FILE}" "${REQUEST_IDS_FILE}"
-  jq -cn --arg runId "${RUN_ID}" --arg phase "${GQ_PHASE}" --arg suiteSha256 "${SUITE_SHA256}" --arg createdAt "$(date -Iseconds)" \
+  jq -cn --arg runId "${RUN_ID}" --arg phase "${GQ_PHASE}" --arg evidencePurpose "${GQ_EVIDENCE_PURPOSE}" \
+    --arg suiteSha256 "${SUITE_SHA256}" --arg createdAt "$(date -Iseconds)" \
     --arg parentEvidenceSha256 "${GQ_PARENT_EVIDENCE_SHA256}" --arg parentRunId "${parent_run_id:-}" \
-    '{type:"run",runId:$runId,phase:$phase,suiteSha256:$suiteSha256,createdAt:$createdAt,automaticExclusion:false,
+    '{type:"run",runId:$runId,phase:$phase,evidencePurpose:$evidencePurpose,suiteSha256:$suiteSha256,createdAt:$createdAt,automaticExclusion:false,
       parentEvidenceSha256:(if $parentEvidenceSha256 == "" then null else $parentEvidenceSha256 end),
       parentRunId:(if $parentRunId == "" then null else $parentRunId end)}' >> "${EVIDENCE_FILE}"
   validate_runtime_fingerprint
@@ -496,7 +512,16 @@ main() {
   collect_business_batch_evidence
   security_cases_json="$(jq -c '.securityCases[]' "${GQ_SUITE_FILE}")"
   while IFS= read -r case_json; do [[ -n "${case_json}" ]] || continue; run_security_case "${case_json}"; done <<< "${security_cases_json}"
-  if build_report; then log_info "40题正式验收自动门禁通过，待双方签字: ${REPORT_FILE}"; else log_error "40题正式验收自动门禁未通过: ${REPORT_FILE}"; exit 2; fi
+  if build_report; then
+    if [[ "${GQ_EVIDENCE_PURPOSE}" == "CUSTOMER_UAT" ]]; then
+      log_info "40题客户验收自动门禁通过，待双方签字: ${REPORT_FILE}"
+    else
+      log_info "40题内部演练自动门禁通过，不构成客户验收: ${REPORT_FILE}"
+    fi
+  else
+    log_error "40题自动门禁未通过: ${REPORT_FILE}"
+    exit 2
+  fi
 }
 
 main "$@"

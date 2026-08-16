@@ -315,6 +315,7 @@ jobs:
           GQ_EXPECTED_SUITE_SHA256: ${{ vars.RELEASE_GATE_GQ_SUITE_SHA256 }}
           GQ_COMPARATOR_JAR: ./dist/lingsql-engine.jar
           GQ_PHASE: FIRST
+          GQ_EVIDENCE_PURPOSE: CUSTOMER_UAT
           GQ_OUTPUT_DIR: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}
           CANDIDATE_GQ_EVIDENCE_FILE: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}/evidence.jsonl
           CANDIDATE_GQ_REPORT_FILE: ./reports/golden-question-${{ github.run_id }}-${{ github.run_attempt }}/report.md
