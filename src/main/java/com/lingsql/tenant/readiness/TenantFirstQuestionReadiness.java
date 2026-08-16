@@ -7,6 +7,7 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
+import com.lingsql.rbac.repository.RbacPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantLifecycleSnapshot;
@@ -41,10 +42,16 @@ public class TenantFirstQuestionReadiness {
     private static final String HEALTHY = "HEALTHY";
     private static final String READY_STATUS = "READY_TO_ASK";
     private static final String BLOCKED_STATUS = "BLOCKED";
+    private static final List<String> FIRST_QUESTION_PERMISSION_CODES = List.of(
+            "MENU:CHAT",
+            "CONFIG:CHAT:READ",
+            "API:CHAT:ASK"
+    );
 
     private final TenantRepository tenantRepository;
     private final TenantLifecycleService tenantLifecycleService;
     private final RbacUserRepository userRepository;
+    private final RbacPermissionRepository permissionRepository;
     private final BillingPlanRepository billingPlanRepository;
     private final TenantDbConfigRepository dataSourceRepository;
     private final TenantModelRouteRepository modelRouteRepository;
@@ -108,6 +115,22 @@ public class TenantFirstQuestionReadiness {
         );
         if (count < 1) {
             return failed("TENANT_ADMIN_LOGIN", "租户管理员", "不存在已启用、未锁定且绑定有效 TENANT_ADMIN 角色的账号");
+        }
+        List<String> effectivePermissionCodes = permissionRepository.findEffectiveTenantRolePermissionCodes(
+                tenantId,
+                TENANT_ADMIN_ROLE,
+                ACTIVE,
+                FIRST_QUESTION_PERMISSION_CODES
+        );
+        List<String> missingPermissionCodes = FIRST_QUESTION_PERMISSION_CODES.stream()
+                .filter(code -> !effectivePermissionCodes.contains(code))
+                .toList();
+        if (!missingPermissionCodes.isEmpty()) {
+            return failed(
+                    "TENANT_ADMIN_LOGIN",
+                    "租户管理员",
+                    "TENANT_ADMIN 角色授权或租户权限池缺少首问权限: " + String.join(", ", missingPermissionCodes)
+            );
         }
         return passed("TENANT_ADMIN_LOGIN", "租户管理员");
     }

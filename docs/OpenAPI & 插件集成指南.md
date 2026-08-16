@@ -731,7 +731,7 @@ Authorization: Bearer {systemAdminToken}
 | 检查码 | 通过条件 |
 | :--- | :--- |
 | `TENANT_ACTIVE` | 租户存在、未删除、已启用且生命周期允许访问核心能力 |
-| `TENANT_ADMIN_LOGIN` | 至少一个启用、未锁定且绑定有效 `TENANT_ADMIN` 角色的账号 |
+| `TENANT_ADMIN_LOGIN` | 至少一个启用、未锁定且绑定有效 `TENANT_ADMIN` 角色的账号；该角色授权与租户权限池必须同时包含 `MENU:CHAT`、`CONFIG:CHAT:READ`、`API:CHAT:ASK` |
 | `BILLING_AVAILABLE` | 当前套餐存在且启用，租户可用余额大于 0 |
 | `DATASOURCE_SCHEMA_READY` | 数据源已启用，Schema 已成功同步且存在同步时间 |
 | `MODEL_ROUTE_READY` | 至少一个租户授权模型同时处于启用和最近真实探测 `HEALTHY` 状态 |

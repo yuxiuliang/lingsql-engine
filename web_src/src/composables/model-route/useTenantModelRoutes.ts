@@ -1,4 +1,5 @@
-import {computed, readonly, ref, shallowRef} from 'vue';
+import {computed, readonly, ref, shallowRef, toRef, toValue, watch} from 'vue';
+import type {MaybeRefOrGetter} from 'vue';
 import {fetchModelHealth, type ModelHealthView} from '@/api/admin';
 import {
   fetchTenantModelRoutes,
@@ -30,6 +31,10 @@ export interface TenantModelRouteTenantOption {
   status?: number;
 }
 
+export interface UseTenantModelRoutesOptions {
+  preferredTenantId?: MaybeRefOrGetter<string>;
+}
+
 /**
  * 管理租户模型授权路由的状态和副作用。
  *
@@ -37,7 +42,7 @@ export interface TenantModelRouteTenantOption {
  * @author 余炘洋
  * @date 2026-08-16
  */
-export const useTenantModelRoutes = () => {
+export const useTenantModelRoutes = (options: UseTenantModelRoutesOptions = {}) => {
   const tenants = ref<TenantView[]>([]);
   const models = ref<ModelHealthView[]>([]);
   const routes = ref<TenantModelRouteView[]>([]);
@@ -45,6 +50,10 @@ export const useTenantModelRoutes = () => {
   const selectedTenantId = shallowRef('');
   const loading = shallowRef(false);
   const saving = shallowRef(false);
+  const syncError = shallowRef<unknown>();
+  const initialized = shallowRef(false);
+  const preferredTenantId = toRef(options.preferredTenantId ?? '');
+  let tenantFactsRequestVersion = 0;
 
   const rows = computed<TenantModelRouteRow[]>(() => models.value.map((model) => {
     const route = routes.value.find((item) => item.modelConfigId === model.id);
@@ -76,17 +85,15 @@ export const useTenantModelRoutes = () => {
       const [tenantItems, modelItems] = await Promise.all([fetchTenants(), fetchModelHealth()]);
       tenants.value = tenantItems;
       models.value = modelItems;
-      const firstTenant = tenantItems.find((tenant) => tenant.status === 1) ?? tenantItems[0];
-      selectedTenantId.value = firstTenant?.tenantId ?? '';
-      await refreshTenantFacts();
+      initialized.value = true;
+      await applyPreferredTenant(toValue(preferredTenantId), true);
     } finally {
       loading.value = false;
     }
   };
 
   const selectTenant = async (tenantId: string) => {
-    selectedTenantId.value = tenantId;
-    await refreshRoutes();
+    await applyPreferredTenant(tenantId, true);
   };
 
   const refresh = async () => {
@@ -95,9 +102,7 @@ export const useTenantModelRoutes = () => {
       const [tenantItems, modelItems] = await Promise.all([fetchTenants(), fetchModelHealth()]);
       tenants.value = tenantItems;
       models.value = modelItems;
-      if (selectedTenantId.value) {
-        await refreshTenantFacts();
-      }
+      await applyPreferredTenant(toValue(preferredTenantId), true);
     } finally {
       loading.value = false;
     }
@@ -170,18 +175,58 @@ export const useTenantModelRoutes = () => {
   };
 
   const refreshTenantFacts = async () => {
-    if (!selectedTenantId.value) {
+    const tenantId = selectedTenantId.value;
+    const requestVersion = ++tenantFactsRequestVersion;
+    if (!tenantId) {
       routes.value = [];
       readiness.value = undefined;
       return;
     }
     const [routeItems, readinessView] = await Promise.all([
-      fetchTenantModelRoutes(selectedTenantId.value),
-      fetchTenantFirstQuestionReadiness(selectedTenantId.value)
+      fetchTenantModelRoutes(tenantId),
+      fetchTenantFirstQuestionReadiness(tenantId)
     ]);
+    if (requestVersion !== tenantFactsRequestVersion || selectedTenantId.value !== tenantId) {
+      return;
+    }
     routes.value = routeItems;
     readiness.value = readinessView;
   };
+
+  const applyPreferredTenant = async (tenantId: string, force = false) => {
+    const normalizedTenantId = tenantId?.trim() ?? '';
+    const tenant = tenants.value.find((item) => item.tenantId === normalizedTenantId && item.status === 1);
+    if (!tenant) {
+      tenantFactsRequestVersion += 1;
+      selectedTenantId.value = '';
+      routes.value = [];
+      readiness.value = undefined;
+      return;
+    }
+    if (!force && selectedTenantId.value === tenant.tenantId) {
+      return;
+    }
+    if (selectedTenantId.value !== tenant.tenantId) {
+      routes.value = [];
+      readiness.value = undefined;
+    }
+    selectedTenantId.value = tenant.tenantId;
+    await refreshTenantFacts();
+  };
+
+  watch(preferredTenantId, async (tenantId) => {
+    if (!initialized.value) {
+      return;
+    }
+    try {
+      syncError.value = undefined;
+      await applyPreferredTenant(tenantId);
+    } catch (error) {
+      routes.value = [];
+      readiness.value = undefined;
+      syncError.value = error;
+    }
+  });
 
   return {
     tenantOptions,
@@ -192,6 +237,7 @@ export const useTenantModelRoutes = () => {
     selectedCount,
     eligibleCount,
     readiness: readonly(readiness),
+    syncError: readonly(syncError),
     initialize,
     selectTenant,
     refresh,

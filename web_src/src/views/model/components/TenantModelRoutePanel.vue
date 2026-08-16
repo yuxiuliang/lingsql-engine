@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import {computed, onMounted} from 'vue';
-import {ElMessage} from 'element-plus';
+import {computed, onMounted, watch} from 'vue';
+import {ElMessage, ElMessageBox} from 'element-plus';
 import {useTenantModelRoutes} from '@/composables/model-route/useTenantModelRoutes';
+import {useAuthStore} from '@/store/auth';
 import TenantModelRouteTable from './TenantModelRouteTable.vue';
 import TenantModelRouteToolbar from './TenantModelRouteToolbar.vue';
 import TenantFirstQuestionReadinessSummary from './TenantFirstQuestionReadinessSummary.vue';
+
+const authStore = useAuthStore();
+const preferredTenantId = computed(() => authStore.activeTenantId);
 
 const {
   tenantOptions,
@@ -15,16 +19,19 @@ const {
   selectedCount,
   eligibleCount,
   readiness,
+  syncError,
   initialize,
-  selectTenant,
   refresh,
   setAuthorized,
   updatePriority,
   updateWeight,
   save
-} = useTenantModelRoutes();
+} = useTenantModelRoutes({preferredTenantId});
 
 const tenantSelected = computed(() => selectedTenantId.value.length > 0);
+const selectedTenant = computed(() => tenantOptions.value.find(
+  (tenant) => tenant.tenantId === selectedTenantId.value
+));
 
 const handleInitialize = async () => {
   try {
@@ -34,12 +41,9 @@ const handleInitialize = async () => {
   }
 };
 
-const handleSelectTenant = async (tenantId: string) => {
-  try {
-    await selectTenant(tenantId);
-  } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, '加载租户授权失败'));
-  }
+const handleSelectTenant = (tenantId: string) => {
+  const tenant = tenantOptions.value.find((item) => item.tenantId === tenantId);
+  authStore.setActiveTenant(tenantId, tenant?.tenantName ?? '');
 };
 
 const handleRefresh = async () => {
@@ -52,16 +56,40 @@ const handleRefresh = async () => {
 
 const handleSave = async () => {
   try {
+    const tenant = selectedTenant.value;
+    if (!tenant) {
+      ElMessage.warning('请先选择业务租户');
+      return;
+    }
+    await ElMessageBox.confirm(
+      `确认完整替换租户“${tenant.tenantName}”（${tenant.tenantId}）的模型授权为 ${selectedCount.value} 个模型？`,
+      '确认租户模型授权',
+      {
+        type: 'warning',
+        confirmButtonText: '确认保存',
+        cancelButtonText: '取消'
+      }
+    );
     await save();
     ElMessage.success('租户模型授权已生效');
   } catch (error) {
-    ElMessage.error(resolveErrorMessage(error, '保存授权失败'));
+    if (!isMessageBoxCancel(error)) {
+      ElMessage.error(resolveErrorMessage(error, '保存授权失败'));
+    }
   }
 };
 
 const resolveErrorMessage = (error: unknown, fallback: string) => {
   return error instanceof Error ? error.message : fallback;
 };
+
+const isMessageBoxCancel = (error: unknown) => error === 'cancel' || error === 'close';
+
+watch(syncError, (error) => {
+  if (error) {
+    ElMessage.error(resolveErrorMessage(error, '加载租户授权失败'));
+  }
+});
 
 onMounted(handleInitialize);
 </script>

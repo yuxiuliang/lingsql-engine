@@ -1536,6 +1536,7 @@ const handleSave = async () => {
       ElMessage.success('租户已更新');
     } else {
       const receipt = await createTenant(buildCreatePayload(jdbcUrl || undefined));
+      authStore.setActiveTenant(receipt.tenantId, receipt.tenantName);
       ElMessage.success(`租户 ${receipt.tenantId} 已完成 READY 开户`);
     }
     dialogVisible.value = false;
