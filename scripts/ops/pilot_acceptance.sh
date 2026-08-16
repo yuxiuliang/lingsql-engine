@@ -10,6 +10,8 @@ BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/ops/lib/acceptance_auth.sh
 source "${SCRIPT_DIR}/lib/acceptance_auth.sh"
+# shellcheck source=scripts/ops/lib/acceptance_tenant_readiness.sh
+source "${SCRIPT_DIR}/lib/acceptance_tenant_readiness.sh"
 PILOT_TENANT_ID="${PILOT_TENANT_ID:-}"
 PILOT_USERNAME="${PILOT_USERNAME:-}"
 PILOT_PASSWORD="${PILOT_PASSWORD:-}"
@@ -152,7 +154,7 @@ main() {
   require_value "PILOT_USERNAME" "${PILOT_USERNAME}"
   require_value "PILOT_PASSWORD" "${PILOT_PASSWORD}"
 
-  local login_body login_response token user_id control_token
+  local login_body login_response token user_id control_token tenant_readiness
   login_body="$(jq -cn \
     --arg tenantId "${PILOT_TENANT_ID}" \
     --arg username "${PILOT_USERNAME}" \
@@ -170,6 +172,10 @@ main() {
   control_token="$(acceptance_resolve_control_token \
     "${BASE_URL}" "${PILOT_CONTROL_TOKEN}" "${PILOT_CONTROL_TENANT_ID}" \
     "${PILOT_CONTROL_USERNAME}" "${PILOT_CONTROL_PASSWORD}")"
+  tenant_readiness="$(acceptance_require_first_question_ready \
+    "${BASE_URL}" "${control_token}" "${PILOT_TENANT_ID}")"
+  [[ "$(jq -r '.ready' <<< "${tenant_readiness}")" == "true" ]] \
+    || { log_error "租户首问就绪门禁未通过。"; exit 2; }
 
   local baseline_audit_total baseline_billing_snapshot baseline_ledger_total billing_acceptance_session_id
   baseline_audit_total="$(load_audit_total "${control_token}" "${PILOT_TENANT_ID}" "${user_id}")"
@@ -304,6 +310,7 @@ main() {
 - 完成时间: $(date -Iseconds)
 - 目标环境: ${BASE_URL}
 - 租户: ${PILOT_TENANT_ID}
+- 首问就绪: $(jq -r '.status' <<< "${tenant_readiness}")（$(jq '[.checks[]|select(.passed==true)]|length' <<< "${tenant_readiness}")/5）
 - 真实问数通过: ${passed}/3
 - 本次新增 SQL 审计日志: ${audit_increment}
 - 本次新增计费账本事件: ${ledger_increment}
@@ -317,7 +324,7 @@ main() {
 
 ## 验证边界
 
-本报告证明登录、三条自然语言问数、只读 SQL、非空结果、会话延续、SQL 审计，以及本次请求关联的逐物理模型调用计费在当前环境中形成闭环。报告不包含 Token、密码、API Key、Prompt、模型原文、SQL 明细或业务结果明细，也不替代双方的 40 题黄金问题签字验收。
+本报告证明首问五项门禁、登录、三条自然语言问数、只读 SQL、非空结果、会话延续、SQL 审计，以及本次请求关联的逐物理模型调用计费在当前环境中形成闭环。报告不包含 Token、密码、API Key、Prompt、模型原文、SQL 明细或业务结果明细，也不替代双方的 40 题黄金问题签字验收。
 EOF
   log_info "真实业务验收通过，报告已写入: ${PILOT_REPORT_FILE}"
 }

@@ -113,7 +113,7 @@ cp .env.example .env
   - `scripts/ops/schema_adoption_guard.sh`（未纳管旧库完整结构指纹与接管守卫）
   - `scripts/ops/flyway_migrate.sh`（短生命周期数据库迁移任务；DDL 凭据不进入应用）
   - `scripts/ops/bootstrap_local_stack.sh`（容器化一键拉起：依赖 + Flyway 迁移 + 种子 + 应用）
-  - `scripts/ops/bootstrap_demo_pilot.sh`（虚构销售库存演示：开户 + 数据源/Schema + 模型验证 + 三问逐请求验收）
+  - `scripts/ops/bootstrap_demo_pilot.sh`（虚构销售库存演示：开户 + 数据源/Schema + 模型验证 + 首问五项门禁 + 三问逐请求验收）
   - `scripts/ops/release_gate.sh`（发布门禁：冒烟 + SLO + 商用六项验收）
   - `scripts/ops/runtime_fingerprint_guard.sh`（候选 Git SHA、Flyway、数据快照与模型路由指纹校验）
   - `scripts/ops/release_blue_green.sh`（蓝绿候选准备或直接发布）
@@ -131,7 +131,7 @@ cp .env.example .env
   - `scripts/ops/security_compliance_guard.sh`（生产安全配置与最小权限门禁）
   - `scripts/ops/p1_incident_drill.sh`（P1 事件响应演练）
   - `scripts/ops/billing_readiness_guard.sh`（计费商用验收门禁）
-  - `scripts/ops/golden_question_acceptance.sh`（冻结 40 题的 FIRST/RETEST 验收；必须显式区分 `CUSTOMER_UAT` 与 `INTERNAL_REHEARSAL`，验证准确率、P95、效率、安全、逐请求审计与资金守恒）
+  - `scripts/ops/golden_question_acceptance.sh`（冻结 40 题的 FIRST/RETEST 验收；开始计费会话前强制首问五项门禁，并显式区分 `CUSTOMER_UAT` 与 `INTERNAL_REHEARSAL`，验证准确率、P95、效率、安全、逐请求审计与资金守恒）
   - `scripts/ops/commercial_acceptance_gate.sh`（工程、计费、三问、可靠性、安全和值守技术放行；不替代 40 题与客户签字）
 - **CI/CD 门禁工作流**：
   - `.github/workflows/ci.yml`（持续集成：后端测试 + 前端构建 + MySQL 8.4 空库迁移/旧库接管 + npm 高危漏洞门禁）

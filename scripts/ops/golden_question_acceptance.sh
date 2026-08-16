@@ -7,6 +7,8 @@ BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/ops/lib/acceptance_auth.sh
 source "${SCRIPT_DIR}/lib/acceptance_auth.sh"
+# shellcheck source=scripts/ops/lib/acceptance_tenant_readiness.sh
+source "${SCRIPT_DIR}/lib/acceptance_tenant_readiness.sh"
 PILOT_TENANT_ID="${PILOT_TENANT_ID:-}"
 PILOT_USERNAME="${PILOT_USERNAME:-}"
 PILOT_PASSWORD="${PILOT_PASSWORD:-}"
@@ -431,7 +433,7 @@ EOF
 }
 
 main() {
-  local command_name login_body login_response parent_sha parent_run_id run_cases_json security_cases_json comparator_commit expected_commit source_suite_file source_parent_evidence
+  local command_name login_body login_response parent_sha parent_run_id run_cases_json security_cases_json comparator_commit expected_commit source_suite_file source_parent_evidence tenant_readiness
   for command_name in curl jq sha256sum awk sort sed date mktemp chmod basename java cp; do require_cmd "${command_name}"; done
   require_value "GQ_SUITE_FILE" "${GQ_SUITE_FILE}"; require_value "PILOT_TENANT_ID" "${PILOT_TENANT_ID}"
   require_value "GQ_EXPECTED_SUITE_SHA256" "${GQ_EXPECTED_SUITE_SHA256}"
@@ -492,6 +494,12 @@ main() {
       parentEvidenceSha256:(if $parentEvidenceSha256 == "" then null else $parentEvidenceSha256 end),
       parentRunId:(if $parentRunId == "" then null else $parentRunId end)}' >> "${EVIDENCE_FILE}"
   validate_runtime_fingerprint
+  tenant_readiness="$(acceptance_require_first_question_ready \
+    "${BASE_URL}" "${PILOT_CONTROL_TOKEN}" "${PILOT_TENANT_ID}")"
+  jq -cn --arg checkedAt "$(date -Iseconds)" --argjson readiness "${tenant_readiness}" \
+    '{type:"tenantReadiness",checkedAt:$checkedAt,ready:$readiness.ready,status:$readiness.status,
+      passedCheckCount:([$readiness.checks[]|select(.passed==true)]|length),checkCount:($readiness.checks|length)}' \
+    >> "${EVIDENCE_FILE}"
   login_body="$(jq -cn --arg tenantId "${PILOT_TENANT_ID}" --arg username "${PILOT_USERNAME}" --arg password "${PILOT_PASSWORD}" '{tenantId:$tenantId,username:$username,password:$password}')"
   login_response="$(printf '%s' "${login_body}" | curl -fsS --connect-timeout 5 --max-time 30 -H 'Content-Type: application/json; charset=UTF-8' -X POST "${BASE_URL%/}/api/v1/auth/login" --data-binary @-)"
   TOKEN="$(jq -r '.data.token // empty' <<< "${login_response}")"
