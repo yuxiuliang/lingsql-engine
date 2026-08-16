@@ -39,7 +39,12 @@ public class RefreshTokenService {
             return null;
         }
         revoke(refreshToken, payload.userId());
-        String newToken = issueRefreshToken(payload.userId(), payload.tenantId(), ttl);
+        String newToken = issueRefreshToken(
+                payload.userId(),
+                payload.tenantId(),
+                resolveCredentialVersion(payload.credentialVersion()),
+                ttl
+        );
         return new RefreshTokenResult(payload, newToken);
     }
 
@@ -47,7 +52,12 @@ public class RefreshTokenService {
         if (session == null || session.getUserId() == null) {
             return null;
         }
-        return issueRefreshToken(session.getUserId(), session.getTenantId(), ttl);
+        return issueRefreshToken(
+                session.getUserId(),
+                session.getTenantId(),
+                resolveCredentialVersion(session.getCredentialVersion()),
+                ttl
+        );
     }
 
     public void revokeByUserId(Long userId) {
@@ -90,7 +100,8 @@ public class RefreshTokenService {
         }
         try {
             RefreshTokenPayload payload = objectMapper.readValue(raw, RefreshTokenPayload.class);
-            if (payload == null || payload.userId() == null) {
+            if (payload == null || payload.userId() == null
+                    || payload.credentialVersion() == null || payload.credentialVersion() < 1L) {
                 return null;
             }
             String currentHash = redisTemplate.opsForValue().get(buildUserKey(payload.userId()));
@@ -104,7 +115,7 @@ public class RefreshTokenService {
         }
     }
 
-    private String issueRefreshToken(Long userId, String tenantId, Duration ttl) {
+    private String issueRefreshToken(Long userId, String tenantId, long credentialVersion, Duration ttl) {
         if (userId == null) {
             return null;
         }
@@ -114,7 +125,12 @@ public class RefreshTokenService {
         if (!StringUtils.hasText(hash)) {
             return null;
         }
-        RefreshTokenPayload payload = new RefreshTokenPayload(userId, tenantId, Instant.now().toEpochMilli());
+        RefreshTokenPayload payload = new RefreshTokenPayload(
+                userId,
+                tenantId,
+                Instant.now().toEpochMilli(),
+                credentialVersion
+        );
         try {
             String json = objectMapper.writeValueAsString(payload);
             redisTemplate.opsForValue().set(buildRefreshKey(hash), json, resolvedTtl);
@@ -155,7 +171,15 @@ public class RefreshTokenService {
         }
     }
 
-    public record RefreshTokenPayload(Long userId, String tenantId, long issuedAt) {
+    private long resolveCredentialVersion(Long credentialVersion) {
+        return credentialVersion == null || credentialVersion < 1L ? 1L : credentialVersion;
+    }
+
+    /**
+     * Refresh Token 载荷。
+     * credentialVersion 必须存在；升级前的旧 Token 必须重新登录。
+     */
+    public record RefreshTokenPayload(Long userId, String tenantId, long issuedAt, Long credentialVersion) {
     }
 
     public record RefreshTokenResult(RefreshTokenPayload payload, String refreshToken) {

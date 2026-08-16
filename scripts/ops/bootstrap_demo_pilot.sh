@@ -13,6 +13,13 @@ log_info() { echo "[INFO] $*"; }
 log_error() { echo "[ERROR] $*" >&2; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || { log_error "缺少命令: $1"; exit 1; }; }
 require_value() { [[ -n "$2" ]] || { log_error "$1 不能为空"; exit 1; }; }
+reject_placeholder() {
+  local name="$1" value="$2"
+  if [[ "${value}" == ChangeMe_* || "${value}" == ReplaceWith* ]]; then
+    log_error "${name} 仍为示例占位值，拒绝继续。"
+    exit 1
+  fi
+}
 is_true() { [[ "${1:-false}" =~ ^(1|true|TRUE|yes|YES)$ ]]; }
 
 api_get() {
@@ -40,16 +47,24 @@ api_put() {
 
 login() {
   local tenant_id="$1" username="$2" password="$3"
-  local body response token
-  body="$(jq -cn --arg tenantId "${tenant_id}" --arg username "${username}" --arg password "${password}" \
-    '{tenantId:$tenantId,username:$username,password:$password}')"
-  response="$(printf '%s' "${body}" | curl -fsS --connect-timeout 5 --max-time 30 \
-    -H 'Content-Type: application/json; charset=UTF-8' \
-    -X POST "${BASE_URL%/}/api/v1/auth/login" --data-binary @-)"
+  local response token auth_flow
+  response="$(login_response "${tenant_id}" "${username}" "${password}")"
   [[ "$(jq -r '.code // 0' <<< "${response}")" == "200" ]] || { log_error "账号 ${tenant_id}/${username} 登录失败"; return 2; }
+  auth_flow="$(jq -r '.data.authFlow // "AUTHENTICATED"' <<< "${response}")"
+  [[ "${auth_flow}" == "AUTHENTICATED" ]] || { log_error "账号 ${tenant_id}/${username} 尚未完成首次登录改密"; return 2; }
   token="$(jq -r '.data.token // empty' <<< "${response}")"
   require_value "登录 Token" "${token}"
   printf '%s' "${token}"
+}
+
+login_response() {
+  local tenant_id="$1" username="$2" password="$3"
+  local body
+  body="$(jq -cn --arg tenantId "${tenant_id}" --arg username "${username}" --arg password "${password}" \
+    '{tenantId:$tenantId,username:$username,password:$password}')"
+  printf '%s' "${body}" | curl -fsS --connect-timeout 5 --max-time 30 \
+    -H 'Content-Type: application/json; charset=UTF-8' \
+    -X POST "${BASE_URL%/}/api/v1/auth/login" --data-binary @-
 }
 
 require_api_success() {
@@ -61,7 +76,7 @@ require_api_success() {
 }
 
 ensure_demo_tenant() {
-  local list_response existing_count create_body create_response
+  local list_response existing_count create_body create_response login_result restricted_token change_body change_response
   list_response="$(api_get '/api/v1/admin/tenants' "${CONTROL_TOKEN}" "${LINGSQL_ADMIN_TENANT_ID}")"
   require_api_success "读取租户列表" "${list_response}"
   existing_count="$(jq --arg tenantId "${LINGSQL_DEMO_TENANT_ID}" '[.data[]? | select(.tenantId == $tenantId)] | length' <<< "${list_response}")"
@@ -71,7 +86,7 @@ ensure_demo_tenant() {
       --arg planName "${LINGSQL_DEMO_PLAN_NAME}" --arg jdbcUrl "${LINGSQL_DEMO_JDBC_URL}" \
       --arg username "${LINGSQL_DEMO_USERNAME}" --arg password "${LINGSQL_DEMO_PASSWORD}" \
       --arg tables "${LINGSQL_DEMO_WHITE_LIST_TABLES}" --arg columns "${LINGSQL_DEMO_WHITE_LIST_COLUMNS}" \
-      --arg adminUsername "${LINGSQL_DEMO_ADMIN_USERNAME}" --arg adminPassword "${LINGSQL_DEMO_ADMIN_PASSWORD}" \
+      --arg adminUsername "${LINGSQL_DEMO_ADMIN_USERNAME}" --arg adminPassword "${LINGSQL_DEMO_ADMIN_INITIAL_PASSWORD}" \
       --arg adminNickname "${LINGSQL_DEMO_ADMIN_NICKNAME}" \
       '{tenantId:$tenantId,tenantName:$tenantName,planName:$planName,
         dataSource:{jdbcUrl:$jdbcUrl,username:$username,password:$password,driverClass:"com.mysql.cj.jdbc.Driver",
@@ -81,13 +96,30 @@ ensure_demo_tenant() {
     create_response="$(api_post '/api/v1/admin/tenants' "${create_body}" "${CONTROL_TOKEN}" "${LINGSQL_ADMIN_TENANT_ID}")"
     require_api_success "创建演示租户" "${create_response}"
     log_info "演示租户已创建: ${LINGSQL_DEMO_TENANT_ID}"
+    login_result="$(login_response "${LINGSQL_DEMO_TENANT_ID}" "${LINGSQL_DEMO_ADMIN_USERNAME}" "${LINGSQL_DEMO_ADMIN_INITIAL_PASSWORD}")"
+    require_api_success "演示管理员首次登录" "${login_result}"
+    [[ "$(jq -r '.data.authFlow // empty' <<< "${login_result}")" == "PASSWORD_CHANGE_REQUIRED" ]] \
+      || { log_error "新建演示管理员未进入首次登录强制改密流程"; exit 2; }
+    restricted_token="$(jq -r '.data.token // empty' <<< "${login_result}")"
+    require_value "首次登录改密 Token" "${restricted_token}"
+    change_body="$(jq -cn \
+      --arg currentPassword "${LINGSQL_DEMO_ADMIN_INITIAL_PASSWORD}" \
+      --arg newPassword "${LINGSQL_DEMO_ADMIN_PASSWORD}" \
+      '{currentPassword:$currentPassword,newPassword:$newPassword}')"
+    change_response="$(api_put '/api/v1/auth/password' "${change_body}" "${restricted_token}" "${LINGSQL_DEMO_TENANT_ID}")"
+    require_api_success "演示管理员首次登录改密" "${change_response}"
+    [[ "$(jq -r '.data.authFlow // empty' <<< "${change_response}")" == "AUTHENTICATED" ]] \
+      || { log_error "演示管理员改密后未取得完整会话"; exit 2; }
+    DEMO_TOKEN="$(jq -r '.data.token // empty' <<< "${change_response}")"
+    require_value "演示管理员完整 Token" "${DEMO_TOKEN}"
+    log_info "演示管理员已完成首次登录强制改密。"
   elif [[ "${existing_count}" -eq 1 ]]; then
     log_info "演示租户已存在，进入幂等复核: ${LINGSQL_DEMO_TENANT_ID}"
+    DEMO_TOKEN="$(login "${LINGSQL_DEMO_TENANT_ID}" "${LINGSQL_DEMO_ADMIN_USERNAME}" "${LINGSQL_DEMO_ADMIN_PASSWORD}")"
   else
     log_error "演示租户ID出现重复记录，拒绝继续。"
     exit 2
   fi
-  DEMO_TOKEN="$(login "${LINGSQL_DEMO_TENANT_ID}" "${LINGSQL_DEMO_ADMIN_USERNAME}" "${LINGSQL_DEMO_ADMIN_PASSWORD}")"
 }
 
 reconcile_demo_datasource() {
@@ -169,6 +201,7 @@ main() {
   LINGSQL_DEMO_TENANT_NAME="${LINGSQL_DEMO_TENANT_NAME:-销售库存演示租户}"
   LINGSQL_DEMO_PLAN_NAME="${LINGSQL_DEMO_PLAN_NAME:-标准版}"
   LINGSQL_DEMO_ADMIN_USERNAME="${LINGSQL_DEMO_ADMIN_USERNAME:-demo_admin}"
+  LINGSQL_DEMO_ADMIN_INITIAL_PASSWORD="${LINGSQL_DEMO_ADMIN_INITIAL_PASSWORD:-}"
   LINGSQL_DEMO_ADMIN_PASSWORD="${LINGSQL_DEMO_ADMIN_PASSWORD:-}"
   LINGSQL_DEMO_ADMIN_NICKNAME="${LINGSQL_DEMO_ADMIN_NICKNAME:-演示管理员}"
   LINGSQL_DEMO_JDBC_URL="${LINGSQL_DEMO_JDBC_URL:-jdbc:mysql://mysql:3306/${LINGSQL_DEMO_DATABASE:-}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}"
@@ -186,7 +219,12 @@ main() {
   require_value "LINGSQL_DEMO_DATABASE" "${LINGSQL_DEMO_DATABASE:-}"
   require_value "LINGSQL_DEMO_USERNAME" "${LINGSQL_DEMO_USERNAME:-}"
   require_value "LINGSQL_DEMO_PASSWORD" "${LINGSQL_DEMO_PASSWORD:-}"
+  require_value "LINGSQL_DEMO_ADMIN_INITIAL_PASSWORD" "${LINGSQL_DEMO_ADMIN_INITIAL_PASSWORD}"
   require_value "LINGSQL_DEMO_ADMIN_PASSWORD" "${LINGSQL_DEMO_ADMIN_PASSWORD}"
+  reject_placeholder "LINGSQL_DEMO_ADMIN_INITIAL_PASSWORD" "${LINGSQL_DEMO_ADMIN_INITIAL_PASSWORD}"
+  reject_placeholder "LINGSQL_DEMO_ADMIN_PASSWORD" "${LINGSQL_DEMO_ADMIN_PASSWORD}"
+  [[ "${LINGSQL_DEMO_ADMIN_INITIAL_PASSWORD}" != "${LINGSQL_DEMO_ADMIN_PASSWORD}" ]] \
+    || { log_error "演示管理员一次性初始密码与最终验收密码不能相同"; exit 1; }
 
   if ! is_true "${SKIP_INFRA_BOOTSTRAP:-false}"; then
     "${BASE_BOOTSTRAP}"

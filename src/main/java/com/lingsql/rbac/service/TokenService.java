@@ -6,6 +6,7 @@ import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.rbac.security.RbacSecurityConstants;
 import com.lingsql.rbac.security.RbacUserSession;
+import com.lingsql.rbac.security.SessionPurpose;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
@@ -60,7 +61,7 @@ public class TokenService {
         if (session == null || session.getUserId() == null) {
             throw new BizException(ErrorCode.INVALID_PARAM, "会话数据不能为空");
         }
-        Instant now = Instant.now();
+        Instant now = resolveIssueInstant(session.getUserId());
         Duration ttl = resolveTtl(session);
         Instant expiresAt = now.plus(ttl);
         String jti = UUID.randomUUID().toString();
@@ -256,6 +257,15 @@ public class TokenService {
     }
 
     private Duration resolveTtl(RbacUserSession session) {
+        if (session != null && session.getPurpose() == SessionPurpose.PASSWORD_CHANGE_ONLY) {
+            LingSqlProperties.Auth auth = properties.getAuth();
+            if (auth != null && auth.getPasswordChangeJwtTtl() != null
+                    && !auth.getPasswordChangeJwtTtl().isZero()
+                    && !auth.getPasswordChangeJwtTtl().isNegative()) {
+                return auth.getPasswordChangeJwtTtl();
+            }
+            return Duration.ofMinutes(10);
+        }
         if (session != null && session.getRoles() != null && session.getRoles().contains(SUPER_ADMIN_ROLE)) {
             LingSqlProperties.Auth auth = properties.getAuth();
             if (auth != null && auth.getSuperAdminJwtTtl() != null) {
@@ -319,6 +329,32 @@ public class TokenService {
         return StringUtils.hasText(tokenHash) && Boolean.TRUE.equals(redisTemplate.hasKey(buildRevokedHashKey(tokenHash)));
     }
 
+    /**
+     * 确保新 Token 的签发水位严格晚于用户级吊销水位。
+     */
+    private Instant resolveIssueInstant(Long userId) {
+        Instant now = Instant.now();
+        if (userId == null) {
+            return now;
+        }
+        String revokedAt = redisTemplate.opsForValue().get(buildRevokedUserKey(userId));
+        if (!StringUtils.hasText(revokedAt)) {
+            return now;
+        }
+        try {
+            long revokedMillis = Long.parseLong(revokedAt);
+            if (revokedMillis > 0L && revokedMillis < 1_000_000_000_000L) {
+                revokedMillis *= 1000L;
+            }
+            if (now.toEpochMilli() <= revokedMillis) {
+                return Instant.ofEpochMilli(revokedMillis + 1L);
+            }
+        } catch (NumberFormatException ex) {
+            log.warn("用户 Token 吊销水位格式无效: userId={}", userId);
+        }
+        return now;
+    }
+
     private boolean isUserRevoked(Claims claims) {
         if (claims == null) {
             return false;
@@ -346,7 +382,7 @@ public class TokenService {
             if (revokedMillis > 0L && revokedMillis < 1_000_000_000_000L) {
                 revokedMillis = revokedMillis * 1000L;
             }
-            return issuedAtMillis < revokedMillis;
+            return issuedAtMillis <= revokedMillis;
         } catch (NumberFormatException ex) {
             return false;
         }

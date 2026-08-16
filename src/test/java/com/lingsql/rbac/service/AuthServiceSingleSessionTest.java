@@ -91,7 +91,7 @@ class AuthServiceSingleSessionTest {
         TestContext ctx = new TestContext(true);
         RbacUser user = buildActiveUser();
         RefreshTokenService.RefreshTokenPayload payload =
-                new RefreshTokenService.RefreshTokenPayload(100L, "TENANT_A", System.currentTimeMillis());
+                new RefreshTokenService.RefreshTokenPayload(100L, "TENANT_A", System.currentTimeMillis(), 1L);
         RefreshTokenService.RefreshTokenResult result =
                 new RefreshTokenService.RefreshTokenResult(payload, "refresh_token_new");
         when(ctx.refreshTokenService.rotateRefreshToken(anyString(), any(Duration.class))).thenReturn(result);
@@ -419,6 +419,7 @@ class AuthServiceSingleSessionTest {
                     tenantRepository,
                     properties,
                     passwordEncoder,
+                    Mockito.mock(PasswordCredentialService.class),
                     new ObjectMapper(),
                     orgUnitRepository,
                     orgUnitRelationRepository,

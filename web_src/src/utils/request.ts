@@ -25,7 +25,7 @@ export interface BlobResponse {
   contentType?: string;
 }
 
-interface RequestOptions extends RequestInit {
+export interface RequestOptions extends RequestInit {
   skipAuthRefresh?: boolean;
 }
 
@@ -51,11 +51,23 @@ const LOGIN_PATH = '/api/v1/auth/login';
 const REFRESH_PATH = '/api/v1/auth/refresh';
 const REFRESH_TOKEN_HEADER = 'X-Refresh-Token';
 const TOKEN_EXPIRED_MARK = 'TOKEN_EXPIRED';
+const PASSWORD_CHANGE_REQUIRED_MARK = 'PASSWORD_CHANGE_REQUIRED';
 const REFRESH_LOG_INTERVAL_MS = 60000;
 const REFRESH_METRIC_EVENT = 'lingsql:auth-refresh';
 
 let refreshPromise: Promise<RefreshPayload | null> | null = null;
 let lastRefreshMetricAt = 0;
+
+const isPasswordChangeRequired = (payload: ApiResponse<unknown> | null): boolean => {
+  return payload?.message?.trim().toUpperCase() === PASSWORD_CHANGE_REQUIRED_MARK;
+};
+
+const redirectToPasswordChange = () => {
+  if (typeof window === 'undefined' || window.location.pathname === '/password-change') {
+    return;
+  }
+  window.location.assign('/password-change');
+};
 
 const buildHeaders = (options: RequestOptions, includeJsonContentType: boolean): Headers => {
   const authStore = useAuthStore(pinia);
@@ -185,6 +197,11 @@ export const request = async <T>(path: string, options: RequestOptions = {}): Pr
     credentials: options.credentials || 'include'
   });
   const payload = await parseJsonSafely<ApiResponse<T>>(response);
+  if (isPasswordChangeRequired(payload as ApiResponse<unknown> | null)) {
+    authStore.requirePasswordChange();
+    redirectToPasswordChange();
+    throw new Error('请先修改初始密码');
+  }
   if (shouldAttemptRefresh(path, options, response.status, payload as ApiResponse<unknown> | null)) {
     const refreshed = await refreshSessionOnce(authStore.refreshToken);
     if (refreshed) {
@@ -244,6 +261,11 @@ export const requestBlob = async (path: string, options: RequestOptions = {}): P
     credentials: options.credentials || 'include'
   });
   const payload = await parseJsonSafely<ApiResponse<unknown>>(response);
+  if (isPasswordChangeRequired(payload)) {
+    authStore.requirePasswordChange();
+    redirectToPasswordChange();
+    throw new Error('请先修改初始密码');
+  }
   if (shouldAttemptRefresh(path, options, response.status, payload as ApiResponse<unknown> | null)) {
     const refreshed = await refreshSessionOnce(authStore.refreshToken);
     if (refreshed) {

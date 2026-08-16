@@ -34,6 +34,7 @@ public class SecurityConfig {
     private static final String[] ADMIN_SPA_ROUTES = {
             "/",
             "/login",
+            "/password-change",
             "/layout",
             "/chat",
             "/dashboard",
@@ -55,6 +56,7 @@ public class SecurityConfig {
     };
 
     private final TokenAuthenticationFilter tokenAuthenticationFilter;
+    private final PasswordChangeOnlyAuthorizationFilter passwordChangeOnlyAuthorizationFilter;
     private final LingSqlProperties properties;
     private final RestAuthenticationEntryPoint restAuthenticationEntryPoint;
     private final RestAccessDeniedHandler restAccessDeniedHandler;
@@ -87,6 +89,7 @@ public class SecurityConfig {
                         .accessDeniedHandler(restAccessDeniedHandler));
 
         http.addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        http.addFilterAfter(passwordChangeOnlyAuthorizationFilter, TokenAuthenticationFilter.class);
         return http.build();
     }
 

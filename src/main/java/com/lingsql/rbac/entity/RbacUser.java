@@ -5,8 +5,12 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import lombok.Data;
+
+import com.lingsql.rbac.model.PasswordState;
 
 import java.time.LocalDateTime;
 
@@ -57,6 +61,25 @@ public class RbacUser {
      */
     @Column(name = "password", nullable = false)
     private String password;
+
+    /**
+     * 当前密码是否允许进入完整会话。
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "password_state", nullable = false)
+    private PasswordState passwordState = PasswordState.ACTIVE;
+
+    /**
+     * 凭据版本，用于阻断密码变更前签发的 Refresh Token。
+     */
+    @Column(name = "credential_version", nullable = false)
+    private Long credentialVersion = 1L;
+
+    /**
+     * 当前密码由用户确认完成的时间。
+     */
+    @Column(name = "password_changed_at")
+    private LocalDateTime passwordChangedAt;
 
     /**
      * 昵称。

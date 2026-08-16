@@ -73,19 +73,12 @@ const handleLogin = async () => {
       localStorage.removeItem(REMEMBER_TENANT_KEY);
       localStorage.removeItem(REMEMBER_USER_KEY);
     }
-    authStore.login(
-      response.token,
-      response.userId,
-      response.tenantId,
-      response.username,
-      response.nickname || '',
-      response.experience || false,
-      response.roles || [],
-      response.permissions || [],
-      response.tenantName || '',
-      response.refreshToken || '',
-      response.relationScopes || {}
-    );
+    authStore.applyLoginResponse(response);
+    if (authStore.isRestrictedSession) {
+      ElMessage.warning('首次登录需要先修改初始密码');
+      await router.replace('/password-change');
+      return;
+    }
     const menus = await fetchMenus();
     authStore.setMenus(menus);
     ElMessage.success('登录成功');

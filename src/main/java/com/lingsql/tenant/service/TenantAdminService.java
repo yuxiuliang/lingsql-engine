@@ -28,6 +28,7 @@ import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import com.lingsql.rbac.model.UserCreateRequest;
+import com.lingsql.rbac.model.PasswordState;
 import com.lingsql.rbac.service.UserAdminService;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantCreateRequest;
@@ -699,7 +700,7 @@ public class TenantAdminService {
         userRequest.setStatus(ACTIVE_STATUS);
         userRequest.setIsExperience(0);
         userRequest.setRoleIds(List.of(roleId));
-        userAdminService.createUser(userRequest, tenantId, true);
+        userAdminService.createUser(userRequest, tenantId, true, PasswordState.CHANGE_REQUIRED);
     }
 
     /**

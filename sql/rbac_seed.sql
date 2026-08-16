@@ -201,12 +201,14 @@ WHERE NOT EXISTS (
 );
 
 -- 初始化用户
-INSERT INTO t_lingsql_engine_user (tenant_id, username, password, nickname, status, is_experience)
+INSERT INTO t_lingsql_engine_user (
+    tenant_id, username, password, password_state, credential_version, password_changed_at,
+    nickname, status, is_experience
+)
 VALUES
-(@tenant_id, @admin_username, @password_hash, '管理员', 1, 0),
-(@tenant_id, @experience_username, @password_hash, '体验账号', 1, 1)
+(@tenant_id, @admin_username, @password_hash, 'CHANGE_REQUIRED', 1, NULL, '管理员', 1, 0),
+(@tenant_id, @experience_username, @password_hash, 'ACTIVE', 1, CURRENT_TIMESTAMP, '体验账号', 1, 1)
 ON DUPLICATE KEY UPDATE
-    password = VALUES(password),
     nickname = VALUES(nickname),
     status = VALUES(status),
     is_experience = VALUES(is_experience);

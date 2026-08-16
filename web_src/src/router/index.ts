@@ -15,6 +15,12 @@ const routes: Array<RouteRecordRaw> = [
         meta: {title: '登录'}
     },
     {
+        path: '/password-change',
+        name: 'PasswordChange',
+        component: () => import('@/views/password-change/index.vue'),
+        meta: {title: '修改密码'}
+    },
+    {
         path: '/layout',
         name: 'Layout',
         component: () => import('@/layout/index.vue'), // 布局组件
@@ -180,22 +186,35 @@ router.beforeEach(async (to) => {
         document.title = `${to.meta.title} - 语数`;
     }
 
-    if (to.path === '/login') {
+    const authStore = useAuthStore(pinia);
+    if (to.path === '/login' && !authStore.token) {
         return true;
     }
-    const authStore = useAuthStore(pinia);
+    if (!authStore.token) {
+        return '/login';
+    }
+    if (authStore.isRestrictedSession) {
+        authStore.restoreRestrictedSession();
+        return to.path === '/password-change' ? true : '/password-change';
+    }
     if (!authStore.sessionReady) {
         try {
             const profile = await fetchProfile();
             authStore.applyProfile(profile);
             authStore.sessionReady = true;
         } catch {
+            if (authStore.isRestrictedSession) {
+                return to.path === '/password-change' ? true : '/password-change';
+            }
             authStore.logout();
             return '/login';
         }
     }
     if (!authStore.isAuthenticated) {
         return '/login';
+    }
+    if (to.path === '/login' || to.path === '/password-change') {
+        return '/chat';
     }
     return true;
 });

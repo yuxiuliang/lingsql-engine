@@ -197,6 +197,7 @@ lingsql:
     jwt-secret: ${LINGSQL_JWT_SECRET:}
     jwt-issuer: "lingsql-engine"
     jwt-ttl: 24h
+    password-change-jwt-ttl: ${LINGSQL_PASSWORD_CHANGE_JWT_TTL:10m}
     refresh-cookie-enabled: ${LINGSQL_REFRESH_COOKIE_ENABLED:true}
     refresh-cookie-name: ${LINGSQL_REFRESH_COOKIE_NAME:lingsql_refresh_token}
     refresh-cookie-path: ${LINGSQL_REFRESH_COOKIE_PATH:/api/v1/auth}

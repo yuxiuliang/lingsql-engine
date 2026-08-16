@@ -130,11 +130,18 @@ sequenceDiagram
 
     Client->>API: POST /api/v1/auth/login
     API->>Auth: 验证用户名密码
-    Auth->>Token: 生成 Access Token + Refresh Token
+    alt 密码状态为 ACTIVE
+        Auth->>Token: 生成完整 Access Token + Refresh Token
+        Token-->>Auth: 返回 Token 对
+        Auth-->>API: authFlow=AUTHENTICATED
+    else 密码状态为 CHANGE_REQUIRED
+        Auth->>Token: 生成 10 分钟 PASSWORD_CHANGE_ONLY Token
+        Token-->>Auth: 返回无 Refresh Token 的受限 Token
+        Auth-->>API: authFlow=PASSWORD_CHANGE_REQUIRED
+        API-->>Client: 仅允许 PUT /api/v1/auth/password 或退出
+    end
     Token->>Redis: 存储 Token 元数据
-    Token-->>Auth: 返回 Token 对
-    Auth-->>API: LoginResponse
-    API-->>Client: { accessToken, refreshToken, expiresIn }
+    API-->>Client: LoginResponse
 
     Note over Client,Redis: 后续请求
 
@@ -157,7 +164,7 @@ Content-Type: application/json
 {
   "username": "admin",
   "password": "password123",
-  "tenantId": "tenant_001"  // 可选，不传则使用默认租户
+  "tenantId": "tenant_001"
 }
 ```
 
@@ -168,16 +175,32 @@ Content-Type: application/json
   "code": 200,
   "message": "success",
   "data": {
-    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "tokenType": "Bearer",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "authFlow": "AUTHENTICATED",
     "expiresIn": 7200,
     "refreshExpiresIn": 604800
   }
 }
 ```
 
-### 2.3 Token 刷新
+后台新建用户、新开户租户管理员或被管理员重置密码的账号会返回 `authFlow=PASSWORD_CHANGE_REQUIRED`。此时 `roles` 为空、`permissions` 仅包含 `AUTH:PASSWORD:CHANGE`、`refreshToken` 为空且 `refreshExpiresIn=0`；服务端拒绝该 Token 访问除改密和退出之外的业务 API。部署时通过环境变量初始化的超级管理员使用运维最终密码，显式处于 `ACTIVE`，不进入该客户一次性密码流程。
+
+### 2.3 首次登录强制改密
+
+```http
+PUT /api/v1/auth/password
+Authorization: Bearer {passwordChangeOnlyToken}
+Content-Type: application/json
+
+{
+  "currentPassword": "一次性初始密码",
+  "newPassword": "新的强密码"
+}
+```
+
+服务端重新校验当前密码，要求新密码为 8–32 位且同时包含字母和数字，并禁止与当前密码相同。成功后旧 Access/Refresh Token 全部失效，响应返回 `authFlow=AUTHENTICATED` 的完整登录会话；客户端随后才能读取菜单或调用业务 API。密码字段不得写入日志、审计详情或插件事件。
+
+### 2.4 Token 刷新
 
 **请求**：
 
@@ -193,16 +216,17 @@ X-Refresh-Token: {refreshToken}
   "code": 200,
   "message": "success",
   "data": {
-    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "tokenType": "Bearer",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "authFlow": "AUTHENTICATED",
     "expiresIn": 7200,
     "refreshExpiresIn": 604800
   }
 }
 ```
 
-### 2.4 获取当前用户信息
+Refresh Token 绑定签发时的 `credentialVersion`，且只允许密码状态为 `ACTIVE` 的账号刷新。密码被重置、完成首次改密或凭据版本不一致时，刷新失败并撤销该账号的 Refresh Token。升级前签发且不含 `credentialVersion` 的旧 Refresh Token 一律拒绝，不得按版本 `1` 猜测兼容。
+
+### 2.5 获取当前用户信息
 
 **请求**：
 
@@ -230,7 +254,7 @@ Authorization: Bearer {accessToken}
 }
 ```
 
-### 2.5 退出登录
+### 2.6 退出登录
 
 **请求**：
 
@@ -250,7 +274,7 @@ X-Refresh-Token: {refreshToken}
 }
 ```
 
-### 2.6 请求头规范
+### 2.7 请求头规范
 
 | Header | 必填 | 说明 |
 |--------|------|------|
@@ -263,7 +287,7 @@ X-Refresh-Token: {refreshToken}
 
 > *注：公开接口（如 `/login`）不需要 Authorization
 
-### 2.7 权限标识
+### 2.8 权限标识
 
 系统采用 **RBAC 权限模型**，权限标识格式为 `模块:资源:操作`：
 
@@ -1679,6 +1703,7 @@ async function callApi<T>(request: () => Promise<T>): Promise<T> {
 |------|------|------|------|
 | **认证** |
 | POST | `/api/v1/auth/login` | 登录 | 公开 |
+| PUT | `/api/v1/auth/password` | 完成首次登录强制改密 | `PASSWORD_CHANGE_ONLY` |
 | POST | `/api/v1/auth/logout` | 登出 | 已认证 |
 | POST | `/api/v1/auth/refresh` | 刷新 Token | 公开 |
 | GET | `/api/v1/auth/me` | 获取当前用户 | 已认证 |

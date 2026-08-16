@@ -16,6 +16,11 @@ import java.util.Map;
 public class LoginResponse {
 
     /**
+     * 客户端下一步必须执行的认证流程。
+     */
+    private AuthFlow authFlow = AuthFlow.AUTHENTICATED;
+
+    /**
      * 访问令牌。
      *
      * @author 余炘洋

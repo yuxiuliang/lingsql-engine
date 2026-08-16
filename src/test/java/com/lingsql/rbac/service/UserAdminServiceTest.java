@@ -243,6 +243,7 @@ class UserAdminServiceTest {
                 roleDataScopeRepository,
                 roleRepository,
                 passwordEncoder,
+                new PasswordPolicyService(),
                 tokenService,
                 refreshTokenService,
                 pageParamResolver,

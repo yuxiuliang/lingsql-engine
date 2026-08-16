@@ -814,6 +814,14 @@ public class LingSqlProperties {
         private Duration superAdminJwtTtl = Duration.ofHours(2);
 
         /**
+         * 首次登录强制改密受限 Token 有效期。
+         *
+         * @author 余炘洋
+         * @date 2026-08-16
+         */
+        private Duration passwordChangeJwtTtl = Duration.ofMinutes(10);
+
+        /**
          * Refresh Token 有效期。
          *
          * @author 余炘洋

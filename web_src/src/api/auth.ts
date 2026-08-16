@@ -1,6 +1,14 @@
 import {request} from '@/utils/request';
 
 /**
+ * 登录后的认证流程。
+ *
+ * @author 余炘洋
+ * @date 2026-08-16
+ */
+export type AuthFlow = 'AUTHENTICATED' | 'PASSWORD_CHANGE_REQUIRED';
+
+/**
  * 关系语义映射定义。
  *
  * @author 余炘洋
@@ -48,6 +56,18 @@ export interface LoginResponse {
   roles?: string[];
   permissions?: string[];
   relationScopes?: RelationScopeMap;
+  authFlow: AuthFlow;
+}
+
+/**
+ * 修改当前用户密码请求。
+ *
+ * @author 余炘洋
+ * @date 2026-08-16
+ */
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
 }
 
 /**
@@ -102,6 +122,22 @@ export const login = async (payload: LoginRequest): Promise<LoginResponse> => {
   return request<LoginResponse>('/api/v1/auth/login', {
     method: 'POST',
     body: JSON.stringify(payload)
+  });
+};
+
+/**
+ * 修改当前用户密码并换发完整登录会话。
+ *
+ * @param payload 密码修改请求
+ * @return 完整登录响应
+ * @author 余炘洋
+ * @date 2026-08-16
+ */
+export const changePassword = async (payload: ChangePasswordRequest): Promise<LoginResponse> => {
+  return request<LoginResponse>('/api/v1/auth/password', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+    skipAuthRefresh: true
   });
 };
 

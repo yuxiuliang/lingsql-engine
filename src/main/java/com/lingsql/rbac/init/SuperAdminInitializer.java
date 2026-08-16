@@ -14,6 +14,7 @@ import com.lingsql.rbac.entity.RbacRolePermission;
 import com.lingsql.rbac.entity.RbacTenantPermission;
 import com.lingsql.rbac.entity.RbacUser;
 import com.lingsql.rbac.entity.RbacUserRole;
+import com.lingsql.rbac.model.PasswordState;
 import com.lingsql.rbac.repository.RbacMenuRepository;
 import com.lingsql.rbac.repository.RbacPermissionRepository;
 import com.lingsql.rbac.repository.RbacRolePermissionRepository;
@@ -248,6 +249,9 @@ public class SuperAdminInitializer implements ApplicationRunner {
         user.setTenantId(tenantId);
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(rawPassword));
+        user.setPasswordState(PasswordState.ACTIVE);
+        user.setCredentialVersion(1L);
+        user.setPasswordChangedAt(LocalDateTime.now());
         user.setNickname(StringUtils.hasText(nickname) ? nickname.trim() : "超级管理员");
         user.setStatus(ACTIVE_STATUS);
         user.setIsExperience(0);

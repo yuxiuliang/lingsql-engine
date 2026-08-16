@@ -16,6 +16,7 @@ import com.lingsql.rbac.entity.RbacUser;
 import com.lingsql.rbac.entity.RbacUserDataScope;
 import com.lingsql.rbac.entity.RbacUserRole;
 import com.lingsql.rbac.model.DataScopeRule;
+import com.lingsql.rbac.model.PasswordState;
 import com.lingsql.rbac.model.RbacDataScopeType;
 import com.lingsql.rbac.model.UserCreateRequest;
 import com.lingsql.rbac.model.UserPasswordResetRequest;
@@ -27,12 +28,15 @@ import com.lingsql.rbac.repository.RbacUserDataScopeRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
@@ -56,6 +60,7 @@ import java.util.stream.Collectors;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserAdminService {
 
     private static final String EXPERIENCE_ROLE_CODE = "ROLE_EXPERIENCE_TEMPLATE";
@@ -69,6 +74,7 @@ public class UserAdminService {
     private final RbacRoleDataScopeRepository roleDataScopeRepository;
     private final RbacRoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final PasswordPolicyService passwordPolicyService;
     private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
     private final PageParamResolver pageParamResolver;
@@ -117,6 +123,25 @@ public class UserAdminService {
      */
     @Transactional
     public UserView createUser(UserCreateRequest request, String tenantId, boolean sysAdmin) {
+        return createUser(request, tenantId, sysAdmin, PasswordState.CHANGE_REQUIRED);
+    }
+
+    /**
+     * 创建具有指定初始密码状态的用户。
+     *
+     * @param request       创建请求
+     * @param tenantId      租户ID
+     * @param sysAdmin      是否系统管理员
+     * @param passwordState 初始密码状态
+     * @return 用户信息
+     */
+    @Transactional
+    public UserView createUser(
+            UserCreateRequest request,
+            String tenantId,
+            boolean sysAdmin,
+            PasswordState passwordState
+    ) {
         if (request == null) {
             throw new BizException(ErrorCode.INVALID_PARAM, "请求不能为空");
         }
@@ -128,11 +153,13 @@ public class UserAdminService {
         if (userRepository.findByTenantIdAndUsername(resolvedTenant, username).isPresent()) {
             throw new BizException(ErrorCode.CONFLICT, "账号已存在");
         }
-        validatePassword(request.getPassword());
+        passwordPolicyService.validate(request.getPassword());
         RbacUser user = new RbacUser();
         user.setTenantId(resolvedTenant);
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setPasswordState(passwordState == null ? PasswordState.ACTIVE : passwordState);
+        user.setCredentialVersion(1L);
         user.setNickname(normalize(request.getNickname()));
         user.setStatus(request.getStatus() == null ? 1 : request.getStatus());
         user.setIsExperience(request.getIsExperience() == null ? 0 : request.getIsExperience());
@@ -222,6 +249,7 @@ public class UserAdminService {
      * @author 余炘洋
      * @date 2026-01-26
      */
+    @Transactional
     public void resetPassword(Long userId, UserPasswordResetRequest request, String tenantId, boolean sysAdmin) {
         if (userId == null) {
             throw new BizException(ErrorCode.INVALID_PARAM, "用户ID不能为空");
@@ -229,15 +257,17 @@ public class UserAdminService {
         if (request == null || !StringUtils.hasText(request.getNewPassword())) {
             throw new BizException(ErrorCode.INVALID_PARAM, "新密码不能为空");
         }
-        validatePassword(request.getNewPassword());
+        passwordPolicyService.validate(request.getNewPassword());
         RbacUser user = userRepository.findById(userId)
                 .orElseThrow(() -> new BizException(ErrorCode.USER_NOT_FOUND, "用户不存在"));
         validateTenantAccess(user.getTenantId(), tenantId, sysAdmin);
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setPasswordState(PasswordState.CHANGE_REQUIRED);
+        user.setPasswordChangedAt(null);
+        user.setCredentialVersion(resolveCredentialVersion(user) + 1L);
         user.setUpdateTime(LocalDateTime.now());
         userRepository.save(user);
-        tokenService.revokeUserTokens(user.getId());
-        refreshTokenService.revokeByUserId(user.getId());
+        revokeCredentialsAfterCommit(user.getId());
     }
 
     /**
@@ -431,26 +461,34 @@ public class UserAdminService {
                 .getId();
     }
 
-    /**
-     * 校验密码强度。
-     *
-     * @param password 密码
-     * @author 余炘洋
-     * @date 2026-01-26
-     */
-    private void validatePassword(String password) {
-        if (!StringUtils.hasText(password)) {
-            throw new BizException(ErrorCode.INVALID_PARAM, "密码不能为空");
+    private long resolveCredentialVersion(RbacUser user) {
+        return user == null || user.getCredentialVersion() == null || user.getCredentialVersion() < 1L
+                ? 1L : user.getCredentialVersion();
+    }
+
+    private void revokeCredentialsAfterCommit(Long userId) {
+        Runnable revokeAction = () -> {
+            try {
+                tokenService.revokeUserTokens(userId);
+                refreshTokenService.revokeByUserId(userId);
+            } catch (RuntimeException ex) {
+                log.error(
+                        "密码重置后的 Redis 会话清理失败，将由数据库凭据版本复核在下次请求时拒绝并清理: userId={}",
+                        userId,
+                        ex
+                );
+            }
+        };
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            revokeAction.run();
+            return;
         }
-        String trimmed = password.trim();
-        if (trimmed.length() < 8 || trimmed.length() > 32) {
-            throw new BizException(ErrorCode.INVALID_PARAM, "密码长度需在 8-32 位");
-        }
-        boolean hasLetter = trimmed.chars().anyMatch(Character::isLetter);
-        boolean hasDigit = trimmed.chars().anyMatch(Character::isDigit);
-        if (!hasLetter || !hasDigit) {
-            throw new BizException(ErrorCode.INVALID_PARAM, "密码必须包含字母和数字");
-        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                revokeAction.run();
+            }
+        });
     }
 
     /**

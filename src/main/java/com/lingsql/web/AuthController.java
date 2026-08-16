@@ -4,6 +4,7 @@ import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.model.LoginRequest;
 import com.lingsql.rbac.model.LoginResponse;
 import com.lingsql.rbac.model.MenuView;
+import com.lingsql.rbac.model.RequiredPasswordChangeRequest;
 import com.lingsql.rbac.model.UserProfileView;
 import com.lingsql.rbac.security.RbacSecurityConstants;
 import com.lingsql.rbac.security.RbacSecurityUtils;
@@ -22,6 +23,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -63,6 +65,29 @@ public class AuthController {
             HttpServletResponse servletResponse
     ) {
         LoginResponse response = authService.login(request);
+        refreshTokenCookieManager.writeRefreshTokenCookie(
+                servletRequest,
+                servletResponse,
+                response.getRefreshToken(),
+                response.getRefreshExpiresIn()
+        );
+        return ApiResponse.success(sanitizeLoginResponse(response));
+    }
+
+    /**
+     * 完成首次登录强制改密。
+     *
+     * @param request 改密请求
+     * @return 完整登录响应
+     */
+    @PutMapping("/password")
+    @PreAuthorize("hasAuthority('AUTH:PASSWORD:CHANGE')")
+    public ApiResponse<LoginResponse> changeRequiredPassword(
+            @Valid @RequestBody RequiredPasswordChangeRequest request,
+            HttpServletRequest servletRequest,
+            HttpServletResponse servletResponse
+    ) {
+        LoginResponse response = authService.changeRequiredPassword(requireSession(), request);
         refreshTokenCookieManager.writeRefreshTokenCookie(
                 servletRequest,
                 servletResponse,

@@ -7,6 +7,7 @@ import com.lingsql.organization.entity.UserOrgMembership;
 import com.lingsql.organization.repository.OrgUnitRelationRepository;
 import com.lingsql.organization.repository.OrgUnitRepository;
 import com.lingsql.organization.repository.UserOrgMembershipRepository;
+import com.lingsql.common.trace.RequestTraceContext;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
@@ -14,9 +15,12 @@ import com.lingsql.rbac.entity.RbacUser;
 import com.lingsql.rbac.entity.RbacUserDataScope;
 import com.lingsql.rbac.entity.RbacUserExperiencePolicy;
 import com.lingsql.rbac.model.DataScopeRule;
+import com.lingsql.rbac.model.AuthFlow;
 import com.lingsql.rbac.model.LoginRequest;
 import com.lingsql.rbac.model.LoginResponse;
+import com.lingsql.rbac.model.PasswordState;
 import com.lingsql.rbac.model.RbacDataScopeType;
+import com.lingsql.rbac.model.RequiredPasswordChangeRequest;
 import com.lingsql.rbac.repository.RbacPermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleDataScopeRepository;
 import com.lingsql.rbac.repository.RbacRolePermissionRepository;
@@ -26,9 +30,11 @@ import com.lingsql.rbac.repository.RbacUserExperiencePolicyRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import com.lingsql.rbac.security.RbacUserSession;
+import com.lingsql.rbac.security.SessionPurpose;
 import com.lingsql.tenant.repository.TenantRepository;
 import com.lingsql.config.LingSqlProperties;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -57,6 +63,7 @@ import java.util.stream.Collectors;
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     private static final int MAX_LOGIN_FAILURES = 5;
@@ -105,6 +112,7 @@ public class AuthService {
     private final TenantRepository tenantRepository;
     private final LingSqlProperties properties;
     private final PasswordEncoder passwordEncoder;
+    private final PasswordCredentialService passwordCredentialService;
     private final ObjectMapper objectMapper;
     private final OrgUnitRepository orgUnitRepository;
     private final OrgUnitRelationRepository orgUnitRelationRepository;
@@ -132,7 +140,7 @@ public class AuthService {
             user.setLockUntil(null);
             user.setFailedLoginCount(0);
         }
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+        if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
             int failures = user.getFailedLoginCount() == null ? 0 : user.getFailedLoginCount();
             failures++;
             user.setFailedLoginCount(failures);
@@ -144,6 +152,22 @@ public class AuthService {
         }
         if (user.getStatus() != null && user.getStatus() == 0) {
             throw loginFailure();
+        }
+        if (resolvePasswordState(user) == PasswordState.CHANGE_REQUIRED) {
+            tokenService.revokeUserTokens(user.getId());
+            refreshTokenService.revokeByUserId(user.getId());
+            RbacUserSession restrictedSession = buildPasswordChangeSession(user);
+            String restrictedToken = tokenService.createToken(restrictedSession);
+            user.setFailedLoginCount(0);
+            user.setLockUntil(null);
+            userRepository.save(user);
+            return buildLoginResponse(
+                    restrictedSession,
+                    restrictedToken,
+                    tokenService.getExpireSeconds(restrictedSession),
+                    null,
+                    0
+            );
         }
         if (isSingleSessionEnabled()) {
             tokenService.revokeUserTokens(user.getId());
@@ -195,6 +219,12 @@ public class AuthService {
                 && !result.payload().tenantId().equalsIgnoreCase(user.getTenantId())) {
             throw new BadCredentialsException("账号不存在");
         }
+        if (resolvePasswordState(user) != PasswordState.ACTIVE
+                || resolveCredentialVersion(user) != resolveCredentialVersion(result.payload().credentialVersion())) {
+            refreshTokenService.revoke(result.refreshToken(), user.getId());
+            refreshTokenService.revokeByUserId(user.getId());
+            throw new BadCredentialsException("Refresh Token 已失效");
+        }
         if (isSingleSessionEnabled()) {
             tokenService.revokeUserTokens(user.getId());
         }
@@ -202,6 +232,49 @@ public class AuthService {
         String token = tokenService.createToken(session);
         long expiresIn = tokenService.getExpireSeconds(session);
         return buildLoginResponse(session, token, expiresIn, result.refreshToken(), refreshTtl.getSeconds());
+    }
+
+    /**
+     * 使用受限会话完成首次登录改密，并签发完整会话。
+     *
+     * @param session 受限会话
+     * @param request 改密请求
+     * @return 完整登录响应
+     */
+    public LoginResponse changeRequiredPassword(RbacUserSession session, RequiredPasswordChangeRequest request) {
+        if (session == null || session.getPurpose() != SessionPurpose.PASSWORD_CHANGE_ONLY) {
+            throw new BadCredentialsException("当前会话不能执行首次登录改密");
+        }
+        RbacUser user = passwordCredentialService.completeRequiredChange(session, request);
+        log.info(
+                "首次登录改密完成: tenantId={}, userId={}, credentialVersion={}, requestId={}",
+                user.getTenantId(),
+                user.getId(),
+                user.getCredentialVersion(),
+                RequestTraceContext.getRequestId()
+        );
+        tokenService.revokeUserTokens(user.getId());
+        refreshTokenService.revokeByUserId(user.getId());
+
+        LocalDateTime now = LocalDateTime.now();
+        user.setLastLoginTime(now);
+        userRepository.save(user);
+        RbacUserSession fullSession = buildSessionForUser(user);
+        String token = tokenService.createToken(fullSession);
+        Duration refreshTtl = resolveRefreshTtl();
+        String refreshToken = null;
+        long refreshExpiresIn = 0L;
+        if (refreshTtl != null && !refreshTtl.isZero() && !refreshTtl.isNegative()) {
+            refreshToken = refreshTokenService.issueRefreshToken(fullSession, refreshTtl);
+            refreshExpiresIn = refreshTtl.getSeconds();
+        }
+        return buildLoginResponse(
+                fullSession,
+                token,
+                tokenService.getExpireSeconds(fullSession),
+                refreshToken,
+                refreshExpiresIn
+        );
     }
 
     /**
@@ -261,6 +334,8 @@ public class AuthService {
         response.setRelationScopes(copyRelationScopes(session.getRelationScopes()));
         response.setRefreshToken(refreshToken);
         response.setRefreshExpiresIn(refreshExpiresIn);
+        response.setAuthFlow(session.getPurpose() == SessionPurpose.PASSWORD_CHANGE_ONLY
+                ? AuthFlow.PASSWORD_CHANGE_REQUIRED : AuthFlow.AUTHENTICATED);
         return response;
     }
 
@@ -301,6 +376,8 @@ public class AuthService {
             List<String> menuWhitelist
     ) {
         RbacUserSession session = new RbacUserSession();
+        session.setPurpose(SessionPurpose.FULL_ACCESS);
+        session.setCredentialVersion(resolveCredentialVersion(user));
         session.setUserId(user.getId());
         session.setTenantId(user.getTenantId());
         session.setUsername(user.getUsername());
@@ -327,6 +404,33 @@ public class AuthService {
         session.setOrgSubtreeCodes(mergeCodes(memberOrgSubtreeCodes, relationScopes.visibleCodes()));
         session.setMenuWhitelist(menuWhitelist == null ? List.of() : menuWhitelist);
         return session;
+    }
+
+    private RbacUserSession buildPasswordChangeSession(RbacUser user) {
+        RbacUserSession session = new RbacUserSession();
+        session.setPurpose(SessionPurpose.PASSWORD_CHANGE_ONLY);
+        session.setCredentialVersion(resolveCredentialVersion(user));
+        session.setUserId(user.getId());
+        session.setTenantId(user.getTenantId());
+        session.setUsername(user.getUsername());
+        session.setNickname(user.getNickname());
+        session.setExperience(user.getIsExperience() != null && user.getIsExperience() == 1);
+        session.setRoles(List.of());
+        session.setPermissions(List.of("AUTH:PASSWORD:CHANGE"));
+        session.setMenuWhitelist(List.of());
+        return session;
+    }
+
+    private PasswordState resolvePasswordState(RbacUser user) {
+        return user == null || user.getPasswordState() == null ? PasswordState.ACTIVE : user.getPasswordState();
+    }
+
+    private long resolveCredentialVersion(RbacUser user) {
+        return user == null ? 1L : resolveCredentialVersion(user.getCredentialVersion());
+    }
+
+    private long resolveCredentialVersion(Long credentialVersion) {
+        return credentialVersion == null || credentialVersion < 1L ? 1L : credentialVersion;
     }
 
     private RbacUserSession buildSessionForUser(RbacUser user) {

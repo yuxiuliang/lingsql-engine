@@ -19,6 +19,16 @@ import java.util.Map;
 public class RbacUserSession implements Serializable {
 
     /**
+     * 会话用途。
+     */
+    private SessionPurpose purpose = SessionPurpose.FULL_ACCESS;
+
+    /**
+     * 会话签发时的凭据版本。
+     */
+    private Long credentialVersion = 1L;
+
+    /**
      * 用户ID。
      *
      * @author 余炘洋

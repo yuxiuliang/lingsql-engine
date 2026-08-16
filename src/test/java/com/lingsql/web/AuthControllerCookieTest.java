@@ -147,7 +147,7 @@ class AuthControllerCookieTest {
         request.addHeader("X-Refresh-Token", "refresh_token_x");
         MockHttpServletResponse response = new MockHttpServletResponse();
         when(refreshTokenService.verify("refresh_token_x"))
-                .thenReturn(new RefreshTokenService.RefreshTokenPayload(12L, "TENANT_A", 1L));
+                .thenReturn(new RefreshTokenService.RefreshTokenPayload(12L, "TENANT_A", 1L, 1L));
 
         ApiResponse<String> result = controller.logout(
                 RbacSecurityConstants.BEARER_PREFIX + "access_token_x",

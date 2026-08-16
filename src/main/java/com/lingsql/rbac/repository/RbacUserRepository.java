@@ -4,8 +4,11 @@ import com.lingsql.rbac.entity.RbacUser;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import jakarta.persistence.LockModeType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -18,6 +21,16 @@ import java.util.Optional;
  * @date 2026-01-23
  */
 public interface RbacUserRepository extends JpaRepository<RbacUser, Long> {
+
+    /**
+     * 锁定读取用户，用于串行化密码凭据变更。
+     *
+     * @param id 用户ID
+     * @return 用户信息
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM RbacUser u WHERE u.id = :id")
+    Optional<RbacUser> findByIdForUpdate(@Param("id") Long id);
 
     /**
      * 按租户与账号查询用户。

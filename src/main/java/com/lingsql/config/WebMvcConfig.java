@@ -64,6 +64,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .addPathPatterns(
                         "/api/v1/auth/refresh",
                         "/api/v1/auth/logout",
+                        "/api/v1/auth/password",
                         "/api/v1/admin/users/*/password"
                 );
     }

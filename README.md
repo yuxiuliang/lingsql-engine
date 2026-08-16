@@ -19,6 +19,7 @@
 * **🧠 智能会话记忆 (Context Awareness)**：支持多轮追问。AI 能够理解“它”、“那个”、“刚才的”等代词，自动关联历史查询结果进行深度下钻。
 * **🛡️ 并发会话隔离 (Session Isolation)**：通过会话标识和租户上下文隔离并行对话；实际并发容量和隔离效果须在目标部署环境验证。
 * **🧾 持久管理审计**：管理操作执行前先写入 `PREPARED` 投递记录，业务结果通过唯一 `eventId` 幂等发布；未确认结果标记为 `UNKNOWN`，死信或未知状态会使审计健康检查失败。JSON 中的密码、Token、Secret、API Key、Cookie 与 Webhook 等字段统一脱敏，非结构化详情按失败关闭原则不保存原文。
+* **🔐 首次登录强制改密**：后台新建用户、新开户租户管理员和被管理员重置密码的账号只能获得 10 分钟改密专用 Token；该 Token 无 Refresh Token，服务端仅放行改密与退出接口。每个认证请求都会从数据库复核密码状态和凭据版本，改密完成后才签发完整权限会话。部署环境注入的超级管理员密码属于运维最终凭据，显式保持 `ACTIVE`。
 * **🚀 虚拟线程运行时**：已启用 Spring Boot 虚拟线程支持，用于降低 LLM 与 SQL I/O 等待对平台线程的占用；实际容量须按部署环境压测确定。
 
 ---
@@ -83,6 +84,7 @@ cp .env.example .env
   - `lingsql_tenant_pool_utilization`
 - **会话策略开关**：
   - `LINGSQL_AUTH_SINGLE_SESSION_ENABLED`（默认 `true`，同账号新登录会使旧会话失效）
+  - `LINGSQL_PASSWORD_CHANGE_JWT_TTL`（默认 `10m`，首次登录强制改密受限 Token 有效期）
 - **SQL 自愈开关**：
   - `LINGSQL_SQL_EXECUTION_SELF_HEALING_MAX_ATTEMPTS`（默认 `3`，取值范围 `1`–`5`，包含首轮）
 - **租户生命周期治理**：

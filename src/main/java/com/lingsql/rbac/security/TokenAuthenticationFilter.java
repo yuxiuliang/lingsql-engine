@@ -31,6 +31,7 @@ import java.util.List;
 public class TokenAuthenticationFilter extends OncePerRequestFilter {
 
     private final TokenService tokenService;
+    private final CredentialSessionValidator credentialSessionValidator;
     private static final String MDC_TENANT_ID = "tenantId";
     private static final String MDC_USER_ID = "userId";
 
@@ -63,6 +64,11 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                     request.setAttribute(RbacSecurityConstants.TOKEN_REVOKED_ATTRIBUTE, Boolean.TRUE);
                 }
                 RbacUserSession session = parseResult.session();
+                if (session != null && !credentialSessionValidator.isValid(session)) {
+                    tokenService.revokeToken(token);
+                    request.setAttribute(RbacSecurityConstants.TOKEN_REVOKED_ATTRIBUTE, Boolean.TRUE);
+                    session = null;
+                }
                 if (session != null) {
                     if (session.getUserId() == null) {
                         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
