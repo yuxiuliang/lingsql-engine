@@ -164,7 +164,13 @@ public class TenantFirstQuestionReadiness {
             return failed("DATASOURCE_SCHEMA_READY", "数据源与 Schema", "租户未配置已启用的数据源");
         }
         if (!Integer.valueOf(SCHEMA_SYNCED).equals(config.get().getSchemaSyncStatus())
-                || config.get().getLastSyncTime() == null) {
+                || config.get().getLastSyncTime() == null
+                || config.get().getSchemaTableCount() == null
+                || config.get().getSchemaTableCount() <= 0
+                || config.get().getSchemaWhitelistTableCount() == null
+                || config.get().getSchemaWhitelistTableCount() <= 0
+                || config.get().getSchemaTableCount() < config.get().getSchemaWhitelistTableCount()
+                || !StringUtils.hasText(config.get().getSchemaWhitelistDigest())) {
             return failed("DATASOURCE_SCHEMA_READY", "数据源与 Schema", "数据源 Schema 尚未同步或已被标记为待刷新");
         }
         return passed("DATASOURCE_SCHEMA_READY", "数据源与 Schema");

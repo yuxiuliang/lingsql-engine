@@ -9,13 +9,10 @@ import com.lingsql.agent.model.AiModelConfig;
 import com.lingsql.agent.model.ModelProbeView;
 import com.lingsql.agent.repository.AiModelConfigRepository;
 import com.lingsql.audit.service.AuditOperationExecutor;
-import com.lingsql.datasource.DataSourceManager;
-import com.lingsql.datasource.TenantDbConfigErrors;
-import com.lingsql.datasource.model.TenantDbConfig;
-import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.schema.MetadataCacheService;
-import com.lingsql.schema.SchemaScanner;
+import com.lingsql.schema.SchemaSynchronizationService;
 import com.lingsql.schema.SemanticConfigService;
+import com.lingsql.schema.model.SchemaSynchronizationReceipt;
 import com.lingsql.schema.model.TableInfo;
 import com.lingsql.web.model.ModelHealthView;
 import lombok.RequiredArgsConstructor;
@@ -26,9 +23,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.access.prepost.PreAuthorize;
 
-import javax.sql.DataSource;
 import jakarta.servlet.http.HttpServletRequest;
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -42,9 +37,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AdminController extends BaseController {
 
-    private final TenantDbConfigRepository repository;
-    private final DataSourceManager dataSourceManager;
-    private final SchemaScanner schemaScanner;
+    private final SchemaSynchronizationService schemaSynchronizationService;
     private final MetadataCacheService cacheService;
     private final SemanticConfigService semanticConfigService;
     private final ModelHealthService modelHealthService;
@@ -83,20 +76,9 @@ public class AdminController extends BaseController {
      */
     @PostMapping("/sync-schema/{tenantId}")
     @PreAuthorize("hasAuthority('ADMIN:SCHEMA:SYNC')")
-    public ApiResponse<String> syncSchema(@PathVariable String tenantId) {
+    public ApiResponse<SchemaSynchronizationReceipt> syncSchema(@PathVariable String tenantId) {
         String resolvedTenantId = resolveSecureTenantId(tenantId);
-        TenantDbConfig config = repository.findByTenantId(resolvedTenantId)
-                .orElseThrow(TenantDbConfigErrors::missingConfig);
-
-        DataSource ds = dataSourceManager.getDataSource(resolvedTenantId);
-        List<TableInfo> tables = schemaScanner.scanSchema(resolvedTenantId, ds, config.getWhiteListTables());
-        cacheService.cacheSchema(resolvedTenantId, tables);
-
-        config.setSchemaSyncStatus(1);
-        config.setLastSyncTime(LocalDateTime.now());
-        repository.save(config);
-
-        return ApiResponse.success("租户 [" + resolvedTenantId + "] 元数据同步完成，共扫描 " + tables.size() + " 张表");
+        return ApiResponse.success(schemaSynchronizationService.synchronize(resolvedTenantId));
     }
 
     /**

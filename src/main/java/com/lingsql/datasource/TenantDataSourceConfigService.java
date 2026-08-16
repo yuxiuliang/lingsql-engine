@@ -64,6 +64,7 @@ public class TenantDataSourceConfigService {
         request.setTenantId(normalizeTenantId(request.getTenantId()));
         request.setSchemaSyncStatus(0);
         request.setLastSyncTime(null);
+        resetSchemaReceipt(request);
         return authorizationSessionLifecycle.publish(
                 AuthorizationChange.tenant(request.getTenantId(), AuthorizationChangeKind.DATA_BOUNDARY),
                 () -> repository.save(request)
@@ -90,6 +91,7 @@ public class TenantDataSourceConfigService {
         config.setStatus(request.getStatus());
         config.setSchemaSyncStatus(0);
         config.setLastSyncTime(null);
+        resetSchemaReceipt(config);
         verifyReadOnlyConnection(config);
         TenantDbConfig saved;
         if (Objects.equals(previousTenantId, config.getTenantId())) {
@@ -137,6 +139,13 @@ public class TenantDataSourceConfigService {
      */
     public void verifyReadOnlyConnection(TenantDbConfig request) {
         verifyConnection(request, true);
+    }
+
+    private void resetSchemaReceipt(TenantDbConfig config) {
+        config.setSchemaTableCount(null);
+        config.setSchemaWhitelistTableCount(null);
+        config.setSchemaWhitelistDigest(null);
+        config.setSchemaSyncToken(null);
     }
 
     private void verifyConnection(TenantDbConfig request, boolean requireReadOnly) {

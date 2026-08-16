@@ -1,6 +1,8 @@
 package com.lingsql.schema;
 
 import tools.jackson.databind.ObjectMapper;
+import com.lingsql.common.exception.BizException;
+import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.metadata.service.MetadataExtService;
 import com.lingsql.schema.model.TableInfo;
@@ -75,19 +77,34 @@ public class MetadataCacheService {
      */
     public void cacheSchema(String tenantId, List<TableInfo> tables) {
         try {
-            String cacheKey = buildSchemaCacheKey(tenantId);
-            if (cacheKey == null) {
-                return;
-            }
-            String json = objectMapper.writeValueAsString(tables);
-            redisTemplate.opsForValue().set(
-                    cacheKey,
-                    json,
-                    properties.getCache().getSchemaTtl()
-            );
+            writeSchemaCache(tenantId, tables);
         } catch (Exception e) {
             log.error("缓存 Schema 失败: ", e);
         }
+    }
+
+    /**
+     * 写入必须成功的 Schema 缓存。只有该方法返回后才能发布持久同步收据。
+     *
+     * @param tenantId 租户标识
+     * @param tables 表结构
+     */
+    public void cacheSchemaRequired(String tenantId, List<TableInfo> tables) {
+        try {
+            writeSchemaCache(tenantId, tables);
+        } catch (Exception exception) {
+            log.error("发布 Schema 同步收据前缓存失败: tenantId={}", tenantId, exception);
+            throw new BizException(ErrorCode.SYSTEM_ERROR, "Schema 缓存失败，本次同步未生效", exception);
+        }
+    }
+
+    private void writeSchemaCache(String tenantId, List<TableInfo> tables) throws Exception {
+        String cacheKey = buildSchemaCacheKey(tenantId);
+        if (cacheKey == null) {
+            throw new IllegalArgumentException("租户标识不能为空");
+        }
+        String json = objectMapper.writeValueAsString(tables);
+        redisTemplate.opsForValue().set(cacheKey, json, properties.getCache().getSchemaTtl());
     }
 
     /**

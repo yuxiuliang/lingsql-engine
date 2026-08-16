@@ -2,6 +2,7 @@ package com.lingsql.datasource.model;
 
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -156,6 +157,43 @@ public class TenantDbConfig {
      */
     @Column(name = "last_sync_time")
     private LocalDateTime lastSyncTime;
+
+    /**
+     * 最近一次成功同步的实际表数。
+     *
+     * @author 余炘洋
+     * @date 2026-08-16
+     */
+    @Column(name = "schema_table_count")
+    private Integer schemaTableCount;
+
+    /**
+     * 最近一次成功同步的白名单表数。
+     *
+     * @author 余炘洋
+     * @date 2026-08-16
+     */
+    @Column(name = "schema_whitelist_table_count")
+    private Integer schemaWhitelistTableCount;
+
+    /**
+     * 最近一次成功同步的规范化白名单 SHA-256。
+     *
+     * @author 余炘洋
+     * @date 2026-08-16
+     */
+    @Column(name = "schema_whitelist_digest", length = 64)
+    private String schemaWhitelistDigest;
+
+    /**
+     * 当前同步尝试令牌，用于阻止旧数据源的迟到结果覆盖新配置。
+     *
+     * @author 余炘洋
+     * @date 2026-08-16
+     */
+    @JsonIgnore
+    @Column(name = "schema_sync_token", length = 36)
+    private String schemaSyncToken;
 
     /**
      * 配置状态。

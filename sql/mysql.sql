@@ -20,6 +20,10 @@ CREATE TABLE `t_lingsql_engine_tenant_db_config`
     -- 元数据管理
     `schema_sync_status` int               DEFAULT '0' COMMENT '元数据同步状态: 0-未同步, 1-已同步, 2-待刷新',
     `last_sync_time`     datetime              DEFAULT NULL COMMENT '最近一次元数据扫描时间',
+    `schema_table_count` int                   DEFAULT NULL COMMENT '最近一次成功同步的实际表数',
+    `schema_whitelist_table_count` int         DEFAULT NULL COMMENT '最近一次成功同步的白名单表数',
+    `schema_whitelist_digest` varchar(64)      DEFAULT NULL COMMENT '规范化白名单SHA-256',
+    `schema_sync_token` varchar(36)            DEFAULT NULL COMMENT '同步并发令牌',
 
     -- 状态与审计
     `status`             int               DEFAULT '1' COMMENT '连接状态: 1-启用, 0-禁用',
