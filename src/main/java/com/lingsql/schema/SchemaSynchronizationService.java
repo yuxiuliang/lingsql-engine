@@ -10,7 +10,7 @@ import com.lingsql.schema.model.SchemaSynchronizationReceipt;
 import com.lingsql.schema.model.TableInfo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 
 import javax.sql.DataSource;
 import java.time.LocalDateTime;
@@ -35,40 +35,34 @@ public class SchemaSynchronizationService {
     private final SchemaScanner schemaScanner;
     private final MetadataCacheService cacheService;
     private final SchemaWhitelistReceiptFactory receiptFactory;
+    private final TransactionOperations transactions;
 
     /**
-     * 同步并原子发布持久收据。
+     * 同步并发布持久收据。
+     *
+     * <p>开始事务先使旧收据失效，扫描成功后再由完成事务发布新收据，避免失败回滚成旧 READY 状态。</p>
      *
      * @param tenantId 租户标识
      * @return 已发布收据
      */
-    @Transactional
     public SchemaSynchronizationReceipt synchronize(String tenantId) {
         String syncToken = UUID.randomUUID().toString();
-        TenantDbConfig config = beginSynchronization(tenantId, syncToken);
-        cacheService.evictSchema(config.getTenantId());
-        try {
-            DataSource dataSource = dataSourceManager.getDataSource(config.getTenantId());
-            List<TableInfo> tables = schemaScanner.scanSchema(
-                    config.getTenantId(), dataSource, config.getWhiteListTables());
-            SchemaWhitelistReceiptFactory.Snapshot snapshot = receiptFactory.verify(
-                    config.getWhiteListTables(), tables);
-            cacheService.cacheSchemaRequired(config.getTenantId(), tables);
-            LocalDateTime syncedAt = LocalDateTime.now();
-            int updated = repository.completeSchemaSynchronization(
-                    config.getId(), syncToken, syncedAt, snapshot.tableCount(),
-                    snapshot.whitelistTableCount(), snapshot.whitelistDigest());
-            if (updated != 1) {
-                cacheService.evictSchema(config.getTenantId());
-                throw new BizException(ErrorCode.CONFLICT, "数据源配置已变化，本次 Schema 同步结果已丢弃");
-            }
-            return new SchemaSynchronizationReceipt(
-                    config.getTenantId(), snapshot.tableCount(), snapshot.whitelistTableCount(),
-                    snapshot.whitelistDigest(), syncedAt);
-        } catch (RuntimeException exception) {
-            cacheService.evictSchema(config.getTenantId());
-            throw exception;
+        TenantDbConfig config = transactions.execute(status -> beginSynchronization(tenantId, syncToken));
+        if (config == null) {
+            throw new IllegalStateException("Schema 同步事务未返回数据源配置");
         }
+        cacheService.evictSchema(config.getTenantId());
+        DataSource dataSource = dataSourceManager.getDataSource(config.getTenantId());
+        List<TableInfo> tables = schemaScanner.scanSchema(
+                config.getTenantId(), dataSource, config.getWhiteListTables());
+        SchemaWhitelistReceiptFactory.Snapshot snapshot = receiptFactory.verify(
+                config.getWhiteListTables(), tables);
+        SchemaSynchronizationReceipt receipt = transactions.execute(status -> completeSynchronization(
+                config.getTenantId(), syncToken, tables, snapshot));
+        if (receipt == null) {
+            throw new IllegalStateException("Schema 同步事务未返回完成收据");
+        }
+        return receipt;
     }
 
     private TenantDbConfig beginSynchronization(String tenantId, String syncToken) {
@@ -84,5 +78,30 @@ public class SchemaSynchronizationService {
         config.setSchemaWhitelistDigest(null);
         config.setSchemaSyncToken(syncToken);
         return repository.saveAndFlush(config);
+    }
+
+    private SchemaSynchronizationReceipt completeSynchronization(
+            String tenantId,
+            String syncToken,
+            List<TableInfo> tables,
+            SchemaWhitelistReceiptFactory.Snapshot snapshot
+    ) {
+        TenantDbConfig config = repository.findByTenantIdForUpdate(tenantId)
+                .orElseThrow(TenantDbConfigErrors::missingConfig);
+        if (!syncToken.equals(config.getSchemaSyncToken())) {
+            throw new BizException(ErrorCode.CONFLICT, "数据源配置已变化，本次 Schema 同步结果已丢弃");
+        }
+        cacheService.cacheSchemaRequired(tenantId, tables);
+        LocalDateTime syncedAt = LocalDateTime.now();
+        config.setSchemaSyncStatus(1);
+        config.setLastSyncTime(syncedAt);
+        config.setSchemaTableCount(snapshot.tableCount());
+        config.setSchemaWhitelistTableCount(snapshot.whitelistTableCount());
+        config.setSchemaWhitelistDigest(snapshot.whitelistDigest());
+        config.setSchemaSyncToken(null);
+        repository.saveAndFlush(config);
+        return new SchemaSynchronizationReceipt(
+                tenantId, snapshot.tableCount(), snapshot.whitelistTableCount(),
+                snapshot.whitelistDigest(), syncedAt);
     }
 }
