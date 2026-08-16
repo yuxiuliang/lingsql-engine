@@ -18,6 +18,7 @@ public class ModelHealthView {
     private Long id;
     private String providerName;
     private String modelName;
+    private String modelVersion;
     private String baseUrl;
     private Integer isActive;
     private Integer autoRecover;
@@ -52,6 +53,7 @@ public class ModelHealthView {
         view.setId(config.getId());
         view.setProviderName(config.getProviderName());
         view.setModelName(config.getModelName());
+        view.setModelVersion(config.getModelVersion());
         view.setBaseUrl(config.getBaseUrl());
         view.setIsActive(config.getIsActive());
         view.setAutoRecover(config.getAutoRecover());

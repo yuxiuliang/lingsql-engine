@@ -10,6 +10,7 @@ export interface ModelHealthView {
   id: number;
   providerName: string;
   modelName: string;
+  modelVersion?: string;
   baseUrl: string;
   isActive: number;
   autoRecover: number;

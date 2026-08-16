@@ -3,6 +3,7 @@ import {reactive, ref, shallowRef} from 'vue';
 import {ElMessage, ElMessageBox} from 'element-plus';
 import {AiModelConfig, createModelConfig, deleteModelConfig, fetchModelConfigs, updateModelConfig} from '@/api/config';
 import {disableModel, enableModel, fetchModelHealth, ModelHealthView, probeModel} from '@/api/admin';
+import TenantModelRoutePanel from './components/TenantModelRoutePanel.vue';
 
 const modelConfigs = ref<AiModelConfig[]>([]);
 const modelHealthList = ref<ModelHealthView[]>([]);
@@ -365,6 +366,9 @@ loadModelHealth();
             </template>
           </el-table-column>
         </el-table>
+      </el-tab-pane>
+      <el-tab-pane label="租户授权" lazy>
+        <TenantModelRoutePanel/>
       </el-tab-pane>
     </el-tabs>
 
