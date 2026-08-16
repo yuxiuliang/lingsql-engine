@@ -28,6 +28,9 @@ import com.lingsql.organization.repository.OrgUnitTypeRepository;
 import com.lingsql.organization.repository.UserOrgMembershipRepository;
 import com.lingsql.rbac.entity.RbacUser;
 import com.lingsql.rbac.repository.RbacUserRepository;
+import com.lingsql.rbac.authorization.AuthorizationChange;
+import com.lingsql.rbac.authorization.AuthorizationChangeKind;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -76,6 +79,7 @@ public class OrganizationAdminService {
     private final OrgUnitRelationRepository orgUnitRelationRepository;
     private final RbacUserRepository userRepository;
     private final ObjectMapper objectMapper;
+    private final IAuthorizationSessionLifecycle authorizationSessionLifecycle;
 
     /**
      * 查询组织类型列表。
@@ -294,7 +298,10 @@ public class OrganizationAdminService {
         entity.setUpdateTime(now);
         OrgUnit saved = orgUnitRepository.save(entity);
         rebuildTree(tenantId);
-        return getOrgUnitView(saved.getId(), tenantId);
+        return authorizationSessionLifecycle.publish(
+                AuthorizationChange.tenant(tenantId, AuthorizationChangeKind.ORGANIZATION_SCOPE),
+                () -> getOrgUnitView(saved.getId(), tenantId)
+        );
     }
 
     /**
@@ -348,7 +355,10 @@ public class OrganizationAdminService {
         entity.setUpdateTime(LocalDateTime.now());
         orgUnitRepository.save(entity);
         rebuildTree(tenantId);
-        return getOrgUnitView(entity.getId(), tenantId);
+        return authorizationSessionLifecycle.publish(
+                AuthorizationChange.tenant(tenantId, AuthorizationChangeKind.ORGANIZATION_SCOPE),
+                () -> getOrgUnitView(entity.getId(), tenantId)
+        );
     }
 
     /**
@@ -380,7 +390,13 @@ public class OrganizationAdminService {
                 throw new BizException(ErrorCode.CONFLICT, "组织节点已存在组织关系，无法删除");
             }
         }
-        orgUnitRepository.delete(entity);
+        authorizationSessionLifecycle.publish(
+                AuthorizationChange.tenant(entity.getTenantId(), AuthorizationChangeKind.ORGANIZATION_SCOPE),
+                () -> {
+                    orgUnitRepository.delete(entity);
+                    return null;
+                }
+        );
     }
 
     /**
@@ -610,10 +626,13 @@ public class OrganizationAdminService {
             orgUnitRelationRepository.save(entity);
         }
         rebuildTree(tenantId);
-        return "已初始化模板“" + template.templateName() + "”，创建 "
-                + template.types().size() + " 个组织类型、"
-                + template.units().size() + " 个组织节点、"
-                + template.relations().size() + " 条组织关系。";
+        return authorizationSessionLifecycle.publish(
+                AuthorizationChange.tenant(tenantId, AuthorizationChangeKind.ORGANIZATION_SCOPE),
+                () -> "已初始化模板“" + template.templateName() + "”，创建 "
+                        + template.types().size() + " 个组织类型、"
+                        + template.units().size() + " 个组织节点、"
+                        + template.relations().size() + " 条组织关系。"
+        );
     }
 
     /**
@@ -653,10 +672,13 @@ public class OrganizationAdminService {
         entity.setCreateTime(now);
         entity.setUpdateTime(now);
         OrgUnitRelation saved = orgUnitRelationRepository.save(entity);
-        return listRelations(tenantId).stream()
-                .filter(item -> Objects.equals(item.getId(), saved.getId()))
-                .findFirst()
-                .orElseThrow(() -> new BizException(ErrorCode.ORG_RELATION_NOT_FOUND, "组织关系不存在"));
+        return authorizationSessionLifecycle.publish(
+                AuthorizationChange.tenant(tenantId, AuthorizationChangeKind.ORGANIZATION_SCOPE),
+                () -> listRelations(tenantId).stream()
+                        .filter(item -> Objects.equals(item.getId(), saved.getId()))
+                        .findFirst()
+                        .orElseThrow(() -> new BizException(ErrorCode.ORG_RELATION_NOT_FOUND, "组织关系不存在"))
+        );
     }
 
     /**
@@ -704,10 +726,13 @@ public class OrganizationAdminService {
         }
         entity.setUpdateTime(LocalDateTime.now());
         orgUnitRelationRepository.save(entity);
-        return listRelations(tenantId).stream()
-                .filter(item -> Objects.equals(item.getId(), entity.getId()))
-                .findFirst()
-                .orElseThrow(() -> new BizException(ErrorCode.ORG_RELATION_NOT_FOUND, "组织关系不存在"));
+        return authorizationSessionLifecycle.publish(
+                AuthorizationChange.tenant(tenantId, AuthorizationChangeKind.ORGANIZATION_SCOPE),
+                () -> listRelations(tenantId).stream()
+                        .filter(item -> Objects.equals(item.getId(), entity.getId()))
+                        .findFirst()
+                        .orElseThrow(() -> new BizException(ErrorCode.ORG_RELATION_NOT_FOUND, "组织关系不存在"))
+        );
     }
 
     /**
@@ -727,7 +752,13 @@ public class OrganizationAdminService {
         OrgUnitRelation entity = orgUnitRelationRepository.findById(id)
                 .orElseThrow(() -> new BizException(ErrorCode.ORG_RELATION_NOT_FOUND, "组织关系不存在"));
         validateTenantAccess(entity.getTenantId(), sessionTenant, sysAdmin);
-        orgUnitRelationRepository.delete(entity);
+        authorizationSessionLifecycle.publish(
+                AuthorizationChange.tenant(entity.getTenantId(), AuthorizationChangeKind.ORGANIZATION_SCOPE),
+                () -> {
+                    orgUnitRelationRepository.delete(entity);
+                    return null;
+                }
+        );
     }
 
     /**

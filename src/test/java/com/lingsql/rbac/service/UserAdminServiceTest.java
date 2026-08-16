@@ -3,6 +3,7 @@ package com.lingsql.rbac.service;
 import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.rbac.entity.RbacUser;
 import com.lingsql.rbac.entity.RbacUserDataScope;
 import com.lingsql.rbac.model.DataScopeRule;
@@ -24,6 +25,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -121,8 +123,6 @@ class UserAdminServiceTest {
         assertEquals(RbacDataScopeType.TENANT, view.getEffectiveDataScope().getScopeType());
         assertEquals("DEFAULT_TENANT", view.getEffectiveDataScopeSource());
         verify(ctx.userDataScopeRepository).deleteByUserId(102L);
-        verify(ctx.tokenService).revokeUserTokens(102L);
-        verify(ctx.refreshTokenService).revokeByUserId(102L);
     }
 
     @Test
@@ -232,6 +232,8 @@ class UserAdminServiceTest {
         private final PasswordEncoder passwordEncoder = Mockito.mock(PasswordEncoder.class);
         private final TokenService tokenService = Mockito.mock(TokenService.class);
         private final RefreshTokenService refreshTokenService = Mockito.mock(RefreshTokenService.class);
+        private final IAuthorizationSessionLifecycle authorizationSessionLifecycle =
+                Mockito.mock(IAuthorizationSessionLifecycle.class);
         private final PageParamResolver pageParamResolver = Mockito.mock(PageParamResolver.class);
         private final OrgUnitRepository orgUnitRepository = Mockito.mock(OrgUnitRepository.class);
         private final UserOrgMembershipRepository userOrgMembershipRepository = Mockito.mock(UserOrgMembershipRepository.class);
@@ -246,11 +248,18 @@ class UserAdminServiceTest {
                 new PasswordPolicyService(),
                 tokenService,
                 refreshTokenService,
+                authorizationSessionLifecycle,
                 pageParamResolver,
                 orgUnitRepository,
                 userOrgMembershipRepository,
                 userDataScopeRepository,
                 orgGovernanceCatalogService
         );
+
+        private TestContext() {
+            when(authorizationSessionLifecycle.publish(any(), any())).thenAnswer(invocation ->
+                    ((Supplier<?>) invocation.getArgument(1)).get()
+            );
+        }
     }
 }

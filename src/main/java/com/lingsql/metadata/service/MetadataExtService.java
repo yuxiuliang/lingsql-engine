@@ -11,6 +11,9 @@ import com.lingsql.metadata.model.AiSuggestResponse;
 import com.lingsql.metadata.model.MetadataFieldView;
 import com.lingsql.metadata.model.MetadataTableView;
 import com.lingsql.metadata.repository.MetadataExtRepository;
+import com.lingsql.rbac.authorization.AuthorizationChange;
+import com.lingsql.rbac.authorization.AuthorizationChangeKind;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.schema.model.TableInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +45,7 @@ public class MetadataExtService {
     private final MetadataExtRepository metadataExtRepository;
     private final IModelGateway modelGateway;
     private final ObjectMapper objectMapper;
+    private final IAuthorizationSessionLifecycle authorizationSessionLifecycle;
 
     /**
      * 合并业务注释，字典表优先。
@@ -151,20 +155,26 @@ public class MetadataExtService {
      * @date 2026-01-23
      */
     public void updateIsolationField(String tenantId, String tableName, String columnName, boolean isolated) {
-        List<MetadataExt> extList = metadataExtRepository.findByTenantIdAndTableName(tenantId, tableName);
-        for (MetadataExt ext : extList) {
-            ext.setIsIsolatedField(0);
-        }
-        if (isolated && StringUtils.hasText(columnName)) {
-            MetadataExt target = metadataExtRepository.findByTenantIdAndTableNameAndColumnName(tenantId, tableName, columnName)
-                    .orElseGet(() -> createExt(tenantId, tableName, columnName));
-            target.setIsIsolatedField(1);
-            target.setUpdateTime(LocalDateTime.now());
-            if (!extList.contains(target)) {
-                extList.add(target);
-            }
-        }
-        metadataExtRepository.saveAll(extList);
+        authorizationSessionLifecycle.publish(
+                AuthorizationChange.tenant(tenantId, AuthorizationChangeKind.DATA_BOUNDARY),
+                () -> {
+                    List<MetadataExt> extList = metadataExtRepository.findByTenantIdAndTableName(tenantId, tableName);
+                    for (MetadataExt ext : extList) {
+                        ext.setIsIsolatedField(0);
+                    }
+                    if (isolated && StringUtils.hasText(columnName)) {
+                        MetadataExt target = metadataExtRepository.findByTenantIdAndTableNameAndColumnName(tenantId, tableName, columnName)
+                                .orElseGet(() -> createExt(tenantId, tableName, columnName));
+                        target.setIsIsolatedField(1);
+                        target.setUpdateTime(LocalDateTime.now());
+                        if (!extList.contains(target)) {
+                            extList.add(target);
+                        }
+                    }
+                    metadataExtRepository.saveAll(extList);
+                    return null;
+                }
+        );
     }
 
     /**

@@ -2,6 +2,7 @@ package com.lingsql.tenant.service;
 
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantLifecycleSnapshot;
 import com.lingsql.tenant.model.TenantLifecycleState;
@@ -11,6 +12,7 @@ import org.mockito.Mockito;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.function.Supplier;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -25,7 +27,8 @@ class TenantLifecycleSchedulerTest {
         TenantRepository repository = Mockito.mock(TenantRepository.class);
         TenantDbConfigRepository configRepository = Mockito.mock(TenantDbConfigRepository.class);
         TenantLifecycleService lifecycleService = Mockito.mock(TenantLifecycleService.class);
-        TenantLifecycleScheduler scheduler = new TenantLifecycleScheduler(repository, configRepository, lifecycleService);
+        TenantLifecycleScheduler scheduler = new TenantLifecycleScheduler(
+                repository, configRepository, lifecycleService, authorizationLifecycle());
         TenantInfo expired = new TenantInfo();
         expired.setTenantId("t-expired");
         expired.setStatus(1);
@@ -59,7 +62,8 @@ class TenantLifecycleSchedulerTest {
         TenantRepository repository = Mockito.mock(TenantRepository.class);
         TenantDbConfigRepository configRepository = Mockito.mock(TenantDbConfigRepository.class);
         TenantLifecycleService lifecycleService = Mockito.mock(TenantLifecycleService.class);
-        TenantLifecycleScheduler scheduler = new TenantLifecycleScheduler(repository, configRepository, lifecycleService);
+        TenantLifecycleScheduler scheduler = new TenantLifecycleScheduler(
+                repository, configRepository, lifecycleService, authorizationLifecycle());
         when(lifecycleService.isLifecycleEnabled()).thenReturn(true);
         when(lifecycleService.isAutoSuspendEnabled()).thenReturn(false);
 
@@ -67,5 +71,12 @@ class TenantLifecycleSchedulerTest {
 
         verify(repository, never()).findByIsDeletedAndStatusAndExpireTimeIsNotNull(any(), any());
         verify(configRepository, never()).save(any());
+    }
+
+    private IAuthorizationSessionLifecycle authorizationLifecycle() {
+        IAuthorizationSessionLifecycle lifecycle = Mockito.mock(IAuthorizationSessionLifecycle.class);
+        Mockito.when(lifecycle.publish(Mockito.any(), Mockito.any()))
+                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(1)).get());
+        return lifecycle;
     }
 }

@@ -11,6 +11,7 @@ import com.lingsql.organization.model.OrgTemplateApplyRequest;
 import com.lingsql.organization.service.OrganizationAdminService;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacRole;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.rbac.repository.RbacPermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleDataScopeRepository;
 import com.lingsql.rbac.repository.RbacRolePermissionRepository;
@@ -72,7 +73,8 @@ class TenantAdminServiceOrgBootstrapTest {
                 Mockito.mock(OpsAlertService.class),
                 Mockito.mock(com.lingsql.rbac.service.UserAdminService.class),
                 Mockito.mock(com.lingsql.rbac.repository.RbacUserRoleRepository.class),
-                dataSourceConfigService
+                dataSourceConfigService,
+                Mockito.mock(IAuthorizationSessionLifecycle.class)
         );
 
         when(tenantRepository.existsByTenantIdAndIsDeleted(any(), any(Integer.class))).thenReturn(false);

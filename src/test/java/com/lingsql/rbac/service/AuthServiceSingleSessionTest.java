@@ -8,6 +8,9 @@ import com.lingsql.organization.entity.UserOrgMembership;
 import com.lingsql.organization.repository.OrgUnitRelationRepository;
 import com.lingsql.organization.repository.OrgUnitRepository;
 import com.lingsql.organization.repository.UserOrgMembershipRepository;
+import com.lingsql.rbac.authorization.AuthorizationDecision;
+import com.lingsql.rbac.authorization.AuthorizationStamp;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacUser;
 import com.lingsql.rbac.model.LoginRequest;
@@ -21,6 +24,7 @@ import com.lingsql.rbac.repository.RbacUserDataScopeRepository;
 import com.lingsql.rbac.repository.RbacUserExperiencePolicyRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
+import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.tenant.repository.TenantRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -49,6 +53,7 @@ class AuthServiceSingleSessionTest {
         TestContext ctx = new TestContext(true);
         RbacUser user = buildActiveUser();
         when(ctx.userRepository.findByTenantIdAndUsername("TENANT_A", "alice")).thenReturn(Optional.of(user));
+        when(ctx.userRepository.findById(100L)).thenReturn(Optional.of(user));
         when(ctx.passwordEncoder.matches("pwd", "hashed_pwd")).thenReturn(true);
         when(ctx.userRoleRepository.findRoleIdsByUserId(100L)).thenReturn(List.of());
         when(ctx.userDataScopeRepository.findByUserId(100L)).thenReturn(Optional.empty());
@@ -70,6 +75,7 @@ class AuthServiceSingleSessionTest {
         TestContext ctx = new TestContext(false);
         RbacUser user = buildActiveUser();
         when(ctx.userRepository.findByTenantIdAndUsername("TENANT_A", "alice")).thenReturn(Optional.of(user));
+        when(ctx.userRepository.findById(100L)).thenReturn(Optional.of(user));
         when(ctx.passwordEncoder.matches("pwd", "hashed_pwd")).thenReturn(true);
         when(ctx.userRoleRepository.findRoleIdsByUserId(100L)).thenReturn(List.of());
         when(ctx.userDataScopeRepository.findByUserId(100L)).thenReturn(Optional.empty());
@@ -91,7 +97,13 @@ class AuthServiceSingleSessionTest {
         TestContext ctx = new TestContext(true);
         RbacUser user = buildActiveUser();
         RefreshTokenService.RefreshTokenPayload payload =
-                new RefreshTokenService.RefreshTokenPayload(100L, "TENANT_A", System.currentTimeMillis(), 1L);
+                new RefreshTokenService.RefreshTokenPayload(
+                        100L,
+                        "TENANT_A",
+                        System.currentTimeMillis(),
+                        1L,
+                        new AuthorizationStamp("a".repeat(64))
+                );
         RefreshTokenService.RefreshTokenResult result =
                 new RefreshTokenService.RefreshTokenResult(payload, "refresh_token_new");
         when(ctx.refreshTokenService.rotateRefreshToken(anyString(), any(Duration.class))).thenReturn(result);
@@ -114,6 +126,7 @@ class AuthServiceSingleSessionTest {
         TestContext ctx = new TestContext(true);
         RbacUser user = buildActiveUser();
         when(ctx.userRepository.findByTenantIdAndUsername("TENANT_A", "alice")).thenReturn(Optional.of(user));
+        when(ctx.userRepository.findById(100L)).thenReturn(Optional.of(user));
         when(ctx.passwordEncoder.matches("pwd", "hashed_pwd")).thenReturn(true);
         when(ctx.userRoleRepository.findRoleIdsByUserId(100L)).thenReturn(List.of());
         when(ctx.userDataScopeRepository.findByUserId(100L)).thenReturn(Optional.empty());
@@ -173,6 +186,7 @@ class AuthServiceSingleSessionTest {
         TestContext ctx = new TestContext(true);
         RbacUser user = buildActiveUser();
         when(ctx.userRepository.findByTenantIdAndUsername("TENANT_A", "alice")).thenReturn(Optional.of(user));
+        when(ctx.userRepository.findById(100L)).thenReturn(Optional.of(user));
         when(ctx.passwordEncoder.matches("pwd", "hashed_pwd")).thenReturn(true);
         when(ctx.userRoleRepository.findRoleIdsByUserId(100L)).thenReturn(List.of());
         when(ctx.userDataScopeRepository.findByUserId(100L)).thenReturn(Optional.empty());
@@ -233,6 +247,7 @@ class AuthServiceSingleSessionTest {
         TestContext ctx = new TestContext(true);
         RbacUser user = buildActiveUser();
         when(ctx.userRepository.findByTenantIdAndUsername("TENANT_A", "alice")).thenReturn(Optional.of(user));
+        when(ctx.userRepository.findById(100L)).thenReturn(Optional.of(user));
         when(ctx.passwordEncoder.matches("pwd", "hashed_pwd")).thenReturn(true);
         when(ctx.userRoleRepository.findRoleIdsByUserId(100L)).thenReturn(List.of());
         when(ctx.userDataScopeRepository.findByUserId(100L)).thenReturn(Optional.empty());
@@ -321,6 +336,7 @@ class AuthServiceSingleSessionTest {
         TestContext ctx = new TestContext(true);
         RbacUser user = buildActiveUser();
         when(ctx.userRepository.findByTenantIdAndUsername("TENANT_A", "alice")).thenReturn(Optional.of(user));
+        when(ctx.userRepository.findById(100L)).thenReturn(Optional.of(user));
         when(ctx.passwordEncoder.matches("pwd", "hashed_pwd")).thenReturn(true);
         when(ctx.userRoleRepository.findRoleIdsByUserId(100L)).thenReturn(List.of(9L));
         RbacRole superAdminRole = new RbacRole();
@@ -400,11 +416,18 @@ class AuthServiceSingleSessionTest {
         private final OrgUnitRepository orgUnitRepository = Mockito.mock(OrgUnitRepository.class);
         private final OrgUnitRelationRepository orgUnitRelationRepository = Mockito.mock(OrgUnitRelationRepository.class);
         private final UserOrgMembershipRepository userOrgMembershipRepository = Mockito.mock(UserOrgMembershipRepository.class);
+        private final RbacTenantPermissionRepository tenantPermissionRepository = Mockito.mock(RbacTenantPermissionRepository.class);
+        private final IAuthorizationSessionLifecycle authorizationSessionLifecycle =
+                Mockito.mock(IAuthorizationSessionLifecycle.class);
         private final AuthService authService;
 
         private TestContext(boolean singleSessionEnabled) {
             LingSqlProperties properties = new LingSqlProperties();
             properties.getAuth().setSingleSessionEnabled(singleSessionEnabled);
+            when(authorizationSessionLifecycle.capture(anyLong(), anyString()))
+                    .thenReturn(new AuthorizationStamp("a".repeat(64)));
+            when(authorizationSessionLifecycle.validate(anyLong(), anyString(), any()))
+                    .thenReturn(AuthorizationDecision.permit());
             this.authService = new AuthService(
                     userRepository,
                     userRoleRepository,
@@ -423,7 +446,9 @@ class AuthServiceSingleSessionTest {
                     new ObjectMapper(),
                     orgUnitRepository,
                     orgUnitRelationRepository,
-                    userOrgMembershipRepository
+                    userOrgMembershipRepository,
+                    tenantPermissionRepository,
+                    authorizationSessionLifecycle
             );
         }
     }

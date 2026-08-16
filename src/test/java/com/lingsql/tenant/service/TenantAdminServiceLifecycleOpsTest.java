@@ -19,6 +19,7 @@ import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import com.lingsql.rbac.entity.RbacUser;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantLifecycleExtendRequest;
 import com.lingsql.tenant.model.TenantLifecycleOpsTaskView;
@@ -36,6 +37,7 @@ import org.mockito.Mockito;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -240,8 +242,16 @@ class TenantAdminServiceLifecycleOpsTest {
                 Mockito.mock(OpsAlertService.class),
                 Mockito.mock(com.lingsql.rbac.service.UserAdminService.class),
                 userRoleRepository,
-                Mockito.mock(TenantDataSourceConfigService.class)
+                Mockito.mock(TenantDataSourceConfigService.class),
+                authorizationLifecycle()
         );
+    }
+
+    private IAuthorizationSessionLifecycle authorizationLifecycle() {
+        IAuthorizationSessionLifecycle lifecycle = Mockito.mock(IAuthorizationSessionLifecycle.class);
+        Mockito.when(lifecycle.publish(Mockito.any(), Mockito.any()))
+                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(1)).get());
+        return lifecycle;
     }
 
     private List<RbacPermission> buildBasePermissions() {

@@ -18,6 +18,7 @@ import com.lingsql.organization.repository.OrgUnitRelationRepository;
 import com.lingsql.organization.repository.OrgUnitTypeRepository;
 import com.lingsql.organization.repository.UserOrgMembershipRepository;
 import com.lingsql.rbac.entity.RbacUser;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -25,12 +26,20 @@ import org.mockito.Mockito;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
 class OrganizationAdminServiceTest {
+
+    private static IAuthorizationSessionLifecycle authorizationLifecycle() {
+        IAuthorizationSessionLifecycle lifecycle = Mockito.mock(IAuthorizationSessionLifecycle.class);
+        Mockito.when(lifecycle.publish(Mockito.any(), Mockito.any()))
+                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(1)).get());
+        return lifecycle;
+    }
 
     @Test
     void listOrgUnitsShouldBuildTreeAndMemberCount() {
@@ -45,7 +54,8 @@ class OrganizationAdminServiceTest {
                 membershipRepository,
                 relationRepository,
                 userRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                authorizationLifecycle()
         );
 
         OrgUnitType government = new OrgUnitType();
@@ -106,7 +116,8 @@ class OrganizationAdminServiceTest {
                 membershipRepository,
                 relationRepository,
                 userRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                authorizationLifecycle()
         );
 
         OrgUnitType type = new OrgUnitType();
@@ -134,7 +145,8 @@ class OrganizationAdminServiceTest {
                 membershipRepository,
                 relationRepository,
                 userRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                authorizationLifecycle()
         );
 
         OrgUnitType type = new OrgUnitType();
@@ -168,7 +180,8 @@ class OrganizationAdminServiceTest {
                 membershipRepository,
                 relationRepository,
                 userRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                authorizationLifecycle()
         );
 
         OrgUnitType type = new OrgUnitType();
@@ -219,7 +232,8 @@ class OrganizationAdminServiceTest {
                 membershipRepository,
                 relationRepository,
                 userRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                authorizationLifecycle()
         );
 
         List<OrgTemplateView> templates = service.listTemplates();
@@ -241,7 +255,8 @@ class OrganizationAdminServiceTest {
                 membershipRepository,
                 relationRepository,
                 userRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                authorizationLifecycle()
         );
 
         OrgUnitType existing = new OrgUnitType();
@@ -270,7 +285,8 @@ class OrganizationAdminServiceTest {
                 membershipRepository,
                 relationRepository,
                 userRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                authorizationLifecycle()
         );
 
         OrgUnit source = new OrgUnit();
@@ -337,7 +353,8 @@ class OrganizationAdminServiceTest {
                 membershipRepository,
                 relationRepository,
                 userRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                authorizationLifecycle()
         );
 
         OrgUnit source = new OrgUnit();
@@ -428,7 +445,8 @@ class OrganizationAdminServiceTest {
                 membershipRepository,
                 relationRepository,
                 userRepository,
-                new ObjectMapper()
+                new ObjectMapper(),
+                authorizationLifecycle()
         );
 
         when(typeRepository.findByTenantIdOrderBySortAscIdAsc("tenant-a")).thenReturn(List.of());

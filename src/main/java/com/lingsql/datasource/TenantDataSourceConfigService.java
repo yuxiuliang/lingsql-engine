@@ -4,6 +4,9 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
+import com.lingsql.rbac.authorization.AuthorizationChange;
+import com.lingsql.rbac.authorization.AuthorizationChangeKind;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.schema.MetadataCacheService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +23,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -47,6 +51,7 @@ public class TenantDataSourceConfigService {
     private final TenantDbConfigRepository repository;
     private final DataSourceManager dataSourceManager;
     private final MetadataCacheService metadataCacheService;
+    private final IAuthorizationSessionLifecycle authorizationSessionLifecycle;
 
     public List<TenantDbConfig> list() {
         return repository.findAll();
@@ -59,7 +64,10 @@ public class TenantDataSourceConfigService {
         request.setTenantId(normalizeTenantId(request.getTenantId()));
         request.setSchemaSyncStatus(0);
         request.setLastSyncTime(null);
-        return repository.save(request);
+        return authorizationSessionLifecycle.publish(
+                AuthorizationChange.tenant(request.getTenantId(), AuthorizationChangeKind.DATA_BOUNDARY),
+                () -> repository.save(request)
+        );
     }
 
     @Transactional
@@ -83,7 +91,21 @@ public class TenantDataSourceConfigService {
         config.setSchemaSyncStatus(0);
         config.setLastSyncTime(null);
         verifyReadOnlyConnection(config);
-        TenantDbConfig saved = repository.save(config);
+        TenantDbConfig saved;
+        if (Objects.equals(previousTenantId, config.getTenantId())) {
+            saved = authorizationSessionLifecycle.publish(
+                    AuthorizationChange.tenant(config.getTenantId(), AuthorizationChangeKind.DATA_BOUNDARY),
+                    () -> repository.save(config)
+            );
+        } else {
+            saved = authorizationSessionLifecycle.publish(
+                    AuthorizationChange.tenant(previousTenantId, AuthorizationChangeKind.DATA_BOUNDARY),
+                    () -> authorizationSessionLifecycle.publish(
+                            AuthorizationChange.tenant(config.getTenantId(), AuthorizationChangeKind.DATA_BOUNDARY),
+                            () -> repository.save(config)
+                    )
+            );
+        }
         invalidateAfterCommit(previousTenantId, saved.getTenantId());
         return saved;
     }
@@ -92,7 +114,13 @@ public class TenantDataSourceConfigService {
     public void delete(Long id) {
         TenantDbConfig config = repository.findById(id)
                 .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "租户配置不存在"));
-        repository.delete(config);
+        authorizationSessionLifecycle.publish(
+                AuthorizationChange.tenant(config.getTenantId(), AuthorizationChangeKind.DATA_BOUNDARY),
+                () -> {
+                    repository.delete(config);
+                    return null;
+                }
+        );
         invalidateAfterCommit(config.getTenantId(), null);
     }
 

@@ -3,6 +3,7 @@ package com.lingsql.rbac.service;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.organization.service.OrgGovernanceCatalogService;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
 import com.lingsql.rbac.model.DataScopeRule;
@@ -14,12 +15,12 @@ import com.lingsql.rbac.repository.RbacPermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleDataScopeRepository;
 import com.lingsql.rbac.repository.RbacRolePermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
-import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -79,8 +80,6 @@ class RoleAdminServiceTest {
         when(ctx.roleRepository.save(any(RbacRole.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(ctx.rolePermissionRepository.findPermIdsByRoleIds(List.of(11L))).thenReturn(List.of());
         when(ctx.roleDataScopeRepository.findActiveByRoleIds(List.of(11L))).thenReturn(List.of());
-        when(ctx.userRoleRepository.findUserIdsByRoleId(11L)).thenReturn(List.of());
-
         RoleView view = ctx.roleAdminService.updateRole(11L, request, "TENANT_A", false);
 
         assertEquals("财务主管", view.getRoleName());
@@ -167,9 +166,8 @@ class RoleAdminServiceTest {
         private final RbacRoleDataScopeRepository roleDataScopeRepository = Mockito.mock(RbacRoleDataScopeRepository.class);
         private final RbacPermissionRepository permissionRepository = Mockito.mock(RbacPermissionRepository.class);
         private final TenantPermissionService tenantPermissionService = Mockito.mock(TenantPermissionService.class);
-        private final RbacUserRoleRepository userRoleRepository = Mockito.mock(RbacUserRoleRepository.class);
-        private final TokenService tokenService = Mockito.mock(TokenService.class);
-        private final RefreshTokenService refreshTokenService = Mockito.mock(RefreshTokenService.class);
+        private final IAuthorizationSessionLifecycle authorizationSessionLifecycle =
+                Mockito.mock(IAuthorizationSessionLifecycle.class);
         private final OrgGovernanceCatalogService orgGovernanceCatalogService = Mockito.mock(OrgGovernanceCatalogService.class);
         private final RoleAdminService roleAdminService = new RoleAdminService(
                 roleRepository,
@@ -177,10 +175,14 @@ class RoleAdminServiceTest {
                 roleDataScopeRepository,
                 permissionRepository,
                 tenantPermissionService,
-                userRoleRepository,
-                tokenService,
-                refreshTokenService,
+                authorizationSessionLifecycle,
                 orgGovernanceCatalogService
         );
+
+        private TestContext() {
+            when(authorizationSessionLifecycle.publish(any(), any())).thenAnswer(invocation ->
+                    ((Supplier<?>) invocation.getArgument(1)).get()
+            );
+        }
     }
 }

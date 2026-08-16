@@ -1,5 +1,6 @@
 package com.lingsql.rbac.security;
 
+import com.lingsql.rbac.authorization.AuthorizationStamp;
 import com.lingsql.rbac.model.DataScopeRule;
 import lombok.Data;
 
@@ -27,6 +28,11 @@ public class RbacUserSession implements Serializable {
      * 会话签发时的凭据版本。
      */
     private Long credentialVersion = 1L;
+
+    /**
+     * 会话签发时的授权版本指纹。
+     */
+    private AuthorizationStamp authorizationStamp;
 
     /**
      * 用户ID。

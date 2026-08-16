@@ -1,5 +1,6 @@
 package com.lingsql.web;
 
+import com.lingsql.rbac.authorization.AuthorizationStamp;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.rbac.model.LoginRequest;
 import com.lingsql.rbac.model.LoginResponse;
@@ -147,7 +148,13 @@ class AuthControllerCookieTest {
         request.addHeader("X-Refresh-Token", "refresh_token_x");
         MockHttpServletResponse response = new MockHttpServletResponse();
         when(refreshTokenService.verify("refresh_token_x"))
-                .thenReturn(new RefreshTokenService.RefreshTokenPayload(12L, "TENANT_A", 1L, 1L));
+                .thenReturn(new RefreshTokenService.RefreshTokenPayload(
+                        12L,
+                        "TENANT_A",
+                        1L,
+                        1L,
+                        new AuthorizationStamp("a".repeat(64))
+                ));
 
         ApiResponse<String> result = controller.logout(
                 RbacSecurityConstants.BEARER_PREFIX + "access_token_x",

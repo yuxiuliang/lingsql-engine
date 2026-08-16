@@ -1,6 +1,9 @@
 package com.lingsql.tenant.service;
 
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
+import com.lingsql.rbac.authorization.AuthorizationChange;
+import com.lingsql.rbac.authorization.AuthorizationChangeKind;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantLifecycleSnapshot;
 import com.lingsql.tenant.model.TenantLifecycleState;
@@ -31,6 +34,7 @@ public class TenantLifecycleScheduler {
     private final TenantRepository tenantRepository;
     private final TenantDbConfigRepository tenantDbConfigRepository;
     private final TenantLifecycleService lifecycleService;
+    private final IAuthorizationSessionLifecycle authorizationSessionLifecycle;
 
     /**
      * 定时冻结超过宽限期的租户。
@@ -55,13 +59,19 @@ public class TenantLifecycleScheduler {
             if (snapshot.state() != TenantLifecycleState.SUSPENDED) {
                 continue;
             }
-            tenant.setStatus(INACTIVE_STATUS);
-            tenant.setUpdateTime(now);
-            tenantRepository.save(tenant);
-            tenantDbConfigRepository.findByTenantId(tenant.getTenantId()).ifPresent(config -> {
-                config.setStatus(INACTIVE_STATUS);
-                tenantDbConfigRepository.save(config);
-            });
+            authorizationSessionLifecycle.publish(
+                    AuthorizationChange.tenant(tenant.getTenantId(), AuthorizationChangeKind.TENANT_LIFECYCLE),
+                    () -> {
+                        tenant.setStatus(INACTIVE_STATUS);
+                        tenant.setUpdateTime(now);
+                        tenantRepository.save(tenant);
+                        tenantDbConfigRepository.findByTenantId(tenant.getTenantId()).ifPresent(config -> {
+                            config.setStatus(INACTIVE_STATUS);
+                            tenantDbConfigRepository.save(config);
+                        });
+                        return null;
+                    }
+            );
             suspendCount++;
             log.warn("租户已自动冻结: tenantId={}, expireTime={}", tenant.getTenantId(), tenant.getExpireTime());
         }

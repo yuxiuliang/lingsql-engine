@@ -8,6 +8,10 @@ import com.lingsql.organization.repository.OrgUnitRelationRepository;
 import com.lingsql.organization.repository.OrgUnitRepository;
 import com.lingsql.organization.repository.UserOrgMembershipRepository;
 import com.lingsql.common.trace.RequestTraceContext;
+import com.lingsql.rbac.authorization.AuthorizationDecision;
+import com.lingsql.rbac.authorization.AuthorizationStamp;
+import com.lingsql.rbac.authorization.AuthorizationStateUnavailableException;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
@@ -29,6 +33,7 @@ import com.lingsql.rbac.repository.RbacUserDataScopeRepository;
 import com.lingsql.rbac.repository.RbacUserExperiencePolicyRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
+import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.security.RbacUserSession;
 import com.lingsql.rbac.security.SessionPurpose;
 import com.lingsql.tenant.repository.TenantRepository;
@@ -117,6 +122,8 @@ public class AuthService {
     private final OrgUnitRepository orgUnitRepository;
     private final OrgUnitRelationRepository orgUnitRelationRepository;
     private final UserOrgMembershipRepository userOrgMembershipRepository;
+    private final RbacTenantPermissionRepository tenantPermissionRepository;
+    private final IAuthorizationSessionLifecycle authorizationSessionLifecycle;
 
     /**
      * 登录并生成 Token。
@@ -221,6 +228,16 @@ public class AuthService {
         }
         if (resolvePasswordState(user) != PasswordState.ACTIVE
                 || resolveCredentialVersion(user) != resolveCredentialVersion(result.payload().credentialVersion())) {
+            refreshTokenService.revoke(result.refreshToken(), user.getId());
+            refreshTokenService.revokeByUserId(user.getId());
+            throw new BadCredentialsException("Refresh Token 已失效");
+        }
+        AuthorizationDecision authorizationDecision = authorizationSessionLifecycle.validate(
+                user.getId(),
+                user.getTenantId(),
+                result.payload().authorizationStamp()
+        );
+        if (authorizationDecision == null || !authorizationDecision.permitted()) {
             refreshTokenService.revoke(result.refreshToken(), user.getId());
             refreshTokenService.revokeByUserId(user.getId());
             throw new BadCredentialsException("Refresh Token 已失效");
@@ -410,6 +427,7 @@ public class AuthService {
         RbacUserSession session = new RbacUserSession();
         session.setPurpose(SessionPurpose.PASSWORD_CHANGE_ONLY);
         session.setCredentialVersion(resolveCredentialVersion(user));
+        session.setAuthorizationStamp(authorizationSessionLifecycle.capture(user.getId(), user.getTenantId()));
         session.setUserId(user.getId());
         session.setTenantId(user.getTenantId());
         session.setUsername(user.getUsername());
@@ -434,42 +452,81 @@ public class AuthService {
     }
 
     private RbacUserSession buildSessionForUser(RbacUser user) {
-        List<Long> roleIds = userRoleRepository.findRoleIdsByUserId(user.getId());
+        AuthorizationStamp before = authorizationSessionLifecycle.capture(user.getId(), user.getTenantId());
+        RbacUser authoritativeUser = userRepository.findById(user.getId())
+                .orElseThrow(() -> new AuthorizationStateUnavailableException("授权用户不存在，拒绝签发会话"));
+        if (!Objects.equals(user.getTenantId(), authoritativeUser.getTenantId())
+                || resolvePasswordState(authoritativeUser) != PasswordState.ACTIVE
+                || resolveCredentialVersion(user) != resolveCredentialVersion(authoritativeUser)) {
+            throw new AuthorizationStateUnavailableException("用户凭据或租户事实已变化，拒绝签发会话");
+        }
+        List<Long> roleIds = userRoleRepository.findRoleIdsByUserId(authoritativeUser.getId());
         List<RbacRole> roles = roleIds.isEmpty() ? List.of() : roleRepository.findByIdIn(roleIds);
-        List<String> roleCodes = roles.stream()
+        List<RbacRole> activeRoles = roles.stream()
                 .filter(role -> role.getStatus() == null || role.getStatus() == 1)
+                .toList();
+        List<Long> activeRoleIds = activeRoles.stream()
+                .map(RbacRole::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        List<String> roleCodes = activeRoles.stream()
                 .map(RbacRole::getRoleCode)
                 .toList();
 
-        List<String> permCodes = resolvePermissions(roleIds);
-        DataScopeRule dataScope = resolveDataScope(user.getId(), roleIds);
+        boolean superAdmin = roleCodes.contains(SUPER_ADMIN_ROLE);
+        List<String> permCodes = resolvePermissions(authoritativeUser.getTenantId(), activeRoleIds, superAdmin);
+        DataScopeRule dataScope = resolveDataScope(authoritativeUser.getId(), activeRoleIds);
         List<String> menuWhitelist = new ArrayList<>();
 
-        boolean experience = user.getIsExperience() != null && user.getIsExperience() == 1;
+        boolean experience = authoritativeUser.getIsExperience() != null && authoritativeUser.getIsExperience() == 1;
         if (experience) {
-            applyExperiencePolicy(user.getId(), dataScope, menuWhitelist);
+            applyExperiencePolicy(authoritativeUser.getId(), dataScope, menuWhitelist);
         }
-        if (roleCodes.contains(SUPER_ADMIN_ROLE)) {
+        if (superAdmin) {
             dataScope = toRule(RbacDataScopeType.ALL, null, null);
         }
-        return buildSession(user, roleCodes, permCodes, dataScope, menuWhitelist);
+        RbacUserSession session = buildSession(authoritativeUser, roleCodes, permCodes, dataScope, menuWhitelist);
+        AuthorizationStamp after = authorizationSessionLifecycle.capture(
+                authoritativeUser.getId(),
+                authoritativeUser.getTenantId()
+        );
+        if (before == null || after == null || !Objects.equals(before.fingerprint(), after.fingerprint())) {
+            throw new AuthorizationStateUnavailableException("授权事实已在会话装配期间变化，拒绝签发会话");
+        }
+        session.setAuthorizationStamp(after);
+        return session;
     }
 
     /**
      * 解析权限编码。
      *
+     * @param tenantId 租户标识
      * @param roleIds 角色ID列表
+     * @param superAdmin 是否超级管理员
      * @return 权限编码列表
      * @author 余炘洋
      * @date 2026-01-23
      */
-    private List<String> resolvePermissions(List<Long> roleIds) {
+    private List<String> resolvePermissions(String tenantId, List<Long> roleIds, boolean superAdmin) {
         if (CollectionUtils.isEmpty(roleIds)) {
             return List.of();
         }
         List<Long> permIds = rolePermissionRepository.findPermIdsByRoleIds(roleIds);
         if (CollectionUtils.isEmpty(permIds)) {
             return List.of();
+        }
+        if (!superAdmin) {
+            List<Long> tenantPermIds = tenantPermissionRepository.findPermIdsByTenantId(tenantId);
+            if (CollectionUtils.isEmpty(tenantPermIds)) {
+                return List.of();
+            }
+            Set<Long> tenantPermissionSet = new LinkedHashSet<>(tenantPermIds);
+            permIds = permIds.stream()
+                    .filter(tenantPermissionSet::contains)
+                    .toList();
+            if (permIds.isEmpty()) {
+                return List.of();
+            }
         }
         List<RbacPermission> permissions = permissionRepository.findByIdIn(permIds);
         return permissions.stream()

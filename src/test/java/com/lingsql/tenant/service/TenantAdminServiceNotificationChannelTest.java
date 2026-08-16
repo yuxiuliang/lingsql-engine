@@ -14,6 +14,7 @@ import com.lingsql.rbac.repository.RbacRolePermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
 import com.lingsql.rbac.repository.RbacTenantPermissionRepository;
 import com.lingsql.rbac.repository.RbacUserRepository;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantNotificationChannelHealthView;
 import com.lingsql.tenant.model.TenantNotificationChannelTestRequest;
@@ -112,7 +113,8 @@ class TenantAdminServiceNotificationChannelTest {
                 opsAlertService,
                 Mockito.mock(com.lingsql.rbac.service.UserAdminService.class),
                 Mockito.mock(com.lingsql.rbac.repository.RbacUserRoleRepository.class),
-                Mockito.mock(com.lingsql.datasource.TenantDataSourceConfigService.class)
+                Mockito.mock(com.lingsql.datasource.TenantDataSourceConfigService.class),
+                Mockito.mock(IAuthorizationSessionLifecycle.class)
         );
     }
 }

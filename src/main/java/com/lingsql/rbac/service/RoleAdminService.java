@@ -3,6 +3,9 @@ package com.lingsql.rbac.service;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.organization.service.OrgGovernanceCatalogService;
+import com.lingsql.rbac.authorization.AuthorizationChange;
+import com.lingsql.rbac.authorization.AuthorizationChangeKind;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
@@ -16,7 +19,6 @@ import com.lingsql.rbac.repository.RbacPermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleDataScopeRepository;
 import com.lingsql.rbac.repository.RbacRolePermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
-import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -47,9 +49,7 @@ public class RoleAdminService {
     private final RbacRoleDataScopeRepository roleDataScopeRepository;
     private final RbacPermissionRepository permissionRepository;
     private final TenantPermissionService tenantPermissionService;
-    private final RbacUserRoleRepository userRoleRepository;
-    private final TokenService tokenService;
-    private final RefreshTokenService refreshTokenService;
+    private final IAuthorizationSessionLifecycle authorizationSessionLifecycle;
     private final OrgGovernanceCatalogService orgGovernanceCatalogService;
 
     /**
@@ -131,10 +131,28 @@ public class RoleAdminService {
         if (roleId == null) {
             throw new BizException(ErrorCode.INVALID_PARAM, "角色ID不能为空");
         }
+        AuthorizationChange change = AuthorizationChange.role(roleId, AuthorizationChangeKind.ROLE_ACCESS);
+        return authorizationSessionLifecycle.publish(
+                change,
+                () -> updateRoleInsidePublication(roleId, request, tenantId, sysAdmin)
+        );
+    }
+
+    /**
+     * 在授权发布事务内更新角色及其关联配置。
+     *
+     * @author 余炘洋
+     * @date 2026-08-16
+     */
+    private RoleView updateRoleInsidePublication(
+            Long roleId,
+            RoleUpdateRequest request,
+            String tenantId,
+            boolean sysAdmin
+    ) {
         RbacRole role = roleRepository.findById(roleId)
                 .orElseThrow(() -> new BizException(ErrorCode.ROLE_NOT_FOUND, "角色不存在"));
         validateRoleAccess(role, tenantId, sysAdmin);
-        Integer originalStatus = role.getStatus();
         if (request != null) {
             if (StringUtils.hasText(request.getRoleName())) {
                 role.setRoleName(normalize(request.getRoleName()));
@@ -150,9 +168,6 @@ public class RoleAdminService {
         }
         if (request != null && request.getDataScope() != null) {
             applyRoleDataScope(role, request.getDataScope());
-        }
-        if (request != null && shouldInvalidateRoleSessions(request, originalStatus)) {
-            revokeRoleSessions(role.getId());
         }
         List<Long> permIds = rolePermissionRepository.findPermIdsByRoleIds(List.of(role.getId()));
         return toView(role, permIds, resolveRoleDataScope(role.getId()));
@@ -309,46 +324,6 @@ public class RoleAdminService {
         entity.setCreateTime(now);
         entity.setUpdateTime(now);
         roleDataScopeRepository.save(entity);
-    }
-
-    /**
-     * 判断是否需要失效角色绑定用户的会话。
-     *
-     * @param request        更新请求
-     * @param originalStatus 原状态
-     * @return 是否需要失效
-     * @author 余炘洋
-     * @date 2026-01-28
-     */
-    private boolean shouldInvalidateRoleSessions(RoleUpdateRequest request, Integer originalStatus) {
-        if (request == null) {
-            return false;
-        }
-        boolean permChanged = request.getPermIds() != null;
-        boolean statusChanged = request.getStatus() != null && !request.getStatus().equals(originalStatus);
-        boolean dataScopeChanged = request.getDataScope() != null;
-        return permChanged || statusChanged || dataScopeChanged;
-    }
-
-    /**
-     * 失效角色绑定用户的会话。
-     *
-     * @param roleId 角色ID
-     * @author 余炘洋
-     * @date 2026-01-28
-     */
-    private void revokeRoleSessions(Long roleId) {
-        if (roleId == null) {
-            return;
-        }
-        List<Long> userIds = userRoleRepository.findUserIdsByRoleId(roleId);
-        if (CollectionUtils.isEmpty(userIds)) {
-            return;
-        }
-        for (Long userId : userIds) {
-            tokenService.revokeUserTokens(userId);
-            refreshTokenService.revokeByUserId(userId);
-        }
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.lingsql.rbac.service;
 
 import tools.jackson.databind.ObjectMapper;
+import com.lingsql.rbac.authorization.AuthorizationStamp;
 import com.lingsql.rbac.security.RbacSecurityConstants;
 import com.lingsql.rbac.security.RbacUserSession;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +44,7 @@ public class RefreshTokenService {
                 payload.userId(),
                 payload.tenantId(),
                 resolveCredentialVersion(payload.credentialVersion()),
+                payload.authorizationStamp(),
                 ttl
         );
         return new RefreshTokenResult(payload, newToken);
@@ -56,6 +58,7 @@ public class RefreshTokenService {
                 session.getUserId(),
                 session.getTenantId(),
                 resolveCredentialVersion(session.getCredentialVersion()),
+                session.getAuthorizationStamp(),
                 ttl
         );
     }
@@ -101,7 +104,8 @@ public class RefreshTokenService {
         try {
             RefreshTokenPayload payload = objectMapper.readValue(raw, RefreshTokenPayload.class);
             if (payload == null || payload.userId() == null
-                    || payload.credentialVersion() == null || payload.credentialVersion() < 1L) {
+                    || payload.credentialVersion() == null || payload.credentialVersion() < 1L
+                    || payload.authorizationStamp() == null || !payload.authorizationStamp().isValid()) {
                 return null;
             }
             String currentHash = redisTemplate.opsForValue().get(buildUserKey(payload.userId()));
@@ -115,8 +119,12 @@ public class RefreshTokenService {
         }
     }
 
-    private String issueRefreshToken(Long userId, String tenantId, long credentialVersion, Duration ttl) {
-        if (userId == null) {
+    private String issueRefreshToken(Long userId,
+                                     String tenantId,
+                                     long credentialVersion,
+                                     AuthorizationStamp authorizationStamp,
+                                     Duration ttl) {
+        if (userId == null || authorizationStamp == null || !authorizationStamp.isValid()) {
             return null;
         }
         Duration resolvedTtl = ttl == null || ttl.isZero() || ttl.isNegative() ? Duration.ofDays(7) : ttl;
@@ -129,7 +137,8 @@ public class RefreshTokenService {
                 userId,
                 tenantId,
                 Instant.now().toEpochMilli(),
-                credentialVersion
+                credentialVersion,
+                authorizationStamp
         );
         try {
             String json = objectMapper.writeValueAsString(payload);
@@ -179,7 +188,11 @@ public class RefreshTokenService {
      * Refresh Token 载荷。
      * credentialVersion 必须存在；升级前的旧 Token 必须重新登录。
      */
-    public record RefreshTokenPayload(Long userId, String tenantId, long issuedAt, Long credentialVersion) {
+    public record RefreshTokenPayload(Long userId,
+                                      String tenantId,
+                                      long issuedAt,
+                                      Long credentialVersion,
+                                      AuthorizationStamp authorizationStamp) {
     }
 
     public record RefreshTokenResult(RefreshTokenPayload payload, String refreshToken) {

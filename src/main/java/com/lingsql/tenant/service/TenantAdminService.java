@@ -29,6 +29,9 @@ import com.lingsql.rbac.repository.RbacUserRepository;
 import com.lingsql.rbac.repository.RbacUserRoleRepository;
 import com.lingsql.rbac.model.UserCreateRequest;
 import com.lingsql.rbac.model.PasswordState;
+import com.lingsql.rbac.authorization.AuthorizationChange;
+import com.lingsql.rbac.authorization.AuthorizationChangeKind;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.rbac.service.UserAdminService;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.model.TenantCreateRequest;
@@ -128,6 +131,7 @@ public class TenantAdminService {
     private final UserAdminService userAdminService;
     private final RbacUserRoleRepository userRoleRepository;
     private final TenantDataSourceConfigService tenantDataSourceConfigService;
+    private final IAuthorizationSessionLifecycle authorizationSessionLifecycle;
 
     /**
      * 查询租户列表。
@@ -526,6 +530,8 @@ public class TenantAdminService {
         }
         TenantInfo tenant = tenantRepository.findByIdAndIsDeleted(id, NOT_DELETED)
                 .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
+        Integer originalStatus = tenant.getStatus();
+        LocalDateTime originalExpireTime = tenant.getExpireTime();
         boolean activating = INACTIVE_STATUS.equals(tenant.getStatus())
                 && ACTIVE_STATUS.equals(request.getStatus());
         if (StringUtils.hasText(request.getTenantName())) {
@@ -556,7 +562,14 @@ public class TenantAdminService {
             validateTenantReadyForActivation(tenant);
         }
         tenant.setUpdateTime(LocalDateTime.now());
-        TenantInfo saved = tenantRepository.save(tenant);
+        boolean lifecycleChanged = !Objects.equals(originalStatus, tenant.getStatus())
+                || !Objects.equals(originalExpireTime, tenant.getExpireTime());
+        TenantInfo saved = lifecycleChanged
+                ? authorizationSessionLifecycle.publish(
+                        AuthorizationChange.tenant(tenant.getTenantId(), AuthorizationChangeKind.TENANT_LIFECYCLE),
+                        () -> tenantRepository.save(tenant)
+                )
+                : tenantRepository.save(tenant);
         if (activating) {
             activateTenantConfig(saved.getTenantId());
         }
@@ -579,6 +592,8 @@ public class TenantAdminService {
     public TenantView extendTenantLifecycle(Long id, TenantLifecycleExtendRequest request) {
         TenantInfo tenant = tenantRepository.findByIdAndIsDeleted(id, NOT_DELETED)
                 .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
+        Integer originalStatus = tenant.getStatus();
+        LocalDateTime originalExpireTime = tenant.getExpireTime();
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime targetExpire = null;
         if (request != null) {
@@ -602,7 +617,14 @@ public class TenantAdminService {
             activateTenantConfig(tenant.getTenantId());
         }
         tenant.setUpdateTime(now);
-        TenantInfo saved = tenantRepository.save(tenant);
+        boolean lifecycleChanged = !Objects.equals(originalStatus, tenant.getStatus())
+                || !Objects.equals(originalExpireTime, tenant.getExpireTime());
+        TenantInfo saved = lifecycleChanged
+                ? authorizationSessionLifecycle.publish(
+                        AuthorizationChange.tenant(tenant.getTenantId(), AuthorizationChangeKind.TENANT_LIFECYCLE),
+                        () -> tenantRepository.save(tenant)
+                )
+                : tenantRepository.save(tenant);
         return toView(saved);
     }
 
@@ -619,6 +641,8 @@ public class TenantAdminService {
     public TenantView reactivateTenant(Long id) {
         TenantInfo tenant = tenantRepository.findByIdAndIsDeleted(id, NOT_DELETED)
                 .orElseThrow(() -> new BizException(ErrorCode.TENANT_NOT_FOUND, "租户不存在"));
+        Integer originalStatus = tenant.getStatus();
+        LocalDateTime originalExpireTime = tenant.getExpireTime();
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime expireTime = tenant.getExpireTime();
         if (expireTime == null || expireTime.isBefore(now)) {
@@ -628,7 +652,14 @@ public class TenantAdminService {
         tenant.setStatus(ACTIVE_STATUS);
         tenant.setUpdateTime(now);
         activateTenantConfig(tenant.getTenantId());
-        TenantInfo saved = tenantRepository.save(tenant);
+        boolean lifecycleChanged = !Objects.equals(originalStatus, tenant.getStatus())
+                || !Objects.equals(originalExpireTime, tenant.getExpireTime());
+        TenantInfo saved = lifecycleChanged
+                ? authorizationSessionLifecycle.publish(
+                        AuthorizationChange.tenant(tenant.getTenantId(), AuthorizationChangeKind.TENANT_LIFECYCLE),
+                        () -> tenantRepository.save(tenant)
+                )
+                : tenantRepository.save(tenant);
         return toView(saved);
     }
 
@@ -650,12 +681,18 @@ public class TenantAdminService {
         if (sqlTaskTracker.hasRunning(tenantId)) {
             throw new BizException(ErrorCode.CONFLICT, "租户存在正在运行的 SQL 任务，无法删除");
         }
-        tenant.setIsDeleted(DELETED);
-        tenant.setStatus(INACTIVE_STATUS);
-        tenant.setUpdateTime(LocalDateTime.now());
-        tenantRepository.save(tenant);
-        freezeTenantConfig(tenantId);
-        tenantPermissionRepository.deleteByTenantId(tenantId);
+        authorizationSessionLifecycle.publish(
+                AuthorizationChange.tenant(tenantId, AuthorizationChangeKind.TENANT_LIFECYCLE),
+                () -> {
+                    tenant.setIsDeleted(DELETED);
+                    tenant.setStatus(INACTIVE_STATUS);
+                    tenant.setUpdateTime(LocalDateTime.now());
+                    tenantRepository.save(tenant);
+                    freezeTenantConfig(tenantId);
+                    tenantPermissionRepository.deleteByTenantId(tenantId);
+                    return null;
+                }
+        );
     }
 
     /**

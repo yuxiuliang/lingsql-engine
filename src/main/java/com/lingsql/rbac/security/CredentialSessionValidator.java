@@ -1,5 +1,7 @@
 package com.lingsql.rbac.security;
 
+import com.lingsql.rbac.authorization.AuthorizationDecision;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.rbac.entity.RbacUser;
 import com.lingsql.rbac.model.PasswordState;
 import com.lingsql.rbac.repository.RbacUserRepository;
@@ -21,6 +23,7 @@ import java.util.Objects;
 public class CredentialSessionValidator {
 
     private final RbacUserRepository userRepository;
+    private final IAuthorizationSessionLifecycle authorizationSessionLifecycle;
 
     /**
      * 校验会话用途、凭据版本和用户状态。
@@ -43,10 +46,19 @@ public class CredentialSessionValidator {
             }
             PasswordState passwordState = user.getPasswordState() == null
                     ? PasswordState.ACTIVE : user.getPasswordState();
-            return switch (session.getPurpose()) {
+            boolean credentialValid = switch (session.getPurpose()) {
                 case FULL_ACCESS -> passwordState == PasswordState.ACTIVE;
                 case PASSWORD_CHANGE_ONLY -> passwordState == PasswordState.CHANGE_REQUIRED;
             };
+            if (!credentialValid) {
+                return false;
+            }
+            AuthorizationDecision authorizationDecision = authorizationSessionLifecycle.validate(
+                    session.getUserId(),
+                    session.getTenantId(),
+                    session.getAuthorizationStamp()
+            );
+            return authorizationDecision != null && authorizationDecision.permitted();
         } catch (RuntimeException ex) {
             log.error(
                     "凭据权威状态复核失败，拒绝会话: tenantId={}, userId={}, credentialVersion={}",

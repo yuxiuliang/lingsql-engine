@@ -2,6 +2,9 @@ package com.lingsql.rbac.service;
 
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.rbac.authorization.AuthorizationChange;
+import com.lingsql.rbac.authorization.AuthorizationChangeKind;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.rbac.entity.RbacPermission;
 import com.lingsql.rbac.entity.RbacTenantPermission;
 import com.lingsql.rbac.repository.RbacPermissionRepository;
@@ -29,6 +32,7 @@ public class TenantPermissionService {
 
     private final RbacTenantPermissionRepository tenantPermissionRepository;
     private final RbacPermissionRepository permissionRepository;
+    private final IAuthorizationSessionLifecycle authorizationSessionLifecycle;
 
     /**
      * 获取租户权限ID列表。
@@ -74,6 +78,25 @@ public class TenantPermissionService {
             throw new BizException(ErrorCode.INVALID_PARAM, "租户ID不能为空");
         }
         String normalizedTenantId = tenantId.trim();
+        authorizationSessionLifecycle.publish(
+                AuthorizationChange.tenant(
+                        normalizedTenantId,
+                        AuthorizationChangeKind.TENANT_PERMISSION_POOL
+                ),
+                () -> {
+                    replaceTenantPermissions(normalizedTenantId, permIds);
+                    return null;
+                }
+        );
+    }
+
+    /**
+     * 在授权发布事务内替换租户权限池。
+     *
+     * @author 余炘洋
+     * @date 2026-08-16
+     */
+    private void replaceTenantPermissions(String normalizedTenantId, List<Long> permIds) {
         tenantPermissionRepository.deleteByTenantId(normalizedTenantId);
         if (CollectionUtils.isEmpty(permIds)) {
             return;

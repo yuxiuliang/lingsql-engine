@@ -10,6 +10,9 @@ import com.lingsql.organization.entity.UserOrgMembership;
 import com.lingsql.organization.service.OrgGovernanceCatalogService;
 import com.lingsql.organization.repository.OrgUnitRepository;
 import com.lingsql.organization.repository.UserOrgMembershipRepository;
+import com.lingsql.rbac.authorization.AuthorizationChange;
+import com.lingsql.rbac.authorization.AuthorizationChangeKind;
+import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacRoleDataScope;
 import com.lingsql.rbac.entity.RbacUser;
@@ -77,6 +80,7 @@ public class UserAdminService {
     private final PasswordPolicyService passwordPolicyService;
     private final TokenService tokenService;
     private final RefreshTokenService refreshTokenService;
+    private final IAuthorizationSessionLifecycle authorizationSessionLifecycle;
     private final PageParamResolver pageParamResolver;
     private final OrgUnitRepository orgUnitRepository;
     private final UserOrgMembershipRepository userOrgMembershipRepository;
@@ -185,17 +189,32 @@ public class UserAdminService {
      * @author 余炘洋
      * @date 2026-01-26
      */
-    @Transactional
     public UserView updateUser(Long userId, UserUpdateRequest request, String tenantId, boolean sysAdmin) {
         if (userId == null) {
             throw new BizException(ErrorCode.INVALID_PARAM, "用户ID不能为空");
         }
+        AuthorizationChange change = AuthorizationChange.user(userId, AuthorizationChangeKind.USER_ACCESS);
+        return authorizationSessionLifecycle.publish(
+                change,
+                () -> updateUserInsidePublication(userId, request, tenantId, sysAdmin)
+        );
+    }
+
+    /**
+     * 在授权发布事务内更新用户及其授权关联。
+     *
+     * @author 余炘洋
+     * @date 2026-08-16
+     */
+    private UserView updateUserInsidePublication(
+            Long userId,
+            UserUpdateRequest request,
+            String tenantId,
+            boolean sysAdmin
+    ) {
         RbacUser user = userRepository.findById(userId)
                 .orElseThrow(() -> new BizException(ErrorCode.USER_NOT_FOUND, "用户不存在"));
         validateTenantAccess(user.getTenantId(), tenantId, sysAdmin);
-        Integer originalStatus = user.getStatus();
-        Integer originalExperience = user.getIsExperience();
-        boolean rolesUpdated = request != null && request.getRoleIds() != null;
         if (request != null) {
             if (request.getNickname() != null) {
                 user.setNickname(normalize(request.getNickname()));
@@ -225,16 +244,6 @@ public class UserAdminService {
         }
         if (request != null && request.getDataScope() != null) {
             applyUserDataScope(user, request.getDataScope());
-        }
-        if (request != null) {
-            boolean statusDisabled = request.getStatus() != null && request.getStatus() == 0;
-            boolean experienceChanged = request.getIsExperience() != null && !request.getIsExperience().equals(originalExperience);
-            boolean statusChanged = request.getStatus() != null && !request.getStatus().equals(originalStatus);
-            boolean dataScopeChanged = request.getDataScope() != null;
-            if (statusDisabled || rolesUpdated || experienceChanged || statusChanged || dataScopeChanged) {
-                tokenService.revokeUserTokens(user.getId());
-                refreshTokenService.revokeByUserId(user.getId());
-            }
         }
         return toView(user);
     }
