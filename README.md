@@ -118,12 +118,12 @@ cp .env.example .env
   - `scripts/ops/bootstrap_local_stack.sh`（容器化一键拉起：依赖 + Flyway 迁移 + 种子 + 应用）
   - `scripts/ops/bootstrap_demo_pilot.sh`（虚构销售库存演示：开户 + 数据源/Schema + 模型验证 + 首问五项门禁 + 三问逐请求验收）
   - `scripts/ops/release_gate.sh`（发布门禁：冒烟 + SLO + 商用六项验收）
-  - `scripts/ops/runtime_fingerprint_guard.sh`（候选 Git SHA、Flyway、数据快照与模型路由指纹校验）
+  - `scripts/ops/runtime_fingerprint_guard.sh` / `scripts/ops/tenant_first_question_readiness_guard.sh`（公网运行身份与首问五项事实校验）
   - `scripts/ops/release_blue_green.sh`（蓝绿候选准备或直接发布）
   - `scripts/ops/release_candidate_promote.sh` / `scripts/ops/release_candidate_abort.sh`（严格门禁后切流 / 失败停止未切流候选）
   - `scripts/ops/switch_traffic.sh`（Nginx 切流 Hook）
   - `scripts/ops/release_smoke_test.sh`（发布后冒烟验收）
-  - `scripts/ops/release_rollback.sh`（故障快速回滚）
+  - `scripts/ops/release_rollback.sh`（严格模式冻结旧身份、回滚后公网复核并生成 HMAC 收据）
   - `scripts/ops/release_with_auto_rollback.sh`（发布编排：自动回滚）
   - `scripts/ops/notify_release_event.sh`（发布事件通知）
   - `scripts/ops/mysql_backup.sh` / `scripts/ops/mysql_restore.sh`（最小文件权限、gzip/SHA-256 校验、目标库显式确认的备份恢复）

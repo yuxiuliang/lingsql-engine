@@ -132,6 +132,44 @@ run_switch_hook() {
   bash -lc "${LINGSQL_SWITCH_HOOK} ${slot} ${port}"
 }
 
+verify_public_rollback() {
+  local script_dir="$1"
+  if [[ -z "${ROLLBACK_PUBLIC_BASE_URL:-}" ]]; then
+    return
+  fi
+  for name in PILOT_CONTROL_TOKEN PILOT_CONTROL_TENANT_ID MODEL_ROUTE_TENANT_ID \
+    EXPECTED_ROLLBACK_COMMIT EXPECTED_ROLLBACK_SLOT EXPECTED_ROLLBACK_RELEASE_ID \
+    EXPECTED_ROLLBACK_DATA_SNAPSHOT_ID EXPECTED_ROLLBACK_MODEL_ROUTE_FINGERPRINT \
+    FAILED_RELEASE_ID ROLLBACK_ATTEMPT_ID ROLLBACK_RECEIPT_HMAC_KEY; do
+    if [[ -z "${!name:-}" ]]; then
+      log_error "严格公网回滚缺少参数: ${name}"
+      return 2
+    fi
+  done
+  local runtime_report="${ROLLBACK_RUNTIME_REPORT_FILE:-./reports/rollback_runtime_fingerprint.md}"
+  local readiness_report="${ROLLBACK_READINESS_REPORT_FILE:-./reports/rollback_tenant_readiness.json}"
+  if ! BASE_URL="${ROLLBACK_PUBLIC_BASE_URL}" \
+      EXPECTED_RELEASE_COMMIT="${EXPECTED_ROLLBACK_COMMIT}" \
+      EXPECTED_SLOT="${EXPECTED_ROLLBACK_SLOT}" \
+      EXPECTED_RELEASE_ID="${EXPECTED_ROLLBACK_RELEASE_ID}" \
+      EXPECTED_DATA_SNAPSHOT_ID="${EXPECTED_ROLLBACK_DATA_SNAPSHOT_ID}" \
+      EXPECTED_MODEL_ROUTE_FINGERPRINT="${EXPECTED_ROLLBACK_MODEL_ROUTE_FINGERPRINT}" \
+      RUNTIME_FINGERPRINT_REPORT_FILE="${runtime_report}" \
+      bash "${script_dir}/runtime_fingerprint_guard.sh"; then
+    log_error "回滚后公网身份验证失败；已保留两个槽位，请立即人工检查流量入口"
+    return 2
+  fi
+  if ! BASE_URL="${ROLLBACK_PUBLIC_BASE_URL}" \
+      READINESS_REPORT_FILE="${readiness_report}" \
+      bash "${script_dir}/tenant_first_question_readiness_guard.sh"; then
+    log_error "回滚后试点租户首问事实验证失败；已保留两个槽位，请立即人工处置"
+    return 2
+  fi
+  ROLLBACK_RUNTIME_REPORT_FILE="${runtime_report}" \
+    ROLLBACK_READINESS_REPORT_FILE="${readiness_report}" \
+    bash "${script_dir}/rollback_result_receipt.sh"
+}
+
 main() {
   local expected_slot="${1:-}"
   if [[ -n "${expected_slot}" && "${expected_slot}" != "blue" && "${expected_slot}" != "green" ]]; then
@@ -140,6 +178,8 @@ main() {
   fi
 
   local deploy_base="${LINGSQL_DEPLOY_BASE:-/opt/lingsql}"
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   local run_dir="${deploy_base}/run"
   local slot_file="${run_dir}/active_slot"
   local history_file="${run_dir}/release_history.log"
@@ -214,6 +254,10 @@ main() {
   run_switch_hook "${rollback_slot}" "${rollback_port}"
   echo "${rollback_slot}" > "${slot_file}"
   echo "${rollback_port}" > "${run_dir}/active_port"
+  if ! verify_public_rollback "${script_dir}"; then
+    log_error "自动回滚未形成公网闭环，故障槽位未停止，禁止宣称回滚完成"
+    exit 2
+  fi
   stop_service_if_needed "${failed_service}"
 
   local operator="${SUDO_USER:-${USER:-unknown}}"

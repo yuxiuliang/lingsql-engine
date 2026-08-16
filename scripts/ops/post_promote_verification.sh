@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_BASE="${LINGSQL_DEPLOY_BASE:-/opt/lingsql}"
 REPORT_FILE="${POST_PROMOTE_REPORT_FILE:-./reports/post_promote_runtime_fingerprint.md}"
 RESULT_FILE="${DEPLOYMENT_RESULT_FILE:-./reports/deployment_result_receipt.json}"
+READINESS_REPORT_FILE="${POST_PROMOTE_READINESS_REPORT_FILE:-./reports/post_promote_tenant_readiness.json}"
 
 log_error() { echo "[ERROR] $*" >&2; }
 require_value() { [[ -n "$2" ]] || { log_error "$1 不能为空"; exit 1; }; }
@@ -38,7 +39,7 @@ persist_result() {
 
 main() {
   local actual_candidate_seal candidate_canonical candidate_receipt candidate_receipt_sha
-  local completed=false expected_candidate_seal private_report report_sha payload seal result_dir
+  local completed=false expected_candidate_seal private_report report_sha readiness_sha payload seal result_dir
   command -v jq >/dev/null 2>&1 || { log_error "缺少命令: jq"; exit 1; }
   command -v node >/dev/null 2>&1 || { log_error "缺少命令: node"; exit 1; }
   require_value "BASE_URL" "${BASE_URL:-}"
@@ -57,11 +58,13 @@ main() {
   cleanup_post_promote_files() {
     rm -f -- "${private_report:-}"
     if [[ "${completed}" != "true" ]]; then
-      rm -f -- "${REPORT_FILE}" "${RESULT_FILE}"
+      rm -f -- "${REPORT_FILE}" "${RESULT_FILE}" "${READINESS_REPORT_FILE}"
     fi
   }
   trap cleanup_post_promote_files EXIT
   RUNTIME_FINGERPRINT_REPORT_FILE="${private_report}" "${SCRIPT_DIR}/runtime_fingerprint_guard.sh"
+  READINESS_REPORT_FILE="${READINESS_REPORT_FILE}" \
+    bash "${SCRIPT_DIR}/tenant_first_question_readiness_guard.sh"
 
   candidate_receipt="${DEPLOY_BASE}/receipts/${EXPECTED_RELEASE_ID}.json"
   [[ -s "${candidate_receipt}" ]] || { log_error "候选验收收据归档不存在"; exit 2; }
@@ -86,18 +89,20 @@ main() {
 - 模型路由一致性: PASS
 - 公网运行指纹: PASS
 - 登录态冒烟: PASS
+- 试点租户首问五项事实: PASS
 - 候选验收收据封印: PASS
 - 结论: PASS
 EOF
 
   candidate_receipt_sha="$(sha256sum "${candidate_receipt}" | awk '{print $1}')"
   report_sha="$(sha256sum "${REPORT_FILE}" | awk '{print $1}')"
+  readiness_sha="$(sha256sum "${READINESS_REPORT_FILE}" | awk '{print $1}')"
   payload="$(jq -cnS \
     --arg verifiedAt "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
     --arg commit "${EXPECTED_RELEASE_COMMIT}" --arg slot "${EXPECTED_SLOT}" \
     --arg releaseId "${EXPECTED_RELEASE_ID}" --arg candidateReceiptSha256 "${candidate_receipt_sha}" \
-    --arg postPromoteReportSha256 "${report_sha}" \
-    '{schemaVersion:1,verifiedAt:$verifiedAt,commit:$commit,slot:$slot,releaseId:$releaseId,publicEndpointVerified:true,candidateReceiptSha256:$candidateReceiptSha256,postPromoteReportSha256:$postPromoteReportSha256,conclusion:"PASS"}')"
+    --arg postPromoteReportSha256 "${report_sha}" --arg readinessReportSha256 "${readiness_sha}" \
+    '{schemaVersion:1,verifiedAt:$verifiedAt,commit:$commit,slot:$slot,releaseId:$releaseId,publicEndpointVerified:true,candidateReceiptSha256:$candidateReceiptSha256,postPromoteReportSha256:$postPromoteReportSha256,readinessReportSha256:$readinessReportSha256,conclusion:"PASS"}')"
   seal="$(printf '%s' "${payload}" | node -e 'const crypto=require("node:crypto");const chunks=[];process.stdin.on("data",c=>chunks.push(c));process.stdin.on("end",()=>process.stdout.write(crypto.createHmac("sha256",Buffer.from(process.env.CANDIDATE_RECEIPT_HMAC_KEY,"hex")).update(Buffer.concat(chunks)).digest("hex")));')"
   result_dir="$(dirname "${RESULT_FILE}")"
   mkdir -p "${result_dir}"

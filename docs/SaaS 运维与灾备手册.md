@@ -758,6 +758,8 @@ LINGSQL_SWITCH_HOOK="/opt/lingsql/scripts/ops/switch_traffic.sh" \
 - 先启动回滚槽位并通过健康检查，再执行切流。
 - 回滚记录写入：`/opt/lingsql/run/rollback_history.log`。
 
+正式发布使用严格公网回滚模式：切流前保存旧版本身份，失败切回后从公网核对旧 commit、slot、release ID、数据快照、模型路由和试点租户五项 readiness。只有 HMAC 回滚收据归档成功后才停止故障候选；公网复核失败会保留两个槽位并要求人工检查入口，不得仅凭 localhost 健康检查宣布恢复。
+
 冒烟脚本默认校验项：
 - `GET /actuator/health` 返回 200
 - `GET /actuator/health/readiness` 返回 200

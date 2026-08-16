@@ -757,10 +757,12 @@ Authorization: Bearer {systemAdminToken}
 | `TENANT_ACTIVE` | 租户存在、未删除、已启用且生命周期允许访问核心能力 |
 | `TENANT_ADMIN_LOGIN` | 至少一个启用、未锁定且绑定有效 `TENANT_ADMIN` 角色的账号；该角色授权与租户权限池必须同时包含 `MENU:CHAT`、`CONFIG:CHAT:READ`、`API:CHAT:ASK` |
 | `BILLING_AVAILABLE` | 当前套餐存在且启用，租户可用余额大于 0 |
-| `DATASOURCE_SCHEMA_READY` | 数据源已启用，Schema 已成功同步且存在同步时间 |
+| `DATASOURCE_SCHEMA_READY` | 数据源已启用；持久同步收据存在同步时间、实际表数与白名单表数均大于 0、实际表数不少于白名单表数，且规范化白名单 SHA-256 非空 |
 | `MODEL_ROUTE_READY` | 至少一个租户授权模型同时处于启用状态，且最近真实探测为 `HEALTHY` 并未超过配置的探测有效期（生产默认 24 小时） |
 
 只有 `status=READY_TO_ASK` 且 `ready=true` 时才能开始租户管理员三问或 40 题验收。该接口只读取现有事实，不会自动启用租户、补余额、同步 Schema 或修改模型授权。
+
+`POST /api/v1/admin/sync-schema/{tenantId}` 返回 `{tenantId, tableCount, whitelistTableCount, whitelistDigest, syncedAt}`。同步开始即使旧收据失效；白名单为空、任一表未命中、实际表数为 0、Redis 缓存失败或同步期间数据源配置变化时请求失败，且不会发布可被 readiness 接受的部分收据。
 
 ### 4.3 元数据管理
 

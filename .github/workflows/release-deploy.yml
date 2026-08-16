@@ -389,6 +389,31 @@ jobs:
           echo "slot=${EXPECTED_SLOT}" >> "${GITHUB_OUTPUT}"
           echo "release_id=${EXPECTED_RELEASE_ID}" >> "${GITHUB_OUTPUT}"
 
+      - name: Freeze Current Public Identity
+        id: previous_identity
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
+          PILOT_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
+          MODEL_ROUTE_TENANT_ID: ${{ secrets.RELEASE_GATE_PILOT_TENANT_ID }}
+          PUBLIC_IDENTITY_FILE: ./reports/pre_promote_public_identity.json
+        run: |
+          bash ./scripts/ops/freeze_public_runtime_identity.sh
+          PREVIOUS_COMMIT="$(jq -r '.commit' "${PUBLIC_IDENTITY_FILE}")"
+          PREVIOUS_SLOT="$(jq -r '.slot' "${PUBLIC_IDENTITY_FILE}")"
+          PREVIOUS_RELEASE_ID="$(jq -r '.releaseId' "${PUBLIC_IDENTITY_FILE}")"
+          PREVIOUS_DATA_SNAPSHOT_ID="$(jq -r '.dataSnapshotId' "${PUBLIC_IDENTITY_FILE}")"
+          PREVIOUS_MODEL_ROUTE_FINGERPRINT="$(jq -r '.modelRouteFingerprint' "${PUBLIC_IDENTITY_FILE}")"
+          if [[ "${PREVIOUS_SLOT}" == "${{ steps.candidate_identity.outputs.slot }}" ]]; then
+            echo "::error::公网活跃槽位与候选槽位相同，拒绝切流。"
+            exit 1
+          fi
+          echo "commit=${PREVIOUS_COMMIT}" >> "${GITHUB_OUTPUT}"
+          echo "slot=${PREVIOUS_SLOT}" >> "${GITHUB_OUTPUT}"
+          echo "release_id=${PREVIOUS_RELEASE_ID}" >> "${GITHUB_OUTPUT}"
+          echo "data_snapshot_id=${PREVIOUS_DATA_SNAPSHOT_ID}" >> "${GITHUB_OUTPUT}"
+          echo "model_route_fingerprint=${PREVIOUS_MODEL_ROUTE_FINGERPRINT}" >> "${GITHUB_OUTPUT}"
+
       - name: Promote Candidate
         id: promote_candidate
         env:
@@ -429,13 +454,29 @@ jobs:
           EXPECTED_RELEASE_ID: ${{ steps.candidate_identity.outputs.release_id }}
           CANDIDATE_RECEIPT_HMAC_KEY: ${{ secrets.RELEASE_GATE_RECEIPT_HMAC_KEY }}
           POST_PROMOTE_REPORT_FILE: ./reports/post_promote_runtime_fingerprint.md
+          POST_PROMOTE_READINESS_REPORT_FILE: ./reports/post_promote_tenant_readiness.json
           DEPLOYMENT_RESULT_FILE: ./reports/deployment_result_receipt.json
+          ROLLBACK_PUBLIC_BASE_URL: ${{ inputs.base_url }}
+          EXPECTED_ROLLBACK_COMMIT: ${{ steps.previous_identity.outputs.commit }}
+          EXPECTED_ROLLBACK_SLOT: ${{ steps.previous_identity.outputs.slot }}
+          EXPECTED_ROLLBACK_RELEASE_ID: ${{ steps.previous_identity.outputs.release_id }}
+          EXPECTED_ROLLBACK_DATA_SNAPSHOT_ID: ${{ steps.previous_identity.outputs.data_snapshot_id }}
+          EXPECTED_ROLLBACK_MODEL_ROUTE_FINGERPRINT: ${{ steps.previous_identity.outputs.model_route_fingerprint }}
+          FAILED_RELEASE_ID: ${{ steps.candidate_identity.outputs.release_id }}
+          ROLLBACK_ATTEMPT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          ROLLBACK_RECEIPT_HMAC_KEY: ${{ secrets.RELEASE_GATE_RECEIPT_HMAC_KEY }}
+          ROLLBACK_RUNTIME_REPORT_FILE: ./reports/rollback_runtime_fingerprint.md
+          ROLLBACK_READINESS_REPORT_FILE: ./reports/rollback_tenant_readiness.json
+          ROLLBACK_RECEIPT_FILE: ./reports/rollback_result_receipt.json
         run: |
           if bash ./scripts/ops/post_promote_verification.sh; then
             exit 0
           fi
           echo "::warning::切流后公网身份复核失败，开始自动回滚。"
-          ./scripts/ops/release_rollback.sh
+          if ! ./scripts/ops/release_rollback.sh "${EXPECTED_ROLLBACK_SLOT}"; then
+            echo "::error::公网回滚未闭环，两个槽位均已保留，必须人工处置。"
+            exit 1
+          fi
           exit 1
 
       - name: Abort Unpromoted Candidate
@@ -479,6 +520,9 @@ jobs:
             reports/migration-*/old-version-smoke.json
             reports/golden-question-*/report.md
             reports/post_promote_runtime_fingerprint.md
+            reports/post_promote_tenant_readiness.json
             reports/deployment_result_receipt.json
+            reports/rollback_tenant_readiness.json
+            reports/rollback_result_receipt.json
           if-no-files-found: ignore
           retention-days: 7
