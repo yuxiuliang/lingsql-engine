@@ -49,7 +49,7 @@
 ### 1. 初始化数据库
 标准环境执行 `scripts/ops/flyway_migrate.sh`：空库由冻结合并基线创建，已纳管库先校验再迁移；未纳管现有库只有在表、字段、默认值、生成表达式、索引和排序规则与当前基线完全一致时才允许显式接管。部分升级或未知结构会失败关闭，必须先备份并按[数据库版本迁移与旧库接管手册](docs/数据库版本迁移与旧库接管手册.md)收敛。
 
-`sql/mysql.sql`、`sql/patch_*.sql` 与 `src/main/resources/db/manual/` 仅保留为冻结基线来源和历史交付档案，不再由应用或标准部署自动执行。租户管理采用单一 READY 开户：套餐正余额、管理员账号、MySQL 只读数据源和白名单缺一不可，并在控制库写入前验证连接与账号授权。模型资源池 (`t_lingsql_engine_ai_model_config`) 与租户模型授权 (`t_lingsql_engine_tenant_model_route`) 属于显式 provisioning；完成租户开户后必须至少授权一个已启用且真实探测为 `HEALTHY` 的模型，才可进行首问。
+`sql/mysql.sql`、`sql/patch_*.sql` 与 `src/main/resources/db/manual/` 仅保留为冻结基线来源和历史交付档案，不再由应用或标准部署自动执行。租户管理采用单一 READY 开户：套餐正余额、管理员账号、MySQL 只读数据源和白名单缺一不可，并在控制库写入前验证连接与账号授权。模型资源池 (`t_lingsql_engine_ai_model_config`) 与租户模型授权 (`t_lingsql_engine_tenant_model_route`) 属于显式 provisioning；完成租户开户后，在“模型管理 → 健康状态”验证并启用模型，再到“租户授权”至少授权一个 `HEALTHY` 模型，才可进行首问。
 
 ### 2. 定义语义字典 (可选)
 在 `t_lingsql_engine_semantic_lexicon` 中定义业务术语，帮助 AI 理解“毛利”、“活跃度”等复杂概念。
@@ -131,7 +131,7 @@ cp .env.example .env
   - `scripts/ops/security_compliance_guard.sh`（生产安全配置与最小权限门禁）
   - `scripts/ops/p1_incident_drill.sh`（P1 事件响应演练）
   - `scripts/ops/billing_readiness_guard.sh`（计费商用验收门禁）
-  - `scripts/ops/golden_question_acceptance.sh`（冻结 40 题的 FIRST/RETEST 正式验收：准确率、P95、效率、安全、逐请求审计与资金守恒）
+  - `scripts/ops/golden_question_acceptance.sh`（冻结 40 题的 FIRST/RETEST 验收；必须显式区分 `CUSTOMER_UAT` 与 `INTERNAL_REHEARSAL`，验证准确率、P95、效率、安全、逐请求审计与资金守恒）
   - `scripts/ops/commercial_acceptance_gate.sh`（工程、计费、三问、可靠性、安全和值守技术放行；不替代 40 题与客户签字）
 - **CI/CD 门禁工作流**：
   - `.github/workflows/ci.yml`（持续集成：后端测试 + 前端构建 + MySQL 8.4 空库迁移/旧库接管 + npm 高危漏洞门禁）
