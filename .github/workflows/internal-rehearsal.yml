@@ -1,0 +1,100 @@
+name: LingSQL Internal 40 Question Rehearsal
+
+on:
+  workflow_dispatch:
+    inputs:
+      execution_mode:
+        description: "内部演练执行模式"
+        required: true
+        default: "DETERMINISTIC_STUB"
+        type: choice
+        options:
+          - DETERMINISTIC_STUB
+          - REAL_MODEL
+
+concurrency:
+  group: lingsql-internal-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  internal-rehearsal:
+    name: Internal Rehearsal
+    runs-on: [self-hosted, internal-rehearsal]
+    environment: internal-rehearsal
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Master
+        uses: actions/checkout@v7
+        with:
+          ref: master
+          persist-credentials: false
+
+      - name: Enforce Trusted Source And Runner
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/master" ] || [ "${RUNNER_OS}" != "Linux" ]; then
+            echo "::error::内部演练只能从远端 master 在受保护 Linux self-hosted runner 执行。"
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "${GITHUB_SHA}" ]; then
+            echo "::error::checkout 提交与 workflow 触发提交不一致。"
+            exit 1
+          fi
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Build Commit-Bound Comparator
+        shell: bash
+        run: mvn -B -ntp -DskipTests package -Dlingsql.build.commit="${GITHUB_SHA}"
+
+      - name: Run Internal Rehearsal Locally
+        shell: bash
+        env:
+          IR_EXECUTION_MODE: ${{ inputs.execution_mode }}
+          IR_EXPECTED_RELEASE_COMMIT: ${{ github.sha }}
+          IR_PRIVATE_DRAFT_FILE: ${{ vars.INTERNAL_REHEARSAL_DRAFT_FILE }}
+          IR_EXPECTED_DRAFT_SHA256: ${{ vars.INTERNAL_REHEARSAL_DRAFT_SHA256 }}
+          IR_PRIVATE_SECURITY_MAP_FILE: ${{ inputs.execution_mode == 'DETERMINISTIC_STUB' && vars.INTERNAL_REHEARSAL_SECURITY_MAP_FILE || '' }}
+          IR_EXPECTED_SECURITY_MAP_SHA256: ${{ inputs.execution_mode == 'DETERMINISTIC_STUB' && vars.INTERNAL_REHEARSAL_SECURITY_MAP_SHA256 || '' }}
+          IR_ENV_FILE: ${{ vars.INTERNAL_REHEARSAL_ENV_FILE }}
+          IR_OUTPUT_ROOT: ${{ vars.INTERNAL_REHEARSAL_OUTPUT_ROOT }}
+          IR_BASE_URL: ${{ vars.INTERNAL_REHEARSAL_BASE_URL }}
+          IR_ENVIRONMENT_ID: ${{ vars.INTERNAL_REHEARSAL_ENVIRONMENT_ID }}
+          IR_NETWORK_PROFILE: ${{ vars.INTERNAL_REHEARSAL_NETWORK_PROFILE }}
+          IR_SKIP_INFRA_BOOTSTRAP: ${{ vars.INTERNAL_REHEARSAL_SKIP_INFRA_BOOTSTRAP }}
+          PILOT_CONTROL_TOKEN: ${{ secrets.INTERNAL_REHEARSAL_CONTROL_TOKEN }}
+        run: |
+          chmod +x scripts/ops/*.sh scripts/ops/integration/*.sh
+          COMPARATOR_JAR="$(find "${GITHUB_WORKSPACE}/target" -maxdepth 1 -type f -name 'lingsql-engine-*.jar' ! -name '*.original' | head -n 1)"
+          if [ -z "${COMPARATOR_JAR}" ]; then
+            echo "::error::未找到与当前提交绑定的比较器 JAR。"
+            exit 1
+          fi
+          if [[ "${IR_OUTPUT_ROOT}" != /* ]]; then
+            echo "::error::受保护环境必须配置 self-hosted 主机绝对输出路径。"
+            exit 1
+          fi
+          export IR_COMPARATOR_JAR="${COMPARATOR_JAR}"
+          export IR_RUN_DIR="${IR_OUTPUT_ROOT%/}/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ./scripts/ops/integration/internal_rehearsal_run.sh
+
+      - name: Upload Non-Sensitive Summary Only
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: internal-rehearsal-summary-${{ inputs.execution_mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ vars.INTERNAL_REHEARSAL_OUTPUT_ROOT }}/${{ github.run_id }}-${{ github.run_attempt }}/summary.json
+          if-no-files-found: error
+          retention-days: 7

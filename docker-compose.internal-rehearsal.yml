@@ -1,0 +1,11 @@
+services:
+  model-stub:
+    user: "${INTERNAL_REHEARSAL_RUNNER_UID:?必须提供 Runner UID}:${INTERNAL_REHEARSAL_RUNNER_GID:?必须提供 Runner GID}"
+    environment:
+      STUB_RESPONSE_MAP_FILE: /run/secrets/internal-rehearsal-map.json
+      STUB_RESPONSE_MAP_SHA256: ${INTERNAL_REHEARSAL_STUB_MAP_SHA256:?必须提供协议桩映射 SHA-256}
+    volumes:
+      - type: bind
+        source: ${INTERNAL_REHEARSAL_STUB_MAP_FILE:?必须提供协议桩映射绝对路径}
+        target: /run/secrets/internal-rehearsal-map.json
+        read_only: true

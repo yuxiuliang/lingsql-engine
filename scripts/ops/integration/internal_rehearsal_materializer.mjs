@@ -29,11 +29,11 @@ function parseArguments(argv) {
     const name = argv[index];
     const value = argv[index + 1];
     if (!name?.startsWith("--") || !value) {
-      throw new Error("参数必须使用 --name value 形式。所需参数：draft、runtime、security-map、suite-output、stub-map-output。");
+      throw new Error("参数必须使用 --name value 形式。所需参数：draft、runtime、suite-output；确定性模式还需要 security-map、stub-map-output。");
     }
     values.set(name.slice(2), value);
   }
-  for (const name of ["draft", "runtime", "security-map", "suite-output", "stub-map-output"]) {
+  for (const name of ["draft", "runtime", "suite-output"]) {
     if (!values.has(name)) {
       throw new Error(`缺少参数 --${name}。`);
     }
@@ -135,26 +135,37 @@ async function main() {
     process.env.INTERNAL_REHEARSAL_EXPECTED_RUNTIME_SHA256,
     "INTERNAL_REHEARSAL_EXPECTED_RUNTIME_SHA256"
   );
-  const expectedSecurityMapHash = requireHash(
-    process.env.INTERNAL_REHEARSAL_EXPECTED_SECURITY_MAP_SHA256,
-    "INTERNAL_REHEARSAL_EXPECTED_SECURITY_MAP_SHA256"
-  );
-  const [draftText, runtimeText, securityMapText] = await Promise.all([
+  const [draftText, runtimeText] = await Promise.all([
     readFile(args.draft, "utf8"),
-    readFile(args.runtime, "utf8"),
-    readFile(args["security-map"], "utf8")
+    readFile(args.runtime, "utf8")
   ]);
   if (sha256(draftText) !== expectedDraftHash
-      || sha256(runtimeText) !== expectedRuntimeHash
-      || sha256(securityMapText) !== expectedSecurityMapHash) {
-    throw new Error("草案、运行环境或安全映射 SHA-256 与预授权值不一致。");
+      || sha256(runtimeText) !== expectedRuntimeHash) {
+    throw new Error("草案或运行环境 SHA-256 与预授权值不一致。");
   }
   const draft = JSON.parse(draftText);
   const runtime = JSON.parse(runtimeText);
-  const securityMap = JSON.parse(securityMapText);
   validateDraft(draft);
-  validateSecurityMap(securityMap);
   const environment = materializeEnvironment(runtime);
+  let securityMap;
+  if (environment.executionMode === "DETERMINISTIC_STUB") {
+    if (!args["security-map"] || !args["stub-map-output"]) {
+      throw new Error("DETERMINISTIC_STUB 必须提供 security-map 与 stub-map-output。");
+    }
+    const expectedSecurityMapHash = requireHash(
+      process.env.INTERNAL_REHEARSAL_EXPECTED_SECURITY_MAP_SHA256,
+      "INTERNAL_REHEARSAL_EXPECTED_SECURITY_MAP_SHA256"
+    );
+    const securityMapText = await readFile(args["security-map"], "utf8");
+    if (sha256(securityMapText) !== expectedSecurityMapHash) {
+      throw new Error("安全映射 SHA-256 与预授权值不一致。");
+    }
+    securityMap = JSON.parse(securityMapText);
+    validateSecurityMap(securityMap);
+  } else if (args["security-map"] || args["stub-map-output"]
+      || process.env.INTERNAL_REHEARSAL_EXPECTED_SECURITY_MAP_SHA256) {
+    throw new Error("REAL_MODEL 禁止接收或生成协议桩映射。");
+  }
   const frozenAt = requireText(runtime.capturedAt, "capturedAt");
   if (!Number.isFinite(Date.parse(frozenAt))) {
     throw new Error("capturedAt 必须是合法日期时间。");
@@ -173,32 +184,38 @@ async function main() {
   };
   const suiteContent = `${JSON.stringify(suite, null, 2)}\n`;
   const suiteDigest = sha256(suiteContent);
-  const entries = [
-    ...draft.businessCases.map((item) => stubEntry(item, item.truthSql)),
-    ...draft.securityCases.map((item) => stubEntry(item, securityMap.sqlByKind[item.kind]))
-  ];
-  if (new Set(entries.map((item) => item.questionSha256)).size !== entries.length) {
-    throw new Error("问题 SHA-256 存在重复，拒绝生成协议桩映射。");
-  }
-  const stubMap = {
-    schemaVersion: "internal-rehearsal-stub-map/1.0",
-    purpose: "INTERNAL_REHEARSAL",
-    sourceDraftSha256: expectedDraftHash,
-    suiteSha256: suiteDigest,
-    entries
-  };
-  const mapContent = `${JSON.stringify(stubMap, null, 2)}\n`;
-  const mapDigest = sha256(mapContent);
-  await writeProtectedJson(args["suite-output"], suiteContent);
-  await writeProtectedJson(args["stub-map-output"], mapContent);
-  process.stdout.write(JSON.stringify({
+  let mapContent;
+  const result = {
     purpose: "INTERNAL_REHEARSAL",
     executionMode: environment.executionMode,
     suiteSha256: suiteDigest,
-    stubMapSha256: mapDigest,
     businessCaseCount: draft.businessCases.length,
     securityCaseCount: draft.securityCases.length
-  }));
+  };
+  if (environment.executionMode === "DETERMINISTIC_STUB") {
+    const entries = [
+      ...draft.businessCases.map((item) => stubEntry(item, item.truthSql)),
+      ...draft.securityCases.map((item) => stubEntry(item, securityMap.sqlByKind[item.kind]))
+    ];
+    if (new Set(entries.map((item) => item.questionSha256)).size !== entries.length) {
+      throw new Error("问题 SHA-256 存在重复，拒绝生成协议桩映射。");
+    }
+    const stubMap = {
+      schemaVersion: "internal-rehearsal-stub-map/1.0",
+      purpose: "INTERNAL_REHEARSAL",
+      sourceDraftSha256: expectedDraftHash,
+      suiteSha256: suiteDigest,
+      entries
+    };
+    mapContent = `${JSON.stringify(stubMap, null, 2)}\n`;
+    const mapDigest = sha256(mapContent);
+    result.stubMapSha256 = mapDigest;
+  }
+  await writeProtectedJson(args["suite-output"], suiteContent);
+  if (mapContent) {
+    await writeProtectedJson(args["stub-map-output"], mapContent);
+  }
+  process.stdout.write(JSON.stringify(result));
 }
 
 await main();

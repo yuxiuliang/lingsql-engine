@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ENV_FILE="${ROOT_DIR}/.env"
+ENV_FILE="${LINGSQL_ENV_FILE:-${ROOT_DIR}/.env}"
 BASE_BOOTSTRAP="${ROOT_DIR}/scripts/ops/bootstrap_local_stack.sh"
 PILOT_ACCEPTANCE="${ROOT_DIR}/scripts/ops/pilot_acceptance.sh"
 RUNTIME_FINGERPRINT_GUARD="${ROOT_DIR}/scripts/ops/runtime_fingerprint_guard.sh"
@@ -190,11 +190,13 @@ ensure_model_ready() {
 }
 
 main() {
+  local provisioning_only_override="${LINGSQL_DEMO_PROVISIONING_ONLY:-}"
   require_cmd curl
   require_cmd jq
   [[ -f "${ENV_FILE}" ]] || { log_error "未找到 ${ENV_FILE}"; exit 1; }
   # shellcheck disable=SC1090
   source "${ENV_FILE}"
+  [[ -z "${provisioning_only_override}" ]] || LINGSQL_DEMO_PROVISIONING_ONLY="${provisioning_only_override}"
 
   BASE_URL="${BASE_URL:-http://127.0.0.1:${APP_PORT:-8000}}"
   LINGSQL_DEMO_TENANT_ID="${LINGSQL_DEMO_TENANT_ID:-demo_sales}"
@@ -243,6 +245,11 @@ main() {
     EXPECTED_DATA_SNAPSHOT_ID="${EXPECTED_DATA_SNAPSHOT_ID:-}" \
     RUNTIME_FINGERPRINT_REPORT_FILE="${RUNTIME_FINGERPRINT_REPORT_FILE:-${ROOT_DIR}/reports/runtime_fingerprint.md}" \
       "${RUNTIME_FINGERPRINT_GUARD}"
+  fi
+
+  if is_true "${LINGSQL_DEMO_PROVISIONING_ONLY:-false}"; then
+    log_info "演示租户、数据源与模型路由已完成配置；provisioning-only 模式不执行三问验收。"
+    return 0
   fi
 
   log_info "开始执行三问真实业务验收。"
