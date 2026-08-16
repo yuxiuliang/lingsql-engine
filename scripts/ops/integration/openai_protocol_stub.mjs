@@ -1,4 +1,6 @@
 import http from "node:http";
+import { createHash } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 
 const DEFAULT_PORT = 18080;
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
@@ -6,6 +8,49 @@ const CHAT_PATH = "/v1/chat/completions";
 const USAGE_FAULT_PATH = "/__ci/fault/usage-missing";
 const USAGE_FAULT_COUNT = 20;
 let forcedMissingUsageRemaining = 0;
+
+function sha256(content) {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function loadPrivateResponseMap() {
+  const path = process.env.STUB_RESPONSE_MAP_FILE?.trim();
+  const expectedHash = process.env.STUB_RESPONSE_MAP_SHA256?.trim();
+  if (!path && !expectedHash) return null;
+  if (!path || !/^[0-9a-f]{64}$/.test(expectedHash ?? "")) {
+    throw new Error("私有响应映射路径与 SHA-256 必须同时配置。");
+  }
+  const stat = statSync(path);
+  const writableByOtherUsers = process.platform !== "win32" && (stat.mode & 0o022) !== 0;
+  if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_REQUEST_BYTES || writableByOtherUsers) {
+    throw new Error("私有响应映射必须是非空、受限大小且组/其他用户不可写的普通文件。");
+  }
+  const content = readFileSync(path, "utf8");
+  if (sha256(content) !== expectedHash) {
+    throw new Error("私有响应映射 SHA-256 不匹配。");
+  }
+  const document = JSON.parse(content);
+  if (document?.schemaVersion !== "internal-rehearsal-stub-map/1.0"
+      || document?.purpose !== "INTERNAL_REHEARSAL"
+      || !Array.isArray(document.entries)
+      || document.entries.length === 0) {
+    throw new Error("私有响应映射结构或用途不合法。");
+  }
+  const result = new Map();
+  for (const entry of document.entries) {
+    if (!/^[0-9a-f]{64}$/.test(entry?.questionSha256 ?? "")
+        || typeof entry?.sql !== "string"
+        || entry.sql.trim() === ""
+        || entry.sql.length > 100_000
+        || result.has(entry.questionSha256)) {
+      throw new Error("私有响应映射条目不合法或存在重复。");
+    }
+    result.set(entry.questionSha256, entry.sql);
+  }
+  return result;
+}
+
+const privateResponseMap = loadPrivateResponseMap();
 
 function resolvePort(value) {
   const port = Number.parseInt(value ?? String(DEFAULT_PORT), 10);
@@ -49,6 +94,13 @@ function messageContent(messages, role) {
 }
 
 function sqlForQuestion(question) {
+  if (privateResponseMap) {
+    const mappedSql = privateResponseMap.get(sha256(question));
+    if (!mappedSql) {
+      throw new Error("请求不在受控内部演练映射中。");
+    }
+    return mappedSql;
+  }
   if (question.includes("安全库存")) {
     return `SELECT p.product_name, s.warehouse_name, s.available_quantity, s.safety_quantity
 FROM demo_inventory_snapshot s
@@ -176,7 +228,8 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(port, "0.0.0.0", () => {
-  console.log(`LingSQL 确定性 OpenAI 集成桩已启动，端口 ${port}。`);
+  const mappingMode = privateResponseMap ? "PRIVATE_HASH_MAP" : "BUILT_IN_THREE_QUESTION";
+  console.log(`LingSQL 确定性 OpenAI 集成桩已启动，端口 ${port}，模式 ${mappingMode}。`);
 });
 
 function shutdown(signal) {

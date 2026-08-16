@@ -89,8 +89,18 @@ post_capture() {
 }
 
 validate_suite() {
-  jq -e '
-    .schemaVersion == "1.0" and
+  jq -e --arg evidencePurpose "${GQ_EVIDENCE_PURPOSE}" '
+    (if $evidencePurpose == "CUSTOMER_UAT" then
+       .schemaVersion == "1.0" and
+       ((.purpose // "CUSTOMER_UAT") == "CUSTOMER_UAT") and
+       ((.environment.evidencePurpose // "CUSTOMER_UAT") == "CUSTOMER_UAT")
+     else
+       .schemaVersion == "internal-rehearsal-runtime/1.0" and
+       .purpose == "INTERNAL_REHEARSAL" and
+       .environment.evidencePurpose == .purpose and
+       .sourceDraftStatus == "DRAFT_UNVERIFIED" and
+       (.environment.executionMode == "DETERMINISTIC_STUB" or .environment.executionMode == "REAL_MODEL")
+     end) and
     (.suiteId | type == "string" and length > 0) and
     (.suiteVersion | type == "string" and length > 0) and
     (.sowId | type == "string" and length > 0) and
@@ -108,7 +118,11 @@ validate_suite() {
     (.securityCases | length > 0) and
     all(.businessCases[];
       (.id | test("^[A-Z][A-Z0-9_-]{2,39}$")) and .mode == "INDEPENDENT" and
-      (.baselineSeconds | type == "number" and . > 0) and
+      (if $evidencePurpose == "CUSTOMER_UAT" then
+         (.baselineSeconds | type == "number" and . > 0)
+       else
+         .baselineSeconds == null
+       end) and
       (.question | type == "string" and length > 0 and (startswith("请替换为") | not)) and
       if .expected.kind == "SCALAR_NUMBER" then
         (.expected.rowIndex | type == "number" and . >= 0 and floor == .) and
@@ -128,7 +142,7 @@ validate_suite() {
       ((.kind == "WRITE_SQL" and .expected.failureCode == "SECURITY_WRITE_BLOCKED") or
        (.kind == "CROSS_TENANT" and .expected.failureCode == "SECURITY_TENANT_SCOPE_BLOCKED") or
        (.kind == "OUT_OF_ALLOWLIST" and .expected.failureCode == "SECURITY_ALLOWLIST_BLOCKED")))
-  ' "${GQ_SUITE_FILE}" >/dev/null || { log_error "黄金问题 JSON 结构或 40题/20-20 约束不合法"; exit 2; }
+  ' "${GQ_SUITE_FILE}" >/dev/null || { log_error "黄金问题 JSON 结构、用途或 40题/20-20 约束不合法"; exit 2; }
 }
 
 validate_parent_evidence() {
@@ -354,16 +368,20 @@ cleanup_tmp_dir() {
 }
 
 build_report() {
-  local source_evidence first_p0 first_all final_all p95 baseline_median actual_median improvement security_total security_pass batch_ok billing_receipt_hash automated_pass=false conclusion evidence_sha256 current_business_total current_business_pass
+  local source_evidence first_p0 first_all final_all p95 baseline_median="N/A" actual_median improvement="N/A" efficiency_summary security_total security_pass batch_ok billing_receipt_hash automated_pass=false conclusion evidence_sha256 current_business_total current_business_pass execution_mode
   source_evidence="${EVIDENCE_FILE}"
   [[ "${GQ_PHASE}" == "RETEST" ]] && source_evidence="${GQ_PARENT_EVIDENCE}"
   first_p0="$(jq -s '[.[]|select(.type=="business" and .priority=="P0" and .correct==true)]|length' "${source_evidence}")"
   first_all="$(jq -s '[.[]|select(.type=="business" and .correct==true)]|length' "${source_evidence}")"
   p95="$(jq -r 'select(.type=="business")|.durationMs' "${source_evidence}" | sort -n | sed -n '38p')"
   [[ -n "${p95}" ]] || p95=0
-  baseline_median="$(jq -r '.businessCases[].baselineSeconds' "${GQ_SUITE_FILE}" | sort -n | awk 'NR==20{a=$1} NR==21{printf "%.3f",(a+$1)/2}')"
   actual_median="$(jq -r 'select(.type=="business")|.durationMs/1000' "${source_evidence}" | sort -n | awk 'NR==20{a=$1} NR==21{printf "%.3f",(a+$1)/2}')"
-  improvement="$(awk -v baseline="${baseline_median}" -v actual="${actual_median}" 'BEGIN { printf "%.2f", ((baseline-actual)/baseline)*100 }')"
+  efficiency_summary="N/A（INTERNAL_REHEARSAL 不伪造人工基线，效率不参与自动门禁）"
+  if [[ "${GQ_EVIDENCE_PURPOSE}" == "CUSTOMER_UAT" ]]; then
+    baseline_median="$(jq -r '.businessCases[].baselineSeconds' "${GQ_SUITE_FILE}" | sort -n | awk 'NR==20{a=$1} NR==21{printf "%.3f",(a+$1)/2}')"
+    improvement="$(awk -v baseline="${baseline_median}" -v actual="${actual_median}" 'BEGIN { printf "%.2f", ((baseline-actual)/baseline)*100 }')"
+    efficiency_summary="${baseline_median} s / ${actual_median} s（改善 ${improvement}%，门槛 50%）"
+  fi
   if [[ "${GQ_PHASE}" == "FIRST" ]]; then
     final_all="${first_all}"
   else
@@ -376,8 +394,11 @@ build_report() {
   batch_ok="$(jq -s '[.[]|select(.type=="batchEvidence")][0].passed // false' "${EVIDENCE_FILE}")"
   billing_receipt_hash="$(jq -rs '[.[]|select(.type=="batchEvidence")][0].billingAcceptance.receiptHash // empty' "${EVIDENCE_FILE}")"
   if [[ "${first_p0}" -ge 18 && "${first_all}" -ge 34 && "${p95}" -le 15000 && "${security_pass}" -eq "${security_total}" \
-      && "${security_total}" -gt 0 && "${batch_ok}" == "true" && "$(awk -v value="${improvement}" 'BEGIN{print(value>=50?1:0)}')" -eq 1 ]]; then
-    automated_pass=true
+      && "${security_total}" -gt 0 && "${batch_ok}" == "true" ]]; then
+    if [[ "${GQ_EVIDENCE_PURPOSE}" == "INTERNAL_REHEARSAL" \
+        || "$(awk -v value="${improvement}" 'BEGIN{print(value>=50?1:0)}')" -eq 1 ]]; then
+      automated_pass=true
+    fi
   fi
   if [[ "${GQ_PHASE}" == "RETEST" \
       && ( "${current_business_total}" -ne "$((40 - first_all))" \
@@ -390,6 +411,7 @@ build_report() {
   report_title="LingSQL 40题内部演练报告"
   boundary_text="本报告仅证明虚构或内部数据环境下的工程演练结果，不构成客户验收、合同履约或商用上线证据。"
   signature_block=""
+  execution_mode="$(jq -r '.environment.executionMode // "CUSTOMER_UAT"' "${GQ_SUITE_FILE}")"
   if [[ "${GQ_EVIDENCE_PURPOSE}" == "CUSTOMER_UAT" ]]; then
     report_title="LingSQL 40题黄金问题正式验收报告"
     boundary_text="远端报告只保留脱敏汇总；JSONL 是仅存放于受控交付环境的明细证据，不得上传为公共或仓库 Artifact。网络、模型、数据或超时异常均已按错误计入，runner 不自动排除样本。自动门禁通过不等于客户验收通过；客户口径负责人和交付负责人核对冻结 JSON、受控原始材料与本报告并签字后，才可形成合同验收结论。"
@@ -398,6 +420,11 @@ build_report() {
   elif [[ "${automated_pass}" == "true" ]]; then
     conclusion="内部演练自动门禁通过，不构成客户验收"
   fi
+  if [[ "${execution_mode}" == "DETERMINISTIC_STUB" ]]; then
+    boundary_text="${boundary_text} 确定性协议桩只证明执行器、安全、比较器与计费链路，不证明真实模型准确率、时延或供应商稳定性。"
+  elif [[ "${execution_mode}" == "REAL_MODEL" ]]; then
+    boundary_text="${boundary_text} REAL_MODEL 只表示本次内部环境实际调用了冻结路由中的模型，不等于客户授权、客户数据验证或客户 UAT。"
+  fi
   evidence_sha256="$(sha256sum "${EVIDENCE_FILE}" | awk '{print $1}')"
   cat > "${REPORT_FILE}" <<EOF
 # ${report_title}
@@ -405,13 +432,14 @@ build_report() {
 - 运行 ID: ${RUN_ID}
 - 阶段: ${GQ_PHASE}
 - 证据用途: ${GQ_EVIDENCE_PURPOSE}
+- 执行模式: ${execution_mode}
 - Suite SHA-256: ${SUITE_SHA256}
 - 受控证据 SHA-256: ${evidence_sha256}
 - P0 首次正确: ${first_p0}/20（门槛 18/20）
 - 全部首次正确: ${first_all}/40（门槛 34/40）
 - 最终通过: ${final_all}/40（不替代首次指标）
 - 首次 P95: ${p95} ms（第 38 个样本，门槛 15000 ms）
-- 原流程 / LingSQL 中位耗时: ${baseline_median} s / ${actual_median} s（改善 ${improvement}%，门槛 50%）
+- 原流程 / LingSQL 中位耗时: ${efficiency_summary}
 - 安全拦截: ${security_pass}/${security_total}（门槛 100%）
 - 逐请求审计与物理调用批量证据: ${batch_ok}
 - MySQL 余额与账本区间回执: ${billing_receipt_hash}
