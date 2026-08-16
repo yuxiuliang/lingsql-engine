@@ -5,6 +5,7 @@ import com.lingsql.billing.entity.BillingPlan;
 import com.lingsql.billing.repository.BillingPlanRepository;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
+import com.lingsql.config.LingSqlProperties;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.rbac.repository.RbacPermissionRepository;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,6 +44,7 @@ public class TenantFirstQuestionReadiness {
     private static final String HEALTHY = "HEALTHY";
     private static final String READY_STATUS = "READY_TO_ASK";
     private static final String BLOCKED_STATUS = "BLOCKED";
+    private static final Duration DEFAULT_PROBE_FRESHNESS_TTL = Duration.ofHours(24);
     private static final List<String> FIRST_QUESTION_PERMISSION_CODES = List.of(
             "MENU:CHAT",
             "CONFIG:CHAT:READ",
@@ -55,6 +58,7 @@ public class TenantFirstQuestionReadiness {
     private final BillingPlanRepository billingPlanRepository;
     private final TenantDbConfigRepository dataSourceRepository;
     private final TenantModelRouteRepository modelRouteRepository;
+    private final LingSqlProperties properties;
 
     /**
      * 评估指定租户是否具备开始真实问数的条件。
@@ -173,12 +177,27 @@ public class TenantFirstQuestionReadiness {
         long usableRoutes = modelRouteRepository.countUsableRoutes(
                 tenantId,
                 ACTIVE,
-                HEALTHY
+                HEALTHY,
+                LocalDateTime.now().minus(resolveProbeFreshnessTtl())
         );
         if (usableRoutes < 1) {
-            return failed("MODEL_ROUTE_READY", "模型授权路由", "不存在已启用且真实探测为 HEALTHY 的授权模型");
+            return failed(
+                    "MODEL_ROUTE_READY",
+                    "模型授权路由",
+                    "不存在已启用且探测结果仍在有效期内的 HEALTHY 授权模型，请重新执行模型验证"
+            );
         }
         return passed("MODEL_ROUTE_READY", "模型授权路由");
+    }
+
+    private Duration resolveProbeFreshnessTtl() {
+        Duration configured = properties.getModel() == null
+                ? null
+                : properties.getModel().getProbeFreshnessTtl();
+        if (configured == null || configured.isZero() || configured.isNegative()) {
+            return DEFAULT_PROBE_FRESHNESS_TTL;
+        }
+        return configured;
     }
 
     private TenantReadinessCheckView passed(String code, String name) {

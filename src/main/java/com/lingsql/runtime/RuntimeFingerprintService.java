@@ -30,6 +30,12 @@ public class RuntimeFingerprintService {
     @Value("${lingsql.runtime.data-snapshot-id:UNSET}")
     private String dataSnapshotId;
 
+    @Value("${lingsql.runtime.slot:UNSET}")
+    private String slot;
+
+    @Value("${lingsql.runtime.release-id:UNSET}")
+    private String releaseId;
+
     /**
      * 读取当前实际运行实例的不可歧义指纹。
      *
@@ -58,7 +64,9 @@ public class RuntimeFingerprintService {
                 schemaVersion,
                 dataSnapshotId,
                 routeFingerprint,
-                activeModels
+                activeModels,
+                slot,
+                releaseId
         );
     }
 

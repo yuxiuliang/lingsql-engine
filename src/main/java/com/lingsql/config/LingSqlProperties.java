@@ -674,6 +674,15 @@ public class LingSqlProperties {
          * @date 2026-01-22
          */
         private Duration cooldown = Duration.ofMinutes(10);
+
+        /**
+         * 首问就绪检查允许的模型真实探测最大时间间隔。
+         * 超过该时间的 HEALTHY 记录不得继续作为新租户可用性证据。
+         *
+         * @author 余炘洋
+         * @date 2026-08-16
+         */
+        private Duration probeFreshnessTtl = Duration.ofHours(24);
     }
 
     /**

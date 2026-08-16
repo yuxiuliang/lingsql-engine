@@ -356,6 +356,8 @@ jobs:
           export SLO_EXPECTED_BUILD_COMMIT="${GITHUB_SHA}"
           export SLO_EXPECTED_SLOT="${CANDIDATE_SLOT}"
           export SLO_EXPECTED_RELEASE_ID="${CANDIDATE_RELEASE_ID}"
+          export EXPECTED_SLOT="${CANDIDATE_SLOT}"
+          export EXPECTED_RELEASE_ID="${CANDIDATE_RELEASE_ID}"
           export SLO_EXPECTED_CANDIDATE_BASE_URL="${BASE_URL}"
           export SLO_CONTROLLED_LOAD_PATH="/api/v1/admin/runtime/fingerprint?modelTenantId=${PILOT_TENANT_ID}"
           ./scripts/ops/runtime_fingerprint_guard.sh
@@ -368,6 +370,24 @@ jobs:
           ./scripts/ops/release_gate.sh
           ./scripts/ops/runtime_fingerprint_guard.sh
           bash ./scripts/ops/release_candidate_receipt.sh create
+
+      - name: Freeze Candidate Identity
+        id: candidate_identity
+        env:
+          LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
+        run: |
+          EXPECTED_SLOT="$(tr -d '[:space:]' < "${LINGSQL_DEPLOY_BASE}/run/candidate_slot")"
+          EXPECTED_RELEASE_ID="$(tr -d '[:space:]' < "${LINGSQL_DEPLOY_BASE}/run/candidate_release_id")"
+          if [[ "${EXPECTED_SLOT}" != "blue" && "${EXPECTED_SLOT}" != "green" ]]; then
+            echo "::error::候选槽位非法。"
+            exit 1
+          fi
+          if ! [[ "${EXPECTED_RELEASE_ID}" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+            echo "::error::候选发布标识非法。"
+            exit 1
+          fi
+          echo "slot=${EXPECTED_SLOT}" >> "${GITHUB_OUTPUT}"
+          echo "release_id=${EXPECTED_RELEASE_ID}" >> "${GITHUB_OUTPUT}"
 
       - name: Promote Candidate
         id: promote_candidate
@@ -394,16 +414,27 @@ jobs:
           CANDIDATE_OLD_VERSION_SMOKE_REPORT_FILE: ./reports/migration-${{ github.run_id }}-${{ github.run_attempt }}/old-version-smoke.json
         run: ./scripts/ops/release_candidate_promote.sh
 
-      - name: Post Promote Smoke And Auto Rollback
+      - name: Post Promote Public Identity And Auto Rollback
         env:
           BASE_URL: ${{ inputs.base_url }}
           LINGSQL_DEPLOY_BASE: ${{ vars.LINGSQL_DEPLOY_BASE }}
           LINGSQL_SWITCH_HOOK: ${{ vars.LINGSQL_SWITCH_HOOK }}
+          PILOT_CONTROL_TOKEN: ${{ secrets.RELEASE_GATE_CONTROL_TOKEN }}
+          PILOT_CONTROL_TENANT_ID: ${{ vars.RELEASE_GATE_CONTROL_TENANT_ID }}
+          MODEL_ROUTE_TENANT_ID: ${{ secrets.RELEASE_GATE_PILOT_TENANT_ID }}
+          EXPECTED_RELEASE_COMMIT: ${{ github.sha }}
+          EXPECTED_DATA_SNAPSHOT_ID: ${{ vars.LINGSQL_RUNTIME_DATA_SNAPSHOT_ID }}
+          EXPECTED_MODEL_ROUTE_FINGERPRINT: ${{ vars.RELEASE_GATE_MODEL_ROUTE_FINGERPRINT }}
+          EXPECTED_SLOT: ${{ steps.candidate_identity.outputs.slot }}
+          EXPECTED_RELEASE_ID: ${{ steps.candidate_identity.outputs.release_id }}
+          CANDIDATE_RECEIPT_HMAC_KEY: ${{ secrets.RELEASE_GATE_RECEIPT_HMAC_KEY }}
+          POST_PROMOTE_REPORT_FILE: ./reports/post_promote_runtime_fingerprint.md
+          DEPLOYMENT_RESULT_FILE: ./reports/deployment_result_receipt.json
         run: |
-          if ./scripts/ops/release_smoke_test.sh; then
+          if bash ./scripts/ops/post_promote_verification.sh; then
             exit 0
           fi
-          echo "::warning::切流后冒烟失败，开始自动回滚。"
+          echo "::warning::切流后公网身份复核失败，开始自动回滚。"
           ./scripts/ops/release_rollback.sh
           exit 1
 
@@ -447,5 +478,7 @@ jobs:
             reports/migration-*/receipt.json
             reports/migration-*/old-version-smoke.json
             reports/golden-question-*/report.md
+            reports/post_promote_runtime_fingerprint.md
+            reports/deployment_result_receipt.json
           if-no-files-found: ignore
           retention-days: 7

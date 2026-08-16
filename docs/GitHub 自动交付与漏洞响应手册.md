@@ -101,7 +101,7 @@
 
 即使 `release-deploy.yml` 的目标 Environment 是 production，上述 `RELEASE_GATE_MYSQL_*` 和备份恢复 Secrets 也必须指向独立 UAT MySQL，不能指向生产控制库；生产迁移前备份仍由 `LINGSQL_MIGRATION_HOOK` 单独负责。商用门禁验证“备份可恢复”，迁移 Hook 保护“本次生产变更”，两者不能互相替代。
 
-发布制品先执行前端依赖审计与生产构建，把管理后台写入 Spring Boot 静态资源，并把工作流 `GITHUB_SHA` 写入 `build-info.properties`；随后执行 Schema 漂移检查及 Maven 测试。部署流程先把候选 JAR 启动在非活跃蓝绿槽位，不切换生产流量；门禁直接访问候选本机端口，并通过 `/api/v1/admin/runtime/fingerprint` 精确核对 Git SHA、Flyway Schema、数据快照和激活模型路由摘要。候选通过后才执行切流；门禁失败会停止未切流候选，切流后冒烟失败则回滚上一槽位。
+发布制品先执行前端依赖审计与生产构建，把管理后台写入 Spring Boot 静态资源，并把工作流 `GITHUB_SHA` 写入 `build-info.properties`；随后执行 Schema 漂移检查及 Maven 测试。部署流程先把候选 JAR 启动在非活跃蓝绿槽位，不切换生产流量；门禁直接访问候选本机端口，并通过 `/api/v1/admin/runtime/fingerprint` 精确核对 Git SHA、Flyway Schema、数据快照、激活模型路由摘要、槽位和发布 ID。候选通过后才执行切流；切流后必须从公网地址复核同一组身份并完成登录态冒烟，失败会自动回滚上一槽位。成功时生成与候选 HMAC 收据绑定的脱敏部署结果收据并同时保存到部署机和工作流制品。
 
 严格门禁还会完成登录、三条真实问数、逐请求 SQL 审计与资金守恒、运行时审计、真实备份的 SHA-256 与隔离恢复双指纹、最少 100 个非 Actuator 请求的 SLO 证据和 P1 演练校验；任何 `FAIL` 或 `SKIP` 都阻断发布。验收账号、模型、数据源、数据快照 ID、UAT 备份恢复配置或 Prometheus 尚未准备好时，应先完成配置，不能临时关闭门禁。
 

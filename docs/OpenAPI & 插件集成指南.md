@@ -739,7 +739,7 @@ GET /api/v1/admin/runtime/fingerprint?modelTenantId=tenant-pilot
 Authorization: Bearer {systemAdminToken}
 ```
 
-返回的 `activeModels` 和 `modelRouteFingerprint` 只描述该租户的授权路由；40 题证据中的每次物理调用指纹必须与其一致。
+返回的 `activeModels` 和 `modelRouteFingerprint` 只描述该租户的授权路由；40 题证据中的每次物理调用指纹必须与其一致。响应同时返回非敏感的 `slot` 与 `releaseId`，发布流程必须使用切流前冻结的期望值从公网地址复核这两个字段，不能用部署机当前状态替代运行实例自报身份。
 
 #### 4.2.10 查询租户首问就绪状态
 
@@ -758,7 +758,7 @@ Authorization: Bearer {systemAdminToken}
 | `TENANT_ADMIN_LOGIN` | 至少一个启用、未锁定且绑定有效 `TENANT_ADMIN` 角色的账号；该角色授权与租户权限池必须同时包含 `MENU:CHAT`、`CONFIG:CHAT:READ`、`API:CHAT:ASK` |
 | `BILLING_AVAILABLE` | 当前套餐存在且启用，租户可用余额大于 0 |
 | `DATASOURCE_SCHEMA_READY` | 数据源已启用，Schema 已成功同步且存在同步时间 |
-| `MODEL_ROUTE_READY` | 至少一个租户授权模型同时处于启用和最近真实探测 `HEALTHY` 状态 |
+| `MODEL_ROUTE_READY` | 至少一个租户授权模型同时处于启用状态，且最近真实探测为 `HEALTHY` 并未超过配置的探测有效期（生产默认 24 小时） |
 
 只有 `status=READY_TO_ASK` 且 `ready=true` 时才能开始租户管理员三问或 40 题验收。该接口只读取现有事实，不会自动启用租户、补余额、同步 Schema 或修改模型授权。
 
@@ -1736,7 +1736,7 @@ async function callApi<T>(request: () => Promise<T>): Promise<T> {
 | PUT | `/api/v1/admin/metadata/isolated` | 更新隔离字段 | ADMIN:METADATA:WRITE |
 | POST | `/api/v1/admin/metadata/ai-suggest` | AI 语义解析 | ADMIN:METADATA:AI |
 | **发布与验收** |
-| GET | `/api/v1/admin/runtime/fingerprint?modelTenantId={tenantId}` | 当前 Git SHA、Flyway、数据快照与指定租户授权模型路由指纹 | ADMIN:TENANT:READ + 系统管理员 |
+| GET | `/api/v1/admin/runtime/fingerprint?modelTenantId={tenantId}` | 当前 Git SHA、Flyway、数据快照、槽位、发布 ID 与指定租户授权模型路由指纹 | ADMIN:TENANT:READ + 系统管理员 |
 | GET/PUT | `/api/v1/admin/tenant-model-routes/{tenantId}` | 查询或完整替换租户模型授权路由 | ADMIN:MODEL:READ/WRITE + 系统管理员 |
 | GET | `/api/v1/admin/tenant-readiness/{tenantId}/first-question` | 汇总租户开始真实问数前的五项只读门禁 | ADMIN:TENANT:READ + 系统管理员 |
 

@@ -170,6 +170,7 @@ lingsql:
     tenant-cache-clean-interval-ms: 300000
   model:
     cooldown: 10m
+    probe-freshness-ttl: 24h
   cors:
     enabled: true
     allowed-origins:

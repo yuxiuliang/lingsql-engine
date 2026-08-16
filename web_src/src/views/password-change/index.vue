@@ -58,23 +58,41 @@ const handleSubmit = async () => {
     return;
   }
   submitting.value = true;
+  let passwordChanged = false;
   try {
     const response = await changePassword({
       currentPassword: form.currentPassword,
       newPassword: form.newPassword
     });
+    passwordChanged = true;
     authStore.applyLoginResponse(response);
     if (!authStore.isFullSession) {
-      throw new Error('密码已修改，但完整会话换发失败，请重新登录');
+      ElMessage.warning('密码已修改，请使用新密码重新登录');
+      authStore.logout();
+      await router.replace('/login');
+      return;
     }
-    authStore.setMenus(await fetchMenus());
     ElMessage.success('密码修改成功');
-    await router.replace('/chat');
   } catch (error: any) {
-    ElMessage.error(error?.message || '密码修改失败');
+    const fallbackMessage = passwordChanged
+      ? '密码已修改，但新会话初始化失败，请重新登录'
+      : '密码修改失败';
+    ElMessage.error(error?.message || fallbackMessage);
+    if (passwordChanged) {
+      authStore.logout();
+      await router.replace('/login');
+    }
+    return;
   } finally {
     submitting.value = false;
   }
+
+  try {
+    authStore.setMenus(await fetchMenus());
+  } catch {
+    ElMessage.warning('密码已修改，菜单暂时未加载，进入系统后可重试');
+  }
+  await router.replace('/chat');
 };
 
 const handleLogout = async () => {

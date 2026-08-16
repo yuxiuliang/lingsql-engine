@@ -10,19 +10,27 @@ MODEL_ROUTE_TENANT_ID="${MODEL_ROUTE_TENANT_ID:-${PILOT_CONTROL_TENANT_ID}}"
 EXPECTED_RELEASE_COMMIT="${EXPECTED_RELEASE_COMMIT:-}"
 EXPECTED_DATA_SNAPSHOT_ID="${EXPECTED_DATA_SNAPSHOT_ID:-}"
 EXPECTED_MODEL_ROUTE_FINGERPRINT="${EXPECTED_MODEL_ROUTE_FINGERPRINT:-}"
+EXPECTED_SLOT="${EXPECTED_SLOT:-}"
+EXPECTED_RELEASE_ID="${EXPECTED_RELEASE_ID:-}"
 RUNTIME_FINGERPRINT_REPORT_FILE="${RUNTIME_FINGERPRINT_REPORT_FILE:-./reports/runtime_fingerprint.md}"
 
 log_error() { echo "[ERROR] $*" >&2; }
 require_value() { [[ -n "$2" ]] || { log_error "$1 不能为空"; exit 1; }; }
 
 main() {
-  local response actual_commit actual_snapshot actual_model_route schema_version model_count report_dir
+  local response actual_commit actual_snapshot actual_model_route actual_slot actual_release_id schema_version model_count report_dir
   command -v curl >/dev/null 2>&1 || { log_error "缺少命令: curl"; exit 1; }
   command -v jq >/dev/null 2>&1 || { log_error "缺少命令: jq"; exit 1; }
   require_value "BASE_URL" "${BASE_URL}"
   require_value "PILOT_CONTROL_TOKEN" "${PILOT_CONTROL_TOKEN}"
   require_value "MODEL_ROUTE_TENANT_ID" "${MODEL_ROUTE_TENANT_ID}"
   require_value "EXPECTED_RELEASE_COMMIT" "${EXPECTED_RELEASE_COMMIT}"
+  if [[ -n "${EXPECTED_SLOT}" || -n "${EXPECTED_RELEASE_ID}" ]]; then
+    [[ "${EXPECTED_SLOT}" == "blue" || "${EXPECTED_SLOT}" == "green" ]] \
+      || { log_error "EXPECTED_SLOT 必须为 blue 或 green"; exit 1; }
+    [[ "${EXPECTED_RELEASE_ID}" =~ ^[A-Za-z0-9._-]{1,128}$ ]] \
+      || { log_error "EXPECTED_RELEASE_ID 格式非法"; exit 1; }
+  fi
 
   response="$(curl -fsS --get --connect-timeout 5 --max-time 30 \
     -H "Authorization: Bearer ${PILOT_CONTROL_TOKEN}" \
@@ -33,6 +41,8 @@ main() {
   actual_commit="$(jq -r '.data.commit // empty' <<< "${response}")"
   actual_snapshot="$(jq -r '.data.dataSnapshotId // empty' <<< "${response}")"
   actual_model_route="$(jq -r '.data.modelRouteFingerprint // empty' <<< "${response}")"
+  actual_slot="$(jq -r '.data.slot // empty' <<< "${response}")"
+  actual_release_id="$(jq -r '.data.releaseId // empty' <<< "${response}")"
   schema_version="$(jq -r '.data.schemaVersion // empty' <<< "${response}")"
   model_count="$(jq -r '(.data.activeModels // []) | length' <<< "${response}")"
 
@@ -50,6 +60,14 @@ main() {
     log_error "模型路由指纹不匹配"
     exit 2
   fi
+  if [[ -n "${EXPECTED_SLOT}" && "${actual_slot}" != "${EXPECTED_SLOT}" ]]; then
+    log_error "运行槽位不匹配: expected=${EXPECTED_SLOT}, actual=${actual_slot:-<empty>}"
+    exit 2
+  fi
+  if [[ -n "${EXPECTED_RELEASE_ID}" && "${actual_release_id}" != "${EXPECTED_RELEASE_ID}" ]]; then
+    log_error "发布标识不匹配: expected=${EXPECTED_RELEASE_ID}, actual=${actual_release_id:-<empty>}"
+    exit 2
+  fi
 
   report_dir="$(dirname "${RUNTIME_FINGERPRINT_REPORT_FILE}")"
   mkdir -p "${report_dir}"
@@ -64,6 +82,8 @@ main() {
 - 模型授权租户: ${MODEL_ROUTE_TENANT_ID}
 - 模型路由 SHA-256: ${actual_model_route}
 - 激活模型数量: ${model_count}
+- 运行槽位: ${actual_slot}
+- 发布标识: ${actual_release_id}
 - 结论: PASS
 EOF
   echo "[INFO] 运行候选指纹校验通过: ${actual_commit}"

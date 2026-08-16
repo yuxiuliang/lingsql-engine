@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -32,6 +33,7 @@ public interface TenantModelRouteRepository extends JpaRepository<TenantModelRou
      * @param tenantId 租户标识
      * @param activeStatus 启用状态
      * @param probeStatus 真实探测状态
+     * @param probeCutoff 探测结果最早有效时间
      * @return 可用授权数量
      */
     @Query("""
@@ -42,8 +44,11 @@ public interface TenantModelRouteRepository extends JpaRepository<TenantModelRou
                AND model.id = route.modelConfigId
                AND model.isActive = :activeStatus
                AND model.lastProbeStatus = :probeStatus
+               AND model.lastProbeTime IS NOT NULL
+               AND model.lastProbeTime >= :probeCutoff
             """)
     long countUsableRoutes(@Param("tenantId") String tenantId,
                            @Param("activeStatus") Integer activeStatus,
-                           @Param("probeStatus") String probeStatus);
+                           @Param("probeStatus") String probeStatus,
+                           @Param("probeCutoff") LocalDateTime probeCutoff);
 }

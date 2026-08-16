@@ -51,7 +51,7 @@
 ### 1. 初始化数据库
 标准环境执行 `scripts/ops/flyway_migrate.sh`：空库由冻结合并基线创建，已纳管库先校验再迁移；未纳管现有库只有在表、字段、默认值、生成表达式、索引和排序规则与当前基线完全一致时才允许显式接管。部分升级或未知结构会失败关闭，必须先备份并按[数据库版本迁移与旧库接管手册](docs/数据库版本迁移与旧库接管手册.md)收敛。
 
-`sql/mysql.sql`、`sql/patch_*.sql` 与 `src/main/resources/db/manual/` 仅保留为冻结基线来源和历史交付档案，不再由应用或标准部署自动执行。租户管理采用单一 READY 开户：套餐正余额、管理员账号、MySQL 只读数据源和白名单缺一不可，并在控制库写入前验证连接与账号授权。模型资源池 (`t_lingsql_engine_ai_model_config`) 与租户模型授权 (`t_lingsql_engine_tenant_model_route`) 属于显式 provisioning；完成租户开户后，在“模型管理 → 健康状态”验证并启用模型，再到“租户授权”至少授权一个 `HEALTHY` 模型，才可进行首问。
+`sql/mysql.sql`、`sql/patch_*.sql` 与 `src/main/resources/db/manual/` 仅保留为冻结基线来源和历史交付档案，不再由应用或标准部署自动执行。租户管理采用单一 READY 开户：套餐正余额、管理员账号、MySQL 只读数据源和白名单缺一不可，并在控制库写入前验证连接与账号授权。模型资源池 (`t_lingsql_engine_ai_model_config`) 与租户模型授权 (`t_lingsql_engine_tenant_model_route`) 属于显式 provisioning；完成租户开户后，在“模型管理 → 健康状态”验证并启用模型，再到“租户授权”至少授权一个探测结果仍在有效期内的 `HEALTHY` 模型，才可进行首问。生产默认有效期为 24 小时，可用 `LINGSQL_MODEL_PROBE_FRESHNESS_TTL` 收紧或放宽；过期后必须重新执行真实 Probe。
 
 ### 2. 定义语义字典 (可选)
 在 `t_lingsql_engine_semantic_lexicon` 中定义业务术语，帮助 AI 理解“毛利”、“活跃度”等复杂概念。
