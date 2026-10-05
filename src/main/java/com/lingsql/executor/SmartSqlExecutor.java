@@ -145,7 +145,7 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
     ) {
         control.assertWithinDeadline();
         int maxAttempts = Math.min(recoveryPolicy.resolveMaxAttempts(), control.maxSqlAttempts());
-        return executeInternal(context, input.question(), input.requestSource(), maxAttempts);
+        return executeInternal(context, input.question(), input.requestSource(), maxAttempts, control);
     }
 
     private SqlExecutionResult executeInternal(
@@ -153,6 +153,16 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
             String question,
             String requestSource,
             int maxAttempts
+    ) {
+        return executeInternal(context, question, requestSource, maxAttempts, null);
+    }
+
+    private SqlExecutionResult executeInternal(
+            AgentExecutionContext context,
+            String question,
+            String requestSource,
+            int maxAttempts,
+            AgentRunControl control
     ) {
         String tenantId = context.tenantId();
         SqlExecuteLogCommand logCommand = new SqlExecuteLogCommand();
@@ -169,7 +179,7 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
         try {
             TenantDbConfig config = tenantDbConfigRepository.findByTenantId(tenantId)
                     .orElseThrow(TenantDbConfigErrors::missingConfig);
-            return executeWithRetry(context, config, tenantId, question, logCommand, trace, maxAttempts);
+            return executeWithRetry(context, config, tenantId, question, logCommand, trace, maxAttempts, control);
         } catch (RuntimeException ex) {
             primaryFailure = ex;
             fillFailureLog(logCommand, null, ex.getMessage());
@@ -211,12 +221,13 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
             String question,
             SqlExecuteLogCommand logCommand,
             List<ChatTraceStep> trace,
-            int maxAttempts
+            int maxAttempts,
+            AgentRunControl control
     ) {
         String recoveryObservation = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                return executeOnce(context, config, tenantId, question, recoveryObservation, logCommand, trace, attempt);
+                return executeOnce(context, config, tenantId, question, recoveryObservation, logCommand, trace, attempt, control);
             } catch (SqlExecutionException exception) {
                 SqlRecoveryDecision decision = recoveryPolicy.assess(exception);
                 if (!decision.recoverable() || attempt >= maxAttempts) {
@@ -262,14 +273,15 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
             String reason,
             SqlExecuteLogCommand logCommand,
             List<ChatTraceStep> trace,
-            int attempt
+            int attempt,
+            AgentRunControl control
     ) {
         long generationStart = System.currentTimeMillis();
         ModelCallResult modelResult = reason == null
                 ? agentService.generateSql(context, question, attempt)
                 : agentService.generateSqlWithRetry(context, question, reason, attempt);
         long generationCostMs = System.currentTimeMillis() - generationStart;
-        applyModelResult(logCommand, modelResult);
+        applyModelResult(logCommand, modelResult, control);
         String rawSql = modelResult.content();
 
         if (rawSql == null || rawSql.isBlank() || rawSql.toUpperCase().startsWith("ERROR")) {
@@ -368,7 +380,7 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
      * @author 余炘洋
      * @date 2026-01-26
      */
-    private void applyModelResult(SqlExecuteLogCommand logCommand, ModelCallResult result) {
+    private void applyModelResult(SqlExecuteLogCommand logCommand, ModelCallResult result, AgentRunControl control) {
         if (logCommand == null || result == null) {
             return;
         }
@@ -378,6 +390,9 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
         logCommand.setBillingVersion(result.billingVersion());
         Integer tokens = result.tokenCount();
         if (tokens != null && tokens > 0) {
+            if (control != null) {
+                control.recordUsage(tokens, 0L);
+            }
             logCommand.addModelTokens(result.modelName(), tokens);
             Integer current = logCommand.getTokenCount();
             if (current == null) {
@@ -392,6 +407,9 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
             return;
         }
         long currentCost = logCommand.getCostAmount() == null ? 0L : logCommand.getCostAmount();
+        if (control != null) {
+            control.recordUsage(0L, costAmount);
+        }
         try {
             logCommand.setCostAmount(Math.addExact(currentCost, costAmount));
         } catch (ArithmeticException exception) {

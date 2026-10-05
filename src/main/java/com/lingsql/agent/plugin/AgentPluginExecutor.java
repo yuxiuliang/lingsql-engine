@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 public class AgentPluginExecutor {
 
     private final AgentPluginRegistry registry;
+    private final com.lingsql.agent.service.PluginInvocationOutboxService pluginInvocationOutboxService;
 
     public <I, O> O execute(
             String pluginId,
@@ -37,10 +38,13 @@ public class AgentPluginExecutor {
         try {
             O result = invoke(plugin, context, control, input, outputType);
             control.assertWithinDeadline();
+            pluginInvocationOutboxService.record(context.tenantId(), context.executionId(), pluginId, "SUCCEEDED", plugin.descriptor().cost().units());
             return result;
         } catch (AgentPluginException exception) {
+            pluginInvocationOutboxService.record(context.tenantId(), context.executionId(), pluginId, "FAILED", plugin.descriptor().cost().units());
             throw exception;
         } catch (RuntimeException exception) {
+            pluginInvocationOutboxService.record(context.tenantId(), context.executionId(), pluginId, "FAILED", plugin.descriptor().cost().units());
             throw new AgentPluginException(AgentPluginFailureReason.PLUGIN_FAILED,
                     "Agent 插件执行失败: " + pluginId, exception);
         }

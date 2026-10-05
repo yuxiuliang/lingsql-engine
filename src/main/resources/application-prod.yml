@@ -108,6 +108,10 @@ lingsql:
     delivery-retry-delay-ms: ${LINGSQL_AUDIT_DELIVERY_RETRY_DELAY_MS:5000}
     delivery-interval-ms: ${LINGSQL_AUDIT_DELIVERY_INTERVAL_MS:5000}
     prepared-timeout: ${LINGSQL_AUDIT_PREPARED_TIMEOUT:5m}
+  knowledge:
+    vector:
+      enabled: ${LINGSQL_KNOWLEDGE_VECTOR_ENABLED:false}
+      uris: ${LINGSQL_KNOWLEDGE_VECTOR_URIS:}
   alert:
     enabled: ${LINGSQL_ALERT_ENABLED:false}
     webhook-url: ${LINGSQL_ALERT_WEBHOOK_URL:}

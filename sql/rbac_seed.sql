@@ -6,7 +6,7 @@
 SET @tenant_id = '1';
 SET @admin_username = 'admin';
 SET @experience_username = '测试';
--- 密码需使用 BCrypt 加密后写入  ***REDACTED-SECRET***
+-- 密码必须由部署方使用 BCrypt 加密后写入，严禁提交任何明文口令
 SET @password_hash = '{BCryptHashHere}';
 
 -- 租户初始化

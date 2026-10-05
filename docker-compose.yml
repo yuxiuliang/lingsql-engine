@@ -59,6 +59,27 @@ services:
     volumes:
       - ./src/main/resources/db/migration:/flyway/sql:ro
 
+  # 知识库语义检索（可选，默认不启动）
+  # 启用：docker compose --profile knowledge up -d
+  # 并设置 LINGSQL_KNOWLEDGE_VECTOR_ENABLED=true 与 LINGSQL_KNOWLEDGE_VECTOR_URIS=http://elasticsearch:9200
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    container_name: lingsql-elasticsearch
+    restart: unless-stopped
+    profiles: ["knowledge"]
+    environment:
+      TZ: Asia/Shanghai
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms1g -Xmx1g}
+    volumes:
+      - lingsql_es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+
   app:
     build:
       context: .
@@ -92,6 +113,8 @@ services:
       LINGSQL_ADMIN_PASSWORD: ${LINGSQL_ADMIN_PASSWORD}
       LINGSQL_ADMIN_NICKNAME: ${LINGSQL_ADMIN_NICKNAME:-系统管理员}
       LINGSQL_RUNTIME_DATA_SNAPSHOT_ID: ${LINGSQL_RUNTIME_DATA_SNAPSHOT_ID:-UNSET}
+      LINGSQL_KNOWLEDGE_VECTOR_ENABLED: ${LINGSQL_KNOWLEDGE_VECTOR_ENABLED:-false}
+      LINGSQL_KNOWLEDGE_VECTOR_URIS: ${LINGSQL_KNOWLEDGE_VECTOR_URIS:-}
       LINGSQL_ALERT_ENABLED: ${LINGSQL_ALERT_ENABLED:-false}
       LINGSQL_CORS_ENABLED: ${LINGSQL_CORS_ENABLED:-false}
       LINGSQL_RETENTION_ENABLED: ${LINGSQL_RETENTION_ENABLED:-true}
@@ -109,4 +132,5 @@ services:
 volumes:
   lingsql_mysql_data:
   lingsql_redis_data:
+  lingsql_es_data:
 

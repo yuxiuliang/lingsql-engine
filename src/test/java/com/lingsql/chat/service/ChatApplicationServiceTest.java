@@ -69,7 +69,8 @@ class ChatApplicationServiceTest {
         ChatApplicationService service = new ChatApplicationService(
                 new ControlledAgentOrchestratorImpl(
                         pluginExecutor,
-                        resultRefiner
+                        resultRefiner,
+                        Mockito.mock(com.lingsql.agent.service.AgentCheckpointService.class)
                 ),
                 chatHistoryService,
                 chatMemoryService
@@ -117,7 +118,8 @@ class ChatApplicationServiceTest {
         ChatApplicationService service = new ChatApplicationService(
                 new ControlledAgentOrchestratorImpl(
                         pluginExecutor,
-                        resultRefiner
+                        resultRefiner,
+                        Mockito.mock(com.lingsql.agent.service.AgentCheckpointService.class)
                 ),
                 chatHistoryService,
                 chatMemoryService
@@ -150,7 +152,8 @@ class ChatApplicationServiceTest {
         ChatApplicationService service = new ChatApplicationService(
                 new ControlledAgentOrchestratorImpl(
                         pluginExecutor,
-                        resultRefiner
+                        resultRefiner,
+                        Mockito.mock(com.lingsql.agent.service.AgentCheckpointService.class)
                 ),
                 chatHistoryService,
                 chatMemoryService
@@ -168,3 +171,4 @@ class ChatApplicationServiceTest {
         verify(chatHistoryService, never()).saveHistory(anyString(), anyLong(), anyString(), anyString(), anyString(), anyString(), any(), any());
     }
 }
+

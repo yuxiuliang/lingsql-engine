@@ -72,6 +72,10 @@ public class SecurityConfig {
      */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        // 关闭 CSRF 属于有意设计：本服务是无状态 REST API，主凭证为 Authorization Bearer Token，
+        // 会话不存于服务端（SessionCreationPolicy.STATELESS），不存在浏览器自动携带的会话凭证可供滥用。
+        // 唯一使用 Cookie 的场景是 Refresh Token，由 RefreshTokenCookieManager 强制
+        // HttpOnly + SameSite=Lax + 限定 Path=/api/v1/auth，跨站表单提交无法携带。
         http.csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

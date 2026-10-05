@@ -19,6 +19,17 @@ public final class AgentRunControl {
     private final long deadlineNanos;
     private final AtomicInteger pluginInvocations = new AtomicInteger();
     private final AtomicInteger pluginCostUnits = new AtomicInteger();
+    private final java.util.concurrent.atomic.AtomicLong tokenBudget = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong costBudget = new java.util.concurrent.atomic.AtomicLong();
+
+    public void recordUsage(long tokens, long cost) {
+        if (tokens > 0 && tokenBudget.addAndGet(tokens) > policy.maxTokenBudget()) {
+            throw new AgentPluginException(AgentPluginFailureReason.BUDGET_EXHAUSTED, "Agent 运行 Token 预算已耗尽");
+        }
+        if (cost > 0 && costBudget.addAndGet(cost) > policy.maxCostBudget()) {
+            throw new AgentPluginException(AgentPluginFailureReason.BUDGET_EXHAUSTED, "Agent 运行费用预算已耗尽");
+        }
+    }
 
     public AgentRunControl(AgentRunPolicy policy) {
         this.policy = policy;
@@ -50,7 +61,21 @@ public final class AgentRunControl {
         return policy.maxSqlAttempts();
     }
 
+    public void cancel() {
+        cancelled = true;
+    }
+
+    public boolean isCancelled() {
+        return cancelled;
+    }
+
+    private volatile boolean cancelled = false;
+
     public void assertWithinDeadline() {
+        if (cancelled) {
+            throw new AgentPluginException(AgentPluginFailureReason.DEADLINE_EXCEEDED,
+                    "Agent 运行已被取消");
+        }
         if (System.nanoTime() > deadlineNanos) {
             throw new AgentPluginException(AgentPluginFailureReason.DEADLINE_EXCEEDED,
                     "Agent 运行超过截止时间");

@@ -43,6 +43,7 @@ public class SqlAgentService {
     private final MetadataCacheService metadataCacheService;
     private final SqlPromptTemplate sqlPromptTemplate;
     private final SemanticLexicon semanticLexicon;
+    private final com.lingsql.schema.SemanticContextVersionService semanticContextVersionService;
     private final SchemaScanner schemaScanner;
     private final DataSourceManager dataSourceManager;
     private final TenantDbConfigRepository tenantDbConfigRepository;
@@ -140,6 +141,7 @@ public class SqlAgentService {
 
         String schemaInfo = metadataCacheService.getAiFriendlySchema(tenantId, tables);
         String lexiconInfo = semanticLexicon.renderLexicon(tenantId);
+        lexiconInfo = "语义上下文版本：" + semanticContextVersionService.currentVersionId(tenantId) + "\n" + lexiconInfo;
         String joinInfo = semanticLexicon.renderJoinRules(tenantId);
         String ruleInfo = buildRuleInfo(config);
 

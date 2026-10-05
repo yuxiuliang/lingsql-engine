@@ -48,6 +48,7 @@ public class ControlledAgentOrchestratorImpl implements IControlledAgentOrchestr
 
     private final AgentPluginExecutor pluginExecutor;
     private final ResultRefiner resultRefiner;
+    private final com.lingsql.agent.service.AgentCheckpointService checkpointService;
 
     @Override
     public AgentRunResult run(AgentRunCommand command) {
@@ -64,6 +65,8 @@ public class ControlledAgentOrchestratorImpl implements IControlledAgentOrchestr
         AgentRunControl runControl = new AgentRunControl(DEFAULT_POLICY);
         SqlExecutionResult executionResult;
         try {
+            checkpointService.save(command.tenantId(), executionId, command.conversationId(),
+                    "SQL_ARCHITECT", "DISPATCHED", null);
             executionResult = pluginExecutor.execute(
                     SmartSqlExecutor.PLUGIN_ID,
                     executionContext,
@@ -74,6 +77,8 @@ public class ControlledAgentOrchestratorImpl implements IControlledAgentOrchestr
         } catch (Exception exception) {
             log.error("Agent 工作流执行失败: executionId={}, requestId={}, tenantId={}, userId={}",
                     executionId, command.requestId(), command.tenantId(), command.userId(), exception);
+            checkpointService.save(command.tenantId(), executionId, command.conversationId(),
+                    "SECURE_QUERY", "FAILED", null);
             return buildFailedRun(
                     executionId,
                     buildFailureResult(exception),
@@ -83,8 +88,12 @@ public class ControlledAgentOrchestratorImpl implements IControlledAgentOrchestr
         }
         SqlExecutionResult publicResult = sanitizeForUser(executionResult);
         if (publicResult == null || !publicResult.isSuccess()) {
+            checkpointService.save(command.tenantId(), executionId, command.conversationId(),
+                    "SECURE_QUERY", "FAILED", null);
             return buildFailedRun(executionId, publicResult, AgentFailureCode.SQL_EXECUTION_FAILED, start);
         }
+        checkpointService.save(command.tenantId(), executionId, command.conversationId(),
+                "SECURE_QUERY", "SUCCEEDED", null);
 
         ResultRefinement refinement;
         try {
@@ -109,6 +118,8 @@ public class ControlledAgentOrchestratorImpl implements IControlledAgentOrchestr
         AgentRunStatus status = refinement.success()
                 ? AgentRunStatus.SUCCEEDED
                 : AgentRunStatus.SUCCEEDED_WITH_DEGRADATION;
+        checkpointService.save(command.tenantId(), executionId, command.conversationId(),
+                "ANALYST", status.name(), null);
         return new AgentRunResult(
                 executionId,
                 WORKFLOW_VERSION,
