@@ -439,6 +439,7 @@ Redis 只在 MySQL 事务 `afterCommit` 后清理 Access/Refresh 会话，用于
 - 计费验收会话可冻结租户 MySQL 余额与账本水位，对精确请求集合校验调用终态、已应用账本、区间归因和余额守恒，并签发不可变验收回执。
 - 每次物理调用冻结实际 `modelConfigId`、模型版本和路由指纹；账本证据与 40 题验收可据此核对候选运行指纹，历史缺失身份的调用不会被伪造回填。
 - 租户模型授权路由：物理模型和租户授权分离；每租户独立优先级/权重，未授权默认拒绝，主备调用复用同一不可变计划，运行指纹按被验收租户生成。
+- 插件治理面：注册中心元数据只读目录与租户插件授权维护接口，以及管理端页面（插件目录、租户授权开关与 fail-closed 说明）；受控业务插件（`ORCHESTRATED`）未授权时在统一执行网关层 fail-closed 且不消耗预算，系统插件由受控工作流固定调用、不参与租户授权。`AgentToolProvider` 等入口统一改经执行网关调用插件，不再直达插件实例。
 
 ### 下一阶段
 
@@ -446,7 +447,7 @@ Redis 只在 MySQL 事务 `afterCommit` 后清理 Access/Refresh 会话，用于
 2. 实现 `knowledge_retrieve`、`calculate_metric`、`chart_mapper` 插件。
 3. 建立持久化 Agent checkpoint、幂等恢复和非模型插件用量 Outbox；增加供应商账单自动导入、自动匹配和 `UNKNOWN` 裁决工作台。管理端裁决 API 已实现，不再重复建设另一条核销入口。
 4. 将模型调用和 Token 预算纳入统一 `AgentRunControl`。
-5. 建立插件管理 API、租户授权、版本兼容矩阵和签名校验。
+5. 建立插件版本兼容矩阵与升级/回滚演练；插件管理 API 与租户授权已落地，JAR 与清单签名校验已实现但仍需真实环境验证。
 6. 实现 Spring AI `ToolCallback` 适配器、按需工具发现和 MCP 远程插件网关。
 7. 引入 Spring Modulith 或等价架构检查，阻止跨模块访问内部类型和 JDBC 绕过。
 8. 建立 Text-to-SQL 评测集、回归基线和多候选选择策略。

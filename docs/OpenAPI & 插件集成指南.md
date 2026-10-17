@@ -93,7 +93,7 @@ graph TB
 
 ### 1.4 控制器清单
 
-系统共包含 **15 个控制器**，提供约 **97 个 API 端点**：
+系统共包含 **24 个 REST 控制器**（含基础控制器与 SPA 入口），覆盖认证、问数、管理后台与运营治理：
 
 ```java
 // 控制器清单（源自 com.lingsql.web 包）
@@ -101,16 +101,25 @@ graph TB
 ├── ChatController          // 核心问答
 ├── MetadataController      // 元数据管理
 ├── TenantAdminController   // 租户管理
+├── TenantReadinessAdminController // 租户开通就绪
+├── TenantModelRouteAdminController // 租户模型授权路由
 ├── UserAdminController     // 用户管理
 ├── RoleAdminController     // 角色管理
 ├── PermissionAdminController // 权限管理
+├── MenuAdminController     // 菜单治理与发布
+├── OrganizationAdminController // 组织架构
 ├── BillingAdminController  // 计费管理
+├── PlanAdminController     // 套餐管理
 ├── AuditLogController      // 审计日志
+├── RuntimeAdminController  // 运行时治理
+├── AgentPluginAdminController // 插件治理
+├── DigitalEmployeeAdminController // 数字员工
 ├── AdminController         // 通用管理
 ├── AdminConfigController   // 配置管理
 ├── RuntimeConfigController // 运行时配置
 ├── ExperiencePolicyController // 体验策略
 ├── ProfitDashboardController  // 收益仪表盘
+├── AdminSpaController      // 管理端 SPA 入口
 └── BaseController          // 基础控制器
 ```
 
@@ -883,6 +892,55 @@ Authorization: Bearer {accessToken}
 
 验证与真实问数共享同一套 OpenAI 兼容地址规范：配置可填写服务根地址、以 `/v1` 结尾的 API 地址或完整的 `/v1/chat/completions` 地址。只有 HTTP 成功且响应能够解析出非空的 `choices[0].message.content` 才能标记为 `HEALTHY`；HTML 页面、错误 JSON、空响应及供应商私有的非兼容响应均判定为验证失败。
 
+### 4.5 插件治理
+
+插件治理接口仅对系统管理员开放，并分别要求 `ADMIN:PLUGIN:READ` 与 `ADMIN:PLUGIN:WRITE` 权限。响应只暴露稳定元数据，不返回插件实例、类名或内部实现。
+
+```http
+GET /api/v1/admin/plugins
+Authorization: Bearer {accessToken}
+```
+
+返回注册中心中的全部插件元数据；全局目录不带租户上下文，`granted` 恒为 `null`。
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": [
+    {
+      "pluginId": "chart_mapper",
+      "version": "1.0.0",
+      "access": "ORCHESTRATED",
+      "costLevel": "LOW",
+      "idempotent": true,
+      "grantable": true,
+      "granted": null,
+      "description": "服务端图表映射"
+    }
+  ]
+}
+```
+
+```http
+GET /api/v1/admin/tenants/{tenantId}/plugins
+Authorization: Bearer {accessToken}
+```
+
+租户视图合并该租户的授权记录：`granted=true` 表示已授权；未写入记录的受控业务插件按 `granted=false` 展示，并在统一执行网关层 fail-closed。系统插件（`access=SYSTEM_ONLY`）由受控工作流固定调用，`grantable=false` 且 `granted` 恒为 `null`，不接受租户授权。
+
+```http
+PUT /api/v1/admin/tenants/{tenantId}/plugins/{pluginId}
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{"granted": true}
+```
+
+写入必须显式携带 `granted`；插件不存在返回 `NOT_FOUND`，对系统插件授权或缺少 `granted` 返回 `INVALID_PARAM`。授权变更进入管理审计（动作 `TENANT_PLUGIN_GRANT_UPDATE`，资源 `TENANT_PLUGIN_GRANT`）。
+
+管理端 SPA 提供 `/plugin` 插件治理页面（菜单权限 `MENU:ADMIN:PLUGIN`）：上半部分是插件目录，下半部分按租户切换查看授权状态并提供授权开关；系统插件行固定显示“系统插件固定调用”，不接受开关操作。
+
 ---
 
 ## 5. 错误码字典
@@ -1228,7 +1286,7 @@ public class LingSqlClient {
 
 ## 8. 插件开发规范
 
-> 本章是目标设计草案，不是当前可安装插件的发布协议。当前仓库已经具备纯 Java、类型安全的受控插件 SPI、注册中心和统一执行网关，但可信 JAR 加载、插件管理 API、MCP 远程插件和第三方发布流程尚未完成。外部开发者暂时不能按本章示例直接打包安装。
+> 本章是目标设计草案，不是当前可安装插件的发布协议。当前仓库已经具备纯 Java、类型安全的受控插件 SPI、注册中心、统一执行网关，以及插件目录只读与租户授权维护 API；受控业务插件未授权时在执行网关层直接拒绝。可信 JAR 加载、MCP 远程插件和第三方发布流程尚未完成，外部开发者暂时不能按本章示例直接打包安装。
 
 ### 8.1 插件架构
 
