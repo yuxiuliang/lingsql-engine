@@ -111,6 +111,8 @@ public class TenantAdminService {
             "API:CHAT:ASK",
             "API:CHAT:HISTORY:READ",
             "API:CHAT:HISTORY:WRITE",
+            "API:CHAT:MEMORY:READ",
+            "API:CHAT:MEMORY:WRITE",
             "CONFIG:CHAT:READ"
     );
 

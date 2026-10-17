@@ -80,7 +80,7 @@ graph TB
 | 模块 | 路径前缀 | 说明 | 权限要求 |
 |------|----------|------|----------|
 | **认证** | `/api/v1/auth` | 登录、登出、刷新 Token | 公开 / 已认证 |
-| **对话** | `/api/v1/chat` | 核心问答、历史记录 | 已认证 + API 权限 |
+| **对话** | `/api/v1/chat` | 核心问答、历史记录、长期记忆 | 已认证 + API 权限 |
 | **元数据** | `/api/v1/admin/metadata` | Schema 管理、AI 建议 | 管理员 |
 | **租户管理** | `/api/v1/admin/tenants` | 租户 CRUD | 系统管理员 |
 | **用户管理** | `/api/v1/admin/users` | 用户 CRUD | 管理员 |
@@ -493,6 +493,90 @@ Authorization: Bearer {accessToken}
   "data": "历史记录已删除"
 }
 ```
+
+### 3.2 长期记忆
+
+长期记忆分为租户级程序记忆（`PROCEDURAL`）与用户级永久记忆（`PERMANENT`）。写入只接受用户确认或管理端批准，写入前统一执行 Prompt 注入与敏感信息过滤；同层同文自动去重，纠正会生成新版本并使旧事实失效，撤销幂等。SQL 生成会在提示词中按租户/用户过滤后注入生效记忆，并标注层级、来源与时间。
+
+#### 3.2.1 查询我的永久记忆
+
+```http
+GET /api/v1/chat/memories
+Authorization: Bearer {accessToken}
+```
+
+**响应**：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": [
+    {
+      "id": 3001,
+      "tier": "PERMANENT",
+      "tierLabel": "永久记忆",
+      "factText": "销售额口径为不含税金额",
+      "sourceType": "USER_CONFIRMED",
+      "sourceLabel": "用户确认",
+      "status": "ACTIVE",
+      "statusLabel": "生效",
+      "confidence": 90,
+      "version": 1,
+      "expiresAt": "2027-10-18T10:30:00Z"
+    }
+  ]
+}
+```
+
+#### 3.2.2 写入我的永久记忆
+
+```http
+POST /api/v1/chat/memories
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "factText": "销售额口径为不含税金额",
+  "retentionDays": 365
+}
+```
+
+`retentionDays` 可省略：用户永久记忆默认 365 天，租户程序记忆默认 730 天，允许范围 1–3650 天。重复写入同一事实返回既有记忆，不产生新版本。
+
+#### 3.2.3 纠正我的永久记忆
+
+```http
+PUT /api/v1/chat/memories/{id}
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "factText": "销售额口径为含税金额"
+}
+```
+
+旧事实转为 `SUPERSEDED`，新版本 `version` 加一并通过 `supersedesId` 指向旧记录。
+
+#### 3.2.4 撤销我的永久记忆
+
+```http
+DELETE /api/v1/chat/memories/{id}
+Authorization: Bearer {accessToken}
+```
+
+#### 3.2.5 管理端长期记忆治理
+
+治理接口需要 `ADMIN:MEMORY:READ` / `ADMIN:MEMORY:WRITE` 权限，租户管理员只能操作本租户，系统管理员可跨租户；全部操作进入审计。
+
+```http
+GET    /api/v1/admin/agent-memories?tenantId={tenantId}&userId={userId}&tier=PERMANENT&status=ACTIVE
+POST   /api/v1/admin/agent-memories
+PUT    /api/v1/admin/agent-memories/{id}?tenantId={tenantId}
+DELETE /api/v1/admin/agent-memories/{id}?tenantId={tenantId}
+```
+
+写入程序记忆时 `tier` 使用 `PROCEDURAL` 且不能携带 `userId`；代用户写入永久记忆时 `tier` 使用 `PERMANENT` 并必须携带 `userId`。
 
 ---
 
