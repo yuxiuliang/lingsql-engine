@@ -12,6 +12,8 @@ import com.lingsql.config.LingSqlProperties;
 import com.lingsql.datasource.model.TenantDbConfig;
 import com.lingsql.datasource.repository.TenantDbConfigRepository;
 import com.lingsql.llm.ModelCallResult;
+import com.lingsql.schema.MetadataCacheService;
+import com.lingsql.schema.model.TableInfo;
 import com.lingsql.security.SqlRewriter;
 import com.lingsql.security.SqlSecurityChecker;
 import org.junit.jupiter.api.Test;
@@ -60,6 +62,7 @@ class SmartSqlExecutorResilienceTest {
                 agentService,
                 new SqlGuardedQueryExecutor(rewriter, securityChecker, jdbcTemplate),
                 new SqlRecoveryPolicy(new LingSqlProperties()),
+                new SchemaBackCheckService(Mockito.mock(MetadataCacheService.class)),
                 configRepository,
                 logService,
                 taskTracker
@@ -112,6 +115,7 @@ class SmartSqlExecutorResilienceTest {
                 agentService,
                 new SqlGuardedQueryExecutor(rewriter, securityChecker, jdbcTemplate),
                 new SqlRecoveryPolicy(new LingSqlProperties()),
+                new SchemaBackCheckService(Mockito.mock(MetadataCacheService.class)),
                 configRepository,
                 logService,
                 taskTracker
@@ -145,6 +149,7 @@ class SmartSqlExecutorResilienceTest {
                 agentService,
                 new SqlGuardedQueryExecutor(rewriter, securityChecker, jdbcTemplate),
                 new SqlRecoveryPolicy(new LingSqlProperties()),
+                new SchemaBackCheckService(Mockito.mock(MetadataCacheService.class)),
                 configRepository,
                 logService,
                 taskTracker
@@ -154,6 +159,65 @@ class SmartSqlExecutorResilienceTest {
 
         assertEquals(ErrorCode.TENANT_DB_CONFIG_NOT_FOUND, ex.getErrorCode());
         assertEquals("租户数据源配置不存在，请先完成租户数据库连接配置", ex.getMessage());
+    }
+
+    @Test
+    void executeShouldInjectSchemaBackCheckObservationIntoRetryPrompt() {
+        SqlAgentService agentService = Mockito.mock(SqlAgentService.class);
+        SqlSecurityChecker securityChecker = Mockito.mock(SqlSecurityChecker.class);
+        SqlRewriter rewriter = Mockito.mock(SqlRewriter.class);
+        TenantDbConfigRepository configRepository = Mockito.mock(TenantDbConfigRepository.class);
+        SqlExecuteLogService logService = Mockito.mock(SqlExecuteLogService.class);
+        SqlTaskTracker taskTracker = Mockito.mock(SqlTaskTracker.class);
+        JdbcTemplate jdbcTemplate = Mockito.mock(JdbcTemplate.class);
+        MetadataCacheService metadataCacheService = Mockito.mock(MetadataCacheService.class);
+
+        TenantDbConfig config = new TenantDbConfig();
+        config.setTenantId("TENANT_A");
+        when(configRepository.findByTenantId("TENANT_A")).thenReturn(Optional.of(config));
+        when(metadataCacheService.getCachedSchema("TENANT_A")).thenReturn(List.of(deviceSchema()));
+        when(agentService.generateSql(any(AgentExecutionContext.class), eq("查询设备"), eq(1)))
+                .thenReturn(modelResult("SELECT device_nam FROM device"));
+        when(agentService.generateSqlWithRetry(any(AgentExecutionContext.class), eq("查询设备"), anyString(), eq(2)))
+                .thenReturn(modelResult("SELECT name FROM device"));
+        when(rewriter.rewrite(anyString(), any(TenantDbConfig.class), anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(jdbcTemplate.queryForList("SELECT device_nam FROM device"))
+                .thenThrow(new RuntimeException("Unknown column 'device_nam' in 'field list'"));
+        when(jdbcTemplate.queryForList("SELECT name FROM device"))
+                .thenReturn(List.of(Map.of("name", "A")));
+
+        SmartSqlExecutor executor = new SmartSqlExecutor(
+                agentService,
+                new SqlGuardedQueryExecutor(rewriter, securityChecker, jdbcTemplate),
+                new SqlRecoveryPolicy(new LingSqlProperties()),
+                new SchemaBackCheckService(metadataCacheService),
+                configRepository,
+                logService,
+                taskTracker
+        );
+
+        SqlExecutionResult result = executor.execute("TENANT_A", "查询设备", "WEB");
+
+        assertTrue(result.isSuccess());
+        ArgumentCaptor<String> reasonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(agentService).generateSqlWithRetry(
+                any(AgentExecutionContext.class), eq("查询设备"), reasonCaptor.capture(), eq(2));
+        assertTrue(reasonCaptor.getValue().contains("Schema 回查："));
+        assertTrue(reasonCaptor.getValue().contains("表 device 的可用字段"));
+        assertTrue(result.getTrace().stream().anyMatch(step -> "Schema 回查完成".equals(step.getTitle())));
+    }
+
+    private TableInfo deviceSchema() {
+        TableInfo table = new TableInfo();
+        table.setTableName("device");
+        TableInfo.ColumnInfo id = new TableInfo.ColumnInfo();
+        id.setColumnName("id");
+        id.setPrimaryKey(true);
+        TableInfo.ColumnInfo name = new TableInfo.ColumnInfo();
+        name.setColumnName("name");
+        table.setColumns(List.of(id, name));
+        return table;
     }
 
     private ModelCallResult modelResult(String content) {

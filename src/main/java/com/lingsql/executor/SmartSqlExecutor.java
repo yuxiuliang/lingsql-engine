@@ -66,6 +66,7 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
     private final SqlAgentService agentService;
     private final SqlGuardedQueryExecutor guardedQueryExecutor;
     private final SqlRecoveryPolicy recoveryPolicy;
+    private final SchemaBackCheckService schemaBackCheckService;
     private final TenantDbConfigRepository tenantDbConfigRepository;
     private final SqlExecuteLogService sqlExecuteLogService;
     private final SqlTaskTracker sqlTaskTracker;
@@ -242,10 +243,10 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
                 if (decision.refreshSchema() && !refreshSchemaForRecovery(tenantId, logCommand, trace, attempt, exception)) {
                     return SqlExecutionResult.failure(exception.getSql(), exception.getMessage(), trace);
                 }
+                recoveryObservation = resolveRecoveryObservation(tenantId, decision, exception, trace, attempt);
                 int nextAttempt = attempt + 1;
                 appendTrace(trace, TRACE_TYPE_ACTION, "准备第 " + nextAttempt + " 轮自愈", "已记录受控观察结果，准备重新生成候选 SQL。",
                         TRACE_STATUS_SUCCESS, nextAttempt, AgentRole.ARCHITECT, null);
-                recoveryObservation = decision.observation();
             }
         }
         throw new IllegalStateException("SQL 自愈循环未返回结果");
@@ -464,6 +465,36 @@ public class SmartSqlExecutor implements IAgentPlugin<SqlQueryTask, SqlExecution
         }
         trace.add(new ChatTraceStep(type, title, content, status, attempt,
                 role == null ? null : role.name(), durationMs));
+    }
+
+    /**
+     * 生成下一轮恢复观察：表/字段失配时先回查元数据，再给出定向纠正提示。
+     *
+     * @param tenantId 租户标识
+     * @param decision 恢复决策
+     * @param exception 本轮失败异常
+     * @param trace 轨迹
+     * @param attempt 轮次
+     * @return 下一轮恢复观察
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private String resolveRecoveryObservation(
+            String tenantId,
+            SqlRecoveryDecision decision,
+            SqlExecutionException exception,
+            List<ChatTraceStep> trace,
+            int attempt
+    ) {
+        if (!decision.refreshSchema()) {
+            return decision.observation();
+        }
+        long backCheckStart = System.currentTimeMillis();
+        String observation = schemaBackCheckService.describeMismatch(
+                tenantId, exception.getSql(), exception.getMessage(), decision.observation());
+        appendTrace(trace, TRACE_TYPE_OBSERVATION, "Schema 回查完成", "已根据失败 SQL 回查最新元数据，下一轮将注入定向纠正提示。",
+                TRACE_STATUS_SUCCESS, attempt, AgentRole.ARCHITECT, System.currentTimeMillis() - backCheckStart);
+        return observation;
     }
 
     /**
