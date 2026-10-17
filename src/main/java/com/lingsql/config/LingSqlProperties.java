@@ -597,6 +597,24 @@ public class LingSqlProperties {
     }
 
     /**
+     * 租户数据源安全配置。
+     *
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    @Data
+    public static class Datasource {
+        /**
+         * 允许连接的数据库主机白名单。
+         * 为空表示不额外限制；配置后仅允许精确主机名/IP 或 *.example.com 形式的通配项。
+         *
+         * @author 余炘洋
+         * @date 2026-10-17
+         */
+        private List<String> hostAllowlist = new ArrayList<>();
+    }
+
+    /**
      * Web 层通用配置。
      *
      * @author 余炘洋
@@ -1233,6 +1251,14 @@ public class LingSqlProperties {
      * @date 2026-01-22
      */
     private Hikari hikari = new Hikari();
+
+    /**
+     * 租户数据源安全配置。
+     *
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private Datasource datasource = new Datasource();
 
     /**
      * Web 配置。

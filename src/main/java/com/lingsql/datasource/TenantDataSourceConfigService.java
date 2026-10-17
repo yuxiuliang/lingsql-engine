@@ -38,20 +38,16 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class TenantDataSourceConfigService {
 
-    private static final String DEFAULT_DRIVER_CLASS = "com.mysql.cj.jdbc.Driver";
     private static final int CONNECTION_TIMEOUT_SECONDS = 8;
     private static final int MAX_ALLOWLIST_TABLES = 100;
     private static final Set<String> READ_ONLY_PRIVILEGES = Set.of("USAGE", "SELECT", "SHOW VIEW");
     private static final Pattern MYSQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_$]{0,63}");
-    private static final Pattern SENSITIVE_JDBC_PROPERTY = Pattern.compile(
-            "(?:^|[?&;(])\\s*(?:password|passwd|pwd|user|username|credential|token|secret)\\s*=",
-            Pattern.CASE_INSENSITIVE
-    );
 
     private final TenantDbConfigRepository repository;
     private final DataSourceManager dataSourceManager;
     private final MetadataCacheService metadataCacheService;
     private final IAuthorizationSessionLifecycle authorizationSessionLifecycle;
+    private final TenantJdbcUrlValidator jdbcUrlValidator;
 
     public List<TenantDbConfig> list() {
         return repository.findAll();
@@ -152,13 +148,11 @@ public class TenantDataSourceConfigService {
         if (request == null || !StringUtils.hasText(request.getJdbcUrl())) {
             throw new BizException(ErrorCode.CONFIG_INVALID, "数据库连接地址不能为空");
         }
-        validateJdbcUrl(request.getJdbcUrl());
+        jdbcUrlValidator.validate(request.getJdbcUrl());
         if (requireReadOnly && !StringUtils.hasText(request.getWhiteListColumns())) {
             throw new BizException(ErrorCode.CONFIG_INVALID, "字段白名单不能为空");
         }
-        String driverClass = StringUtils.hasText(request.getDriverClass())
-                ? request.getDriverClass().trim()
-                : DEFAULT_DRIVER_CLASS;
+        String driverClass = jdbcUrlValidator.resolveDriverClass(request.getDriverClass());
         String password = resolvePassword(request);
         try {
             Class.forName(driverClass);
@@ -234,17 +228,9 @@ public class TenantDataSourceConfigService {
             if (!MYSQL_IDENTIFIER.matcher(table).matches()) {
                 throw new BizException(ErrorCode.CONFIG_INVALID, "表白名单包含非法标识符");
             }
+            // 表标识符已由 MYSQL_IDENTIFIER 白名单字符集严格校验（仅字母、数字、下划线、$，不含反引号），
+            // 因此此处拼接的是受控标识符，不存在 SQL 注入可能；标识符无法使用占位符参数化。
             statement.executeQuery("SELECT 1 FROM `" + table + "` LIMIT 0").close();
-        }
-    }
-
-    private void validateJdbcUrl(String jdbcUrl) {
-        if (!jdbcUrl.regionMatches(true, 0, "jdbc:mysql://", 0, "jdbc:mysql://".length())) {
-            throw new BizException(ErrorCode.CONFIG_INVALID, "当前仅支持 MySQL JDBC 地址");
-        }
-        String authority = jdbcUrl.substring("jdbc:mysql://".length()).split("/", 2)[0];
-        if (authority.contains("@") || SENSITIVE_JDBC_PROPERTY.matcher(jdbcUrl).find()) {
-            throw new BizException(ErrorCode.CONFIG_INVALID, "JDBC 地址不得携带数据库账号或密码");
         }
     }
 
