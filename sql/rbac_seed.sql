@@ -43,6 +43,8 @@ VALUES
 ('API:CHAT:ASK', '接口-问答', 'API', 1),
 ('API:CHAT:HISTORY:READ', '接口-问答历史查询', 'API', 1),
 ('API:CHAT:HISTORY:WRITE', '接口-问答历史维护', 'API', 1),
+('API:CHAT:MEMORY:READ', '接口-问答记忆查询', 'API', 1),
+('API:CHAT:MEMORY:WRITE', '接口-问答记忆维护', 'API', 1),
 ('ADMIN:SCHEMA:SYNC', '接口-元数据同步', 'API', 1),
 ('ADMIN:SEMANTIC:REFRESH', '接口-语义缓存刷新', 'API', 1),
 ('ADMIN:MODEL:ENABLE', '接口-模型启用', 'API', 1),
@@ -176,6 +178,8 @@ WHERE perm_code IN (
     'API:CHAT:ASK',
     'API:CHAT:HISTORY:READ',
     'API:CHAT:HISTORY:WRITE',
+    'API:CHAT:MEMORY:READ',
+    'API:CHAT:MEMORY:WRITE',
     'CONFIG:CHAT:READ'
 );
 

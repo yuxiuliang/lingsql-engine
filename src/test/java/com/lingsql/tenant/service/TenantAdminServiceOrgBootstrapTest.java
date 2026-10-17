@@ -100,7 +100,9 @@ class TenantAdminServiceOrgBootstrapTest {
                 buildPermission(18L, "API:CHAT:ASK"),
                 buildPermission(19L, "API:CHAT:HISTORY:READ"),
                 buildPermission(20L, "API:CHAT:HISTORY:WRITE"),
-                buildPermission(21L, "CONFIG:CHAT:READ")
+                buildPermission(21L, "CONFIG:CHAT:READ"),
+                buildPermission(22L, "API:CHAT:MEMORY:READ"),
+                buildPermission(23L, "API:CHAT:MEMORY:WRITE")
         ));
         BillingPlan plan = new BillingPlan();
         plan.setPlanName("试点套餐");

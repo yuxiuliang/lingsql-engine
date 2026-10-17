@@ -258,7 +258,8 @@ class TenantAdminServiceLifecycleOpsTest {
         List<String> codes = List.of(
                 "MENU:ADMIN", "MENU:ADMIN:ORG", "ADMIN:ORG:READ", "ADMIN:ORG:WRITE",
                 "ADMIN:ORG:DELETE", "MENU:CHAT", "MENU:CHAT:HISTORY", "API:CHAT:ASK",
-                "API:CHAT:HISTORY:READ", "API:CHAT:HISTORY:WRITE", "CONFIG:CHAT:READ"
+                "API:CHAT:HISTORY:READ", "API:CHAT:HISTORY:WRITE", "API:CHAT:MEMORY:READ",
+                "API:CHAT:MEMORY:WRITE", "CONFIG:CHAT:READ"
         );
         long id = 1L;
         java.util.ArrayList<RbacPermission> permissions = new java.util.ArrayList<>();
