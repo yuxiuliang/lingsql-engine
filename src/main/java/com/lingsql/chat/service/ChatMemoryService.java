@@ -2,6 +2,7 @@ package com.lingsql.chat.service;
 
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
+import com.lingsql.chat.model.ChatEntityReference;
 import com.lingsql.chat.model.ChatMemoryMessage;
 import com.lingsql.config.LingSqlProperties;
 import com.lingsql.context.SessionInfo;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -37,6 +39,16 @@ import java.util.regex.Pattern;
 public class ChatMemoryService {
 
     private static final String MEMORY_KEY_PREFIX = "lingsql:chat:memory:";
+
+    /**
+     * 实体引用值的最大长度。
+     */
+    private static final int MAX_ENTITY_VALUE_LENGTH = 64;
+
+    /**
+     * 受控标识符格式：只允许表名与字段名的安全字符集。
+     */
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z0-9_$]{1,64}$");
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
@@ -87,9 +99,9 @@ public class ChatMemoryService {
             return;
         }
         String resolvedTenantId = StringUtils.hasText(tenantId) ? tenantId : sessionInfo.tenantId();
-        String lastSeenId = resolveLastSeenId(resolvedTenantId, sql, data);
+        ChatEntityReference reference = resolveEntityReference(resolvedTenantId, sql, data);
         ChatMemoryMessage userMessage = ChatMemoryMessage.user(maskSensitive(question));
-        ChatMemoryMessage aiMessage = ChatMemoryMessage.assistant(maskSensitive(answer), maskSensitive(sql), lastSeenId);
+        ChatMemoryMessage aiMessage = ChatMemoryMessage.assistant(maskSensitive(answer), maskSensitive(sql), reference);
         pushMessage(combinedSessionId, userMessage);
         pushMessage(combinedSessionId, aiMessage);
     }
@@ -112,12 +124,18 @@ public class ChatMemoryService {
         if (rawMessages == null || rawMessages.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder();
+        List<ChatMemoryMessage> messages = new ArrayList<>();
         for (String raw : rawMessages) {
             ChatMemoryMessage message = readMessage(raw);
             if (message == null || !StringUtils.hasText(message.getRole())) {
                 continue;
             }
+            messages.add(message);
+        }
+        String tenantId = sessionInfo == null ? null : sessionInfo.tenantId();
+        List<TableInfo> schemaSnapshot = resolveSchemaSnapshot(tenantId, messages);
+        StringBuilder sb = new StringBuilder();
+        for (ChatMemoryMessage message : messages) {
             String content = maskSensitive(message.getContent());
             if (!StringUtils.hasText(content)) {
                 continue;
@@ -130,9 +148,7 @@ public class ChatMemoryService {
             if (StringUtils.hasText(message.getSql())) {
                 sb.append("SQL: ").append(maskSensitive(message.getSql())).append("\n");
             }
-            if (StringUtils.hasText(message.getLastSeenId())) {
-                sb.append("last_seen_id: ").append(message.getLastSeenId()).append("\n");
-            }
+            appendEntityReference(sb, tenantId, schemaSnapshot, message);
         }
         return sb.toString().trim();
     }
@@ -158,16 +174,16 @@ public class ChatMemoryService {
     }
 
     /**
-     * 解析最近一次主键 ID。
+     * 解析最近一次结果中的实体引用。
      *
      * @param tenantId 租户标识
      * @param sql      SQL 文本
      * @param data     结果集
-     * @return 主键 ID
+     * @return 实体引用，无法确认时返回 null
      * @author 余炘洋
-     * @date 2026-01-26
+     * @date 2026-10-17
      */
-    private String resolveLastSeenId(String tenantId, String sql, List<Map<String, Object>> data) {
+    private ChatEntityReference resolveEntityReference(String tenantId, String sql, List<Map<String, Object>> data) {
         if (!StringUtils.hasText(sql) || data == null || data.isEmpty()) {
             return null;
         }
@@ -177,11 +193,180 @@ public class ChatMemoryService {
         }
         String mainTable = resolveMainTableName(sql);
         String primaryKey = resolvePrimaryKey(tenantId, mainTable);
-        String value = resolveValueByColumn(firstRow, primaryKey);
-        if (StringUtils.hasText(value)) {
-            return value;
+        String columnName = StringUtils.hasText(primaryKey) ? primaryKey : resolveFallbackColumn(firstRow);
+        String value = sanitizeEntityValue(resolveValueByColumn(firstRow, columnName));
+        if (!StringUtils.hasText(value) || !isEntityBoundToSchema(tenantId, mainTable, columnName)) {
+            return null;
         }
-        return resolveFallbackId(firstRow);
+        return new ChatEntityReference(mainTable, columnName, value, data.size());
+    }
+
+    /**
+     * 写入前回查实体引用与当前元数据的绑定关系，无法确认时放弃引用。
+     *
+     * @param tenantId   租户标识
+     * @param tableName  表名
+     * @param columnName 字段名
+     * @return 是否绑定成功
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private boolean isEntityBoundToSchema(String tenantId, String tableName, String columnName) {
+        if (!StringUtils.hasText(tenantId) || !StringUtils.hasText(tableName) || !StringUtils.hasText(columnName)) {
+            return false;
+        }
+        List<TableInfo> tables = metadataCacheService.getCachedSchema(tenantId);
+        if (tables == null || tables.isEmpty()) {
+            return false;
+        }
+        return isReferenceVisibleInSchema(tables, tableName, columnName);
+    }
+
+    /**
+     * 按需加载 Schema 快照，用于读取侧实体引用回查。
+     *
+     * @param tenantId 租户标识
+     * @param messages 会话消息
+     * @return 表结构快照，无需回查时返回 null
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private List<TableInfo> resolveSchemaSnapshot(String tenantId, List<ChatMemoryMessage> messages) {
+        if (!StringUtils.hasText(tenantId) || messages.stream().noneMatch(this::hasStructuredEntityReference)) {
+            return null;
+        }
+        return metadataCacheService.getCachedSchema(tenantId);
+    }
+
+    /**
+     * 判断消息是否带有结构化实体引用。
+     *
+     * @param message 消息
+     * @return 是否带有结构化引用
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private boolean hasStructuredEntityReference(ChatMemoryMessage message) {
+        return message != null
+                && StringUtils.hasText(message.getLastSeenTable())
+                && StringUtils.hasText(message.getLastSeenColumn())
+                && StringUtils.hasText(message.getLastSeenId());
+    }
+
+    /**
+     * 渲染实体引用：结构化引用需通过当前元数据回查，旧格式消息保留兼容渲染。
+     *
+     * @param sb             历史文本
+     * @param tenantId       租户标识
+     * @param schemaSnapshot 表结构快照
+     * @param message        消息
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private void appendEntityReference(StringBuilder sb,
+                                       String tenantId,
+                                       List<TableInfo> schemaSnapshot,
+                                       ChatMemoryMessage message) {
+        String value = sanitizeEntityValue(message.getLastSeenId());
+        if (!StringUtils.hasText(value)) {
+            return;
+        }
+        String tableName = sanitizeIdentifier(message.getLastSeenTable());
+        String columnName = sanitizeIdentifier(message.getLastSeenColumn());
+        if (!StringUtils.hasText(tableName) || !StringUtils.hasText(columnName)) {
+            sb.append("last_seen_id: ").append(value).append("\n");
+            return;
+        }
+        if (!isReferenceVisibleInSchema(schemaSnapshot, tableName, columnName)) {
+            log.debug("实体引用未通过元数据回查，已跳过: tenantId={}, table={}, column={}", tenantId, tableName, columnName);
+            return;
+        }
+        int rowCount = message.getLastSeenRows() == null ? 1 : message.getLastSeenRows();
+        sb.append("实体引用: 表=").append(tableName)
+                .append(", 主键字段=").append(columnName)
+                .append(", 值=").append(value)
+                .append(", 结果行数=").append(rowCount)
+                .append("\n");
+    }
+
+    /**
+     * 回查实体引用是否仍存在于元数据快照；快照不可用时保留引用。
+     *
+     * @param schemaSnapshot 表结构快照
+     * @param tableName      表名
+     * @param columnName     字段名
+     * @return 是否仍可见
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private boolean isReferenceVisibleInSchema(List<TableInfo> schemaSnapshot, String tableName, String columnName) {
+        if (schemaSnapshot == null || schemaSnapshot.isEmpty()) {
+            return true;
+        }
+        for (TableInfo table : schemaSnapshot) {
+            if (table == null || !StringUtils.hasText(table.getTableName())
+                    || !tableName.equalsIgnoreCase(table.getTableName())) {
+                continue;
+            }
+            if (table.getColumns() == null) {
+                return false;
+            }
+            for (TableInfo.ColumnInfo column : table.getColumns()) {
+                if (column != null && StringUtils.hasText(column.getColumnName())
+                        && columnName.equalsIgnoreCase(column.getColumnName())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return false;
+    }
+
+    /**
+     * 过滤实体引用值：去除控制字符、限制长度，并拒绝疑似注入内容。
+     *
+     * @param value 原始值
+     * @return 受控值，不可用时返回 null
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private String sanitizeEntityValue(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        String cleaned = value.replaceAll("[\\p{Cntrl}]+", " ").trim();
+        if (!StringUtils.hasText(cleaned)) {
+            return null;
+        }
+        if (cleaned.length() > MAX_ENTITY_VALUE_LENGTH) {
+            cleaned = cleaned.substring(0, MAX_ENTITY_VALUE_LENGTH);
+        }
+        LingSqlProperties.Security security = properties.getSecurity();
+        if (security != null && security.getPromptInjectionKeywords() != null) {
+            String lower = cleaned.toLowerCase(Locale.ROOT);
+            for (String keyword : security.getPromptInjectionKeywords()) {
+                if (StringUtils.hasText(keyword) && lower.contains(keyword.toLowerCase(Locale.ROOT))) {
+                    return null;
+                }
+            }
+        }
+        return cleaned;
+    }
+
+    /**
+     * 校验标识符格式。
+     *
+     * @param identifier 标识符
+     * @return 受控标识符，非法时返回 null
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private String sanitizeIdentifier(String identifier) {
+        if (!StringUtils.hasText(identifier)) {
+            return null;
+        }
+        String trimmed = identifier.trim();
+        return IDENTIFIER_PATTERN.matcher(trimmed).matches() ? trimmed : null;
     }
 
     /**
@@ -272,33 +457,28 @@ public class ChatMemoryService {
     }
 
     /**
-     * 解析回退 ID（id 或 _id）。
+     * 解析回退主键字段（id 或 _id）。
      *
      * @param row 数据行
-     * @return ID 值
+     * @return 字段名
      * @author 余炘洋
-     * @date 2026-01-26
+     * @date 2026-10-17
      */
-    private String resolveFallbackId(Map<String, Object> row) {
+    private String resolveFallbackColumn(Map<String, Object> row) {
         if (row == null || row.isEmpty()) {
             return null;
         }
         for (Map.Entry<String, Object> entry : row.entrySet()) {
             String key = normalizeKey(entry.getKey());
-            if ("id".equalsIgnoreCase(key)) {
-                String value = valueToString(entry.getValue());
-                if (StringUtils.hasText(value)) {
-                    return value;
-                }
+            if ("id".equalsIgnoreCase(key) && StringUtils.hasText(valueToString(entry.getValue()))) {
+                return key;
             }
         }
         for (Map.Entry<String, Object> entry : row.entrySet()) {
             String key = normalizeKey(entry.getKey());
-            if (key != null && key.toLowerCase(Locale.ROOT).endsWith("_id")) {
-                String value = valueToString(entry.getValue());
-                if (StringUtils.hasText(value)) {
-                    return value;
-                }
+            if (key != null && key.toLowerCase(Locale.ROOT).endsWith("_id")
+                    && StringUtils.hasText(valueToString(entry.getValue()))) {
+                return key;
             }
         }
         return null;
