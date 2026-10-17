@@ -151,6 +151,8 @@ SQL 架构师、合规审计员和业务分析师是受控角色，不是三个�
 4. 恢复入口位于安全边界之前，不能从“审计通过但尚未执行”的中间缝隙直接恢复。
 5. 超过保留期或策略已变更的 checkpoint 转人工处理，不自动续跑。
 
+当前已落地边界：`AgentCheckpoint` 按阶段落库，`AgentRunStage` 固化恢复阶段白名单——只有人工审批阶段（`APPROVAL_REQUESTED`）可恢复，派发进安全查询模块（`SQL_ARCHITECT`）之后一律拒绝；人工审批节点支持裁决与获批续跑，续跑用最小上下文载荷重建运行命令并重新完整经过安全查询模块，同一执行只允许续跑一次（`RESUME_COMPLETED`）。审批通过前不调用模型、不执行 SQL。进程崩溃自动恢复、工作流版本固定和已完成副作用的幂等凭证校验仍未实现。
+
 ## 5. 插件模型
 
 ### 5.1 插件契约
@@ -432,6 +434,7 @@ Redis 只在 MySQL 事务 `afterCommit` 后清理 Access/Refresh 会话，用于
 - 插件白名单、系统调用来源、成本等级、调用次数、SQL 尝试次数和启动/返回 deadline 防护基础。
 - 策略拒绝、预算、deadline、计费、审计和插件故障的稳定失败分类与上下文日志。
 - `secure_query` 系统插件。
+- 人工审批闭环：`AgentApprovalNode` 审批节点、`AgentRunStage` 阶段白名单、管理端裁决与续跑 API，以及 `RESUME_COMPLETED` 幂等标记；审批通过前不调用模型、不执行 SQL，续跑重新完整经过安全查询模块。
 - SQL 审计通过类型只在安全查询包内流转，轨迹按真实执行顺序产生。
 - 结构化模型调用命令与结果、逐物理调用 `RESERVED/DISPATCHED/SETTLED/CANCELLED/UNKNOWN` 状态机、MySQL 原子预留与差额退款、陈旧状态恢复和健康门禁。
 - SQL 架构师、业务分析师、Schema 扫描和元数据语义建议已移除模型用量 ThreadLocal，统一显式传递工作流身份和调用序号。
@@ -445,7 +448,7 @@ Redis 只在 MySQL 事务 `afterCommit` 后清理 Access/Refresh 会话，用于
 
 1. 将语义字典升级为可版本化 Semantic Context。
 2. 实现 `knowledge_retrieve`、`calculate_metric`、`chart_mapper` 插件。
-3. 建立持久化 Agent checkpoint、幂等恢复和非模型插件用量 Outbox；增加供应商账单自动导入、自动匹配和 `UNKNOWN` 裁决工作台。管理端裁决 API 已实现，不再重复建设另一条核销入口。
+3. 完成 Agent checkpoint 的崩溃自动恢复与工作流版本固定（当前只支持人工审批续跑，恢复阶段白名单已固化）；建立非模型插件用量 Outbox；增加供应商账单自动导入、自动匹配和 `UNKNOWN` 裁决工作台。管理端裁决 API 已实现，不再重复建设另一条核销入口。
 4. 将模型调用和 Token 预算纳入统一 `AgentRunControl`。
 5. 建立插件版本兼容矩阵与升级/回滚演练；插件管理 API 与租户授权已落地，JAR 与清单签名校验已实现但仍需真实环境验证。
 6. 实现 Spring AI `ToolCallback` 适配器、按需工具发现和 MCP 远程插件网关。

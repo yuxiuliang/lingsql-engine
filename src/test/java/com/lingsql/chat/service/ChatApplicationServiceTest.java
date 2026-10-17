@@ -70,7 +70,9 @@ class ChatApplicationServiceTest {
                 new ControlledAgentOrchestratorImpl(
                         pluginExecutor,
                         resultRefiner,
-                        Mockito.mock(com.lingsql.agent.service.AgentCheckpointService.class)
+                        Mockito.mock(com.lingsql.agent.service.AgentCheckpointService.class),
+                        Mockito.mock(com.lingsql.agent.service.AgentApprovalService.class),
+                        new tools.jackson.databind.ObjectMapper()
                 ),
                 chatHistoryService,
                 chatMemoryService
@@ -119,7 +121,9 @@ class ChatApplicationServiceTest {
                 new ControlledAgentOrchestratorImpl(
                         pluginExecutor,
                         resultRefiner,
-                        Mockito.mock(com.lingsql.agent.service.AgentCheckpointService.class)
+                        Mockito.mock(com.lingsql.agent.service.AgentCheckpointService.class),
+                        Mockito.mock(com.lingsql.agent.service.AgentApprovalService.class),
+                        new tools.jackson.databind.ObjectMapper()
                 ),
                 chatHistoryService,
                 chatMemoryService
@@ -153,7 +157,9 @@ class ChatApplicationServiceTest {
                 new ControlledAgentOrchestratorImpl(
                         pluginExecutor,
                         resultRefiner,
-                        Mockito.mock(com.lingsql.agent.service.AgentCheckpointService.class)
+                        Mockito.mock(com.lingsql.agent.service.AgentCheckpointService.class),
+                        Mockito.mock(com.lingsql.agent.service.AgentApprovalService.class),
+                        new tools.jackson.databind.ObjectMapper()
                 ),
                 chatHistoryService,
                 chatMemoryService

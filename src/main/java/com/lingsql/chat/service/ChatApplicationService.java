@@ -55,7 +55,8 @@ public class ChatApplicationService {
                 conversationId,
                 question,
                 "WEB",
-                RequestTraceContext.resolveRequestId()
+                RequestTraceContext.resolveRequestId(),
+                Boolean.TRUE.equals(request.getApprovalRequired())
         ));
         if (runResult.querySucceeded()) {
             chatMemoryService.saveSuccessExchange(
