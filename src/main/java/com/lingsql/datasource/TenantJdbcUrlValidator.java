@@ -51,17 +51,11 @@ public class TenantJdbcUrlValidator {
 
     private static final int MAX_HOST_TEXT_LENGTH = 253;
 
-    /**
-     * 主机名格式：字母、数字、下划线、中划线组成，禁止首尾中划线。
-     */
-    private static final Pattern HOSTNAME_PATTERN = Pattern.compile(
-            "[A-Za-z0-9_](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?"
-                    + "(?:\\.[A-Za-z0-9_](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*"
-    );
+    private static final int MAX_HOST_LABEL_LENGTH = 63;
+
+    private static final int MAX_IPV6_TEXT_LENGTH = 45;
 
     private static final Pattern IPV4_PATTERN = Pattern.compile("\\d{1,3}(?:\\.\\d{1,3}){3}");
-
-    private static final Pattern IPV6_PATTERN = Pattern.compile("[0-9A-Fa-f:]*:[0-9A-Fa-f:]*");
 
     private static final Pattern PORT_PATTERN = Pattern.compile("\\d{1,5}");
 
@@ -179,9 +173,33 @@ public class TenantJdbcUrlValidator {
             verifyIpv4(host);
             return;
         }
-        if (!HOSTNAME_PATTERN.matcher(host).matches()) {
-            throw new BizException(ErrorCode.CONFIG_INVALID, "数据库主机地址格式不合法");
+        // 逐标签校验，避免正则嵌套量词带来的多项式回溯风险。
+        for (String label : host.split("\\.", -1)) {
+            if (!isHostLabel(label)) {
+                throw new BizException(ErrorCode.CONFIG_INVALID, "数据库主机地址格式不合法");
+            }
         }
+    }
+
+    private boolean isHostLabel(String label) {
+        if (label.isEmpty() || label.length() > MAX_HOST_LABEL_LENGTH) {
+            return false;
+        }
+        for (int index = 0; index < label.length(); index++) {
+            char current = label.charAt(index);
+            if (isHostLabelCharacter(current)) {
+                continue;
+            }
+            boolean hyphenInside = current == '-' && index > 0 && index < label.length() - 1;
+            if (!hyphenInside) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isHostLabelCharacter(char value) {
+        return isLowerCaseLetter(value) || isUpperCaseLetter(value) || isDigit(value) || value == '_';
     }
 
     private void verifyIpv4(String host) {
@@ -195,7 +213,7 @@ public class TenantJdbcUrlValidator {
     }
 
     private String normalizeIpv6(String ipv6Text) {
-        if (!StringUtils.hasText(ipv6Text) || !IPV6_PATTERN.matcher(ipv6Text).matches()) {
+        if (!isIpv6Literal(ipv6Text)) {
             throw new BizException(ErrorCode.CONFIG_INVALID, "数据库主机地址格式不合法");
         }
         InetAddress address;
@@ -206,6 +224,45 @@ public class TenantJdbcUrlValidator {
         }
         verifyAddressScope(address);
         return address.getHostAddress().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * 判断文本是否为 IPv6 字面量：仅由十六进制字符与冒号组成且至少包含一个冒号。
+     * 逐字符校验可避免正则回溯，并确保 {@link InetAddress#getByName} 不会触发域名解析。
+     *
+     * @param text 主机文本
+     * @return 是否为 IPv6 字面量
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private boolean isIpv6Literal(String text) {
+        if (!StringUtils.hasText(text) || text.length() > MAX_IPV6_TEXT_LENGTH || text.indexOf(':') < 0) {
+            return false;
+        }
+        for (int index = 0; index < text.length(); index++) {
+            char current = text.charAt(index);
+            if (current == ':' || isHexDigit(current)) {
+                continue;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isHexDigit(char value) {
+        return isDigit(value) || (value >= 'a' && value <= 'f') || (value >= 'A' && value <= 'F');
+    }
+
+    private boolean isDigit(char value) {
+        return value >= '0' && value <= '9';
+    }
+
+    private boolean isLowerCaseLetter(char value) {
+        return value >= 'a' && value <= 'z';
+    }
+
+    private boolean isUpperCaseLetter(char value) {
+        return value >= 'A' && value <= 'Z';
     }
 
     private void verifyLiteralAddress(String literal) {

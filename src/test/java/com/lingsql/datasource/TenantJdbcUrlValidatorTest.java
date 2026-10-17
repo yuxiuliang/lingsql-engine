@@ -102,6 +102,15 @@ class TenantJdbcUrlValidatorTest {
     }
 
     @Test
+    void validateShouldRejectOverlongHostInput() {
+        TenantJdbcUrlValidator validator = createValidator(List.of());
+
+        String longHostname = "a.".repeat(200) + "a";
+        assertThrows(BizException.class, () -> validator.validate("jdbc:mysql://" + longHostname + ":3306/sales"));
+        assertThrows(BizException.class, () -> validator.validate("jdbc:mysql://[" + ":".repeat(80) + "]:3306/sales"));
+    }
+
+    @Test
     void validateShouldEnforceHostAllowlistWhenConfigured() {
         TenantJdbcUrlValidator validator = createValidator(List.of("db.example.com", "*.corp.internal"));
 
