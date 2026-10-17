@@ -6,6 +6,7 @@ import org.springframework.util.StringUtils;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Agent 插件注册中心。
@@ -42,6 +43,24 @@ public class AgentPluginRegistry {
 
     public List<AgentPluginDescriptor> descriptors() {
         return plugins.values().stream().map(IAgentPlugin::descriptor).toList();
+    }
+
+    /**
+     * 查询插件稳定元数据。
+     *
+     * <p>管理面只允许读取元数据，不返回插件实例；原始插件查找仍只对网关包内可见。</p>
+     *
+     * @param pluginId 插件标识
+     * @return 插件元数据
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    public Optional<AgentPluginDescriptor> findDescriptor(String pluginId) {
+        if (!StringUtils.hasText(pluginId)) {
+            return Optional.empty();
+        }
+        IAgentPlugin<?, ?> plugin = plugins.get(pluginId.trim());
+        return plugin == null ? Optional.empty() : Optional.of(plugin.descriptor());
     }
 
     private AgentPluginDescriptor validate(IAgentPlugin<?, ?> plugin) {

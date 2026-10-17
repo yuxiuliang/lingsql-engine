@@ -75,7 +75,9 @@
     {"permCode": "ADMIN:SQLLOG:EXPORT", "permName": "接口-SQL日志导出", "permType": "API", "status": 1},
     {"permCode": "CONFIG:CHAT:READ", "permName": "接口-聊天配置读取", "permType": "API", "status": 1},
     {"permCode": "RBAC:EXPERIENCE:READ", "permName": "接口-体验账号读取", "permType": "API", "status": 1},
-    {"permCode": "RBAC:EXPERIENCE:WRITE", "permName": "接口-体验账号维护", "permType": "API", "status": 1}
+    {"permCode": "RBAC:EXPERIENCE:WRITE", "permName": "接口-体验账号维护", "permType": "API", "status": 1},
+    {"permCode": "ADMIN:PLUGIN:READ", "permName": "接口-插件治理读取", "permType": "API", "status": 1},
+    {"permCode": "ADMIN:PLUGIN:WRITE", "permName": "接口-租户插件授权维护", "permType": "API", "status": 1}
   ],
   "menus": [
     {"menuCode": "MENU_CHAT", "menuName": "智能问答", "parentCode": null, "path": "/chat", "component": "ChatPage", "icon": "chat", "sort": 10, "visible": 1, "status": 1, "permCode": "MENU:CHAT"},

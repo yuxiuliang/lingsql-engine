@@ -17,6 +17,7 @@ public class AgentPluginExecutor {
 
     private final AgentPluginRegistry registry;
     private final com.lingsql.agent.service.PluginInvocationOutboxService pluginInvocationOutboxService;
+    private final com.lingsql.agent.service.AgentPluginGrantService pluginGrantService;
 
     public <I, O> O execute(
             String pluginId,
@@ -34,6 +35,7 @@ public class AgentPluginExecutor {
             throw new AgentPluginException(AgentPluginFailureReason.CONTRACT_VIOLATION,
                     "Agent 插件输出类型不匹配: " + pluginId);
         }
+        assertTenantGrant(pluginId, plugin.descriptor(), context);
         control.beforePlugin(plugin.descriptor());
         try {
             O result = invoke(plugin, context, control, input, outputType);
@@ -60,5 +62,26 @@ public class AgentPluginExecutor {
     ) {
         IAgentPlugin<I, O> typedPlugin = (IAgentPlugin<I, O>) plugin;
         return outputType.cast(typedPlugin.execute(context, control, input));
+    }
+
+    /**
+     * 校验租户插件授权：受控业务插件必须由租户显式授权，未授权一律拒绝且不消耗预算。
+     *
+     * <p>系统插件由受控工作流固定调用，不参与租户授权。</p>
+     *
+     * @param pluginId   插件标识
+     * @param descriptor 插件元数据
+     * @param context    执行上下文
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private void assertTenantGrant(String pluginId, AgentPluginDescriptor descriptor, AgentExecutionContext context) {
+        if (descriptor.access() != AgentPluginAccess.ORCHESTRATED) {
+            return;
+        }
+        if (!pluginGrantService.isGranted(context.tenantId(), pluginId)) {
+            throw new AgentPluginException(AgentPluginFailureReason.POLICY_DENIED,
+                    "租户未授权插件: " + pluginId);
+        }
     }
 }

@@ -83,7 +83,9 @@ VALUES
 ('ADMIN:SQLLOG:EXPORT', '接口-SQL日志导出', 'API', 1),
 ('CONFIG:CHAT:READ', '接口-聊天配置读取', 'API', 1),
 ('RBAC:EXPERIENCE:READ', '接口-体验账号读取', 'API', 1),
-('RBAC:EXPERIENCE:WRITE', '接口-体验账号维护', 'API', 1)
+('RBAC:EXPERIENCE:WRITE', '接口-体验账号维护', 'API', 1),
+('ADMIN:PLUGIN:READ', '接口-插件治理读取', 'API', 1),
+('ADMIN:PLUGIN:WRITE', '接口-租户插件授权维护', 'API', 1)
 ON DUPLICATE KEY UPDATE
     perm_name = VALUES(perm_name),
     perm_type = VALUES(perm_type),
