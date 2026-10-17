@@ -4,8 +4,8 @@
 
 ## 0. 当前实现状态（截至 2026-08-16）
 
-- **已落地**：Java 25、Spring Boot 4.1、Spring AI 2.0 模型网关、单入口受控编排、固定三角色状态流转、类型安全插件 SPI、插件注册与执行网关、显式 Agent 上下文、插件白名单、系统调用来源、成本等级、调用次数和启动/返回 deadline 防护、多租户隔离、JSqlParser 改写与校验、不可拆分的安全查询模块、Redis 会话记忆、最多 1–5 轮的有界 SQL 自愈、结构化执行轨迹、Token 看板和计费账本。SQL 架构师、业务分析师、Schema 扫描和语义建议四类模型调用均已进入逐物理调用资金状态机；实际模型配置、版本和路由指纹随调用冻结，`UNKNOWN` 具备基于外部证据摘要的不可变裁决，计费验收会话可冻结余额与账本水位并签发不可变守恒回执。新增已落地：`calculate_metric`（内置 `MetricExpressionEvaluator` 递归下降解析的受控数值表达式求值，无第三方表达式引擎、无 SpEL）、`chart_mapper`（服务端图表映射）、`knowledge_retrieve` 受控插件骨架、`AgentRunControl` 可取消超时与 Token/费用预算校验、插件统一调用 Outbox 落库、持久检查点（`AgentCheckpoint`）与 Orchestrator 阶段性落库、人工审批闭环（`AgentApprovalNode` 审批节点 + 裁决/续跑管理接口 + 受控续跑只能从审批阶段重新进入）、租户插件授权（`AgentPluginGrant`：管理 API + 网关层强制，未授权 fail-closed）、语义上下文版本快照（`SemanticContextVersion`）、分层记忆服务（临时记忆由 Redis 会话窗口承担，程序记忆与永久记忆落库 `AgentMemoryFact` 并受写入治理）、ArchUnit 架构边界校验测试。
-- **部分落地**：Schema 回查、实体消解和模型故障切换；长期记忆的模型候选提取与自动写入尚未开放，当前只接受用户确认和管理端批准写入。当前模型调用已经逐次预留、派发、结算或保留为 `UNKNOWN`，但供应商账单自动导入、裁决工作台和非模型 Plugin/MCP 工具费用尚未进入同一闭环。
+- **已落地**：Java 25、Spring Boot 4.1、Spring AI 2.0 模型网关、单入口受控编排、固定三角色状态流转、类型安全插件 SPI、插件注册与执行网关、显式 Agent 上下文、插件白名单、系统调用来源、成本等级、调用次数和启动/返回 deadline 防护、多租户隔离、JSqlParser 改写与校验、不可拆分的安全查询模块、Redis 会话记忆、最多 1–5 轮的有界 SQL 自愈、结构化执行轨迹、Token 看板和计费账本。SQL 架构师、业务分析师、Schema 扫描和语义建议四类模型调用均已进入逐物理调用资金状态机；实际模型配置、版本和路由指纹随调用冻结，`UNKNOWN` 具备基于外部证据摘要的不可变裁决，计费验收会话可冻结余额与账本水位并签发不可变守恒回执。`SpringAiModelGatewayImpl` 的故障切换已收敛到出站前：同一冻结租户授权计划内按优先级顺序回退候选，每次物理调用独立预留、独立 `invocationId`；派发后失败只记健康惩罚与熔断，不自动退款、不自动切换。新增已落地：`calculate_metric`（内置 `MetricExpressionEvaluator` 递归下降解析的受控数值表达式求值，无第三方表达式引擎、无 SpEL）、`chart_mapper`（服务端图表映射）、`knowledge_retrieve` 受控插件骨架、`AgentRunControl` 可取消超时与 Token/费用预算校验、插件统一调用 Outbox 落库、持久检查点（`AgentCheckpoint`）与 Orchestrator 阶段性落库、人工审批闭环（`AgentApprovalNode` 审批节点 + 裁决/续跑管理接口 + 受控续跑只能从审批阶段重新进入）、租户插件授权（`AgentPluginGrant`：管理 API + 网关层强制，未授权 fail-closed）、语义上下文版本快照（`SemanticContextVersion`）、分层记忆服务（临时记忆由 Redis 会话窗口承担，程序记忆与永久记忆落库 `AgentMemoryFact` 并受写入治理）、ArchUnit 架构边界校验测试。
+- **部分落地**：Schema 回查和实体消解；长期记忆的模型候选提取与自动写入尚未开放，当前只接受用户确认和管理端批准写入。当前模型调用已经逐次预留、派发、结算或保留为 `UNKNOWN`，但供应商账单自动导入、裁决工作台和非模型 Plugin/MCP 工具费用尚未进入同一闭环。
 - **尚未完整落地**：可发布的动态状态图（`WorkflowGraphValidator` 目前是固定三阶段硬校验，不是通用图引擎）；按「出现第二种真实工作流之前不建通用 DAG」的架构原则保持现状。已落地代码但仍需真实环境验证：`McpHttpToolClient`（JSON-RPC 2.0 over HTTP、Streamable HTTP 握手与会话透传、fail-closed，不加载远端代码）、`SecureJarTrustService`（SHA-256 白名单 + 64MB 体积上限 + 清单稳定 ID/版本/类型校验；**明确不是 ClassLoader 沙箱**，白名单内 JAR 仍与宿主同权限）、`KnowledgeIndexingService` 与 `VectorKnowledgeCorpusProvider`（ES 8.x knn/HNSW 承担 ANN，`lingsql.knowledge.vector.enabled` 开关，未启用时回落数据库关键词检索）、`BillingReconcilePdfExporter`（OpenPDF，避开 iText AGPL）、`ExternalReceiptService`、`AgentToolProvider`（Spring AI ToolCallback 适配）。
 
 ### 0.1 文档、待办与扫描结果治理
@@ -72,6 +72,7 @@
 - 状态图只能引用已注册的受控阶段，不允许配置任意 Java 类名、SpEL、脚本或 SQL。
 - SQL 改写、校验和 JDBC 必须始终作为一个不可拆分模块。
 - 每次物理模型调用必须在出站前持久预留并进入 `DISPATCHED`；只有收到可信使用量后才能结算，超时、断连、用量缺失或越界、结算结果不确定时必须持久化为 `UNKNOWN`，并仅凭外部证据裁决为 `SETTLED` 或 `CANCELLED`。新模型适配器不得绕过该资金状态机，也不得用 ThreadLocal 偷渡最终账本依据。
+- 模型故障切换只能发生在出站前：本地配置准备失败时可在同一冻结租户授权计划内按优先级回退候选；进入 `DISPATCHED` 后，任何失败（含已结算但内容为空）都只能记录健康惩罚与熔断，禁止切换模型、禁止自动退款、禁止用备用模型重放同一逻辑调用。
 - 插件扩展点可以持续增加，但每次运行必须通过 `AgentRunPolicy` 明确允许的插件和预算；禁止默认向模型暴露所有插件。
 - 恢复只能从安全阶段之前重新进入，禁止从审计后或 JDBC 前恢复。
 - 人工审批续跑必须先校验审批状态、恢复阶段白名单和续跑幂等性；任何绕过 `SqlGuardedQueryExecutor` 的恢复路径一律禁止。

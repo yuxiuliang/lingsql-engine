@@ -10,7 +10,6 @@ import com.lingsql.billing.invocation.BillingInvocationUnknownException;
 import com.lingsql.billing.invocation.IPhysicalModelBilling;
 import com.lingsql.billing.invocation.PhysicalModelInvocation;
 import com.lingsql.billing.invocation.PhysicalModelResponse;
-import com.lingsql.billing.invocation.PhysicalBillingException;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
@@ -38,6 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author 余炘洋
  * @date 2026-01-22
  * @modify 余炘洋 2026-08-16 主备模型复用同一租户授权计划
+ * @modify 余炘洋 2026-10-17 故障切换只在出站前按计划优先级回退候选
  */
 @Slf4j
 @Component
@@ -58,6 +59,10 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
     /**
      * 发送聊天请求。
      *
+     * <p>故障切换只发生在出站前：模型配置、客户端或地址等本地准备失败时，按同一冻结租户授权计划的
+     * 优先级顺序回退到后续候选；每次物理调用都独立预留、派发、结算并使用独立 {@code invocationId}。
+     * 一旦进入 {@code DISPATCHED}，失败只进入资金状态机并记录健康惩罚，不再切换模型。</p>
+     *
      * @param command 显式模型调用命令
      * @return 模型调用结果
      * @author 余炘洋
@@ -65,25 +70,81 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
      */
     @Override
     public ModelCallResult chat(ModelCallCommand command) {
-        ModelRoutePlan routePlan;
-        ModelRouteSelection primarySelection;
-        try {
-            routePlan = modelRouter.planFor(command.tenantId());
-            primarySelection = modelRouter.selectFromPlan(routePlan, List.of());
-        } catch (Exception exception) {
-            throw modelUnavailable("未找到可用的主模型", exception);
+        ModelRoutePlan routePlan = planRoute(command);
+        List<Long> failedModelIds = new ArrayList<>();
+        List<LocalModelPreparationException> preparationFailures = new ArrayList<>();
+        int maxAttempts = Math.max(1, routePlan.candidates().size());
+        for (int routeAttempt = 1; routeAttempt <= maxAttempts; routeAttempt++) {
+            ModelRouteSelection selection = selectCandidate(routePlan, failedModelIds, preparationFailures);
+            AiModelConfig candidate = selection.modelConfig();
+            PreparedModelCall prepared;
+            try {
+                prepared = preparePhysicalCall(candidate, command);
+            } catch (LocalModelPreparationException exception) {
+                healthService.recordFailure(candidate, exception.getMessage());
+                log.warn("模型出站前准备失败，改用同一冻结计划内的下一个候选: routeAttempt={}, id={}, provider={}, model={}",
+                        routeAttempt, candidate.getId(), candidate.getProviderName(), candidate.getModelName(), exception);
+                failedModelIds.add(candidate.getId());
+                preparationFailures.add(exception);
+                continue;
+            }
+            return executePhysicalCall(command, selection, prepared, routeAttempt);
         }
-        AiModelConfig primary = primarySelection.modelConfig();
+        throw allCandidatesUnavailable(preparationFailures, null);
+    }
 
+    /**
+     * 冻结租户当前可调度的模型授权计划；未授权或计划不可用时失败关闭。
+     *
+     * @param command 显式模型调用命令
+     * @return 不可变路由计划
+     */
+    private ModelRoutePlan planRoute(ModelCallCommand command) {
         try {
-            PreparedModelCall prepared = preparePhysicalCall(primary, command);
-            return executePhysicalCall(command, primarySelection, prepared, 1);
-        } catch (LocalModelPreparationException exception) {
-            healthService.recordFailure(primary, exception.getMessage());
-            log.warn("主模型本地配置无效，准备选择备用模型: id={}, provider={}, model={}",
-                    primary.getId(), primary.getProviderName(), primary.getModelName(), exception);
-            return executeFallback(command, routePlan, primary, exception);
+            return modelRouter.planFor(command.tenantId());
+        } catch (Exception exception) {
+            throw modelUnavailable("未找到可用的模型授权路由计划", exception);
         }
+    }
+
+    /**
+     * 从同一冻结计划中选择下一个候选，已失败的候选不再参与选择。
+     *
+     * @param routePlan 冻结路由计划
+     * @param failedModelIds 已失败并排除的模型 ID
+     * @param preparationFailures 已发生的出站前准备失败
+     * @return 带路由证据的选择结果
+     */
+    private ModelRouteSelection selectCandidate(ModelRoutePlan routePlan,
+                                                List<Long> failedModelIds,
+                                                List<LocalModelPreparationException> preparationFailures) {
+        try {
+            return modelRouter.selectFromPlan(routePlan, failedModelIds);
+        } catch (BizException exception) {
+            if (preparationFailures.isEmpty()) {
+                throw modelUnavailable("未找到可用的主模型", exception);
+            }
+            throw allCandidatesUnavailable(preparationFailures, exception);
+        }
+    }
+
+    /**
+     * 汇总计划内候选全部不可用的证据：首个失败作为根因，其余准备失败和选择失败挂为抑制异常。
+     *
+     * @param preparationFailures 出站前准备失败
+     * @param selectionFailure 计划内已无健康候选时的选择失败，可为空
+     * @return 对外统一的模型不可用异常
+     */
+    private BizException allCandidatesUnavailable(List<LocalModelPreparationException> preparationFailures,
+                                                  BizException selectionFailure) {
+        LocalModelPreparationException rootCause = preparationFailures.get(0);
+        for (int index = 1; index < preparationFailures.size(); index++) {
+            rootCause.addSuppressed(preparationFailures.get(index));
+        }
+        if (selectionFailure != null) {
+            rootCause.addSuppressed(selectionFailure);
+        }
+        return modelUnavailable("已冻结模型路由计划内的候选均不可用（出站前准备失败）", rootCause);
     }
 
     /**
@@ -134,12 +195,15 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
                     }
             );
         } catch (BillingInvocationUnknownException exception) {
+            // 派发后结果不确定：只记录健康惩罚和熔断证据，禁止在同一逻辑调用内切换模型或自动退款。
             healthService.recordFailure(modelConfig, exception.getMessage());
             throw exception;
         }
         ModelResponse modelResponse = billedResponse.payload();
         String content = modelResponse.content();
         if (content == null || content.isBlank()) {
+            // 空响应已经完成结算，属于派发后失败：不切换模型，只记录健康证据影响后续调用的候选顺序。
+            healthService.recordFailure(modelConfig, "模型返回为空");
             throw new BizException(ErrorCode.MODEL_UNAVAILABLE, "模型返回为空");
         }
 
@@ -161,31 +225,6 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
                 billedResponse.billingVersion(),
                 routeAttempt
         );
-    }
-
-    private ModelCallResult executeFallback(
-            ModelCallCommand command,
-            ModelRoutePlan routePlan,
-            AiModelConfig primary,
-            LocalModelPreparationException primaryFailure
-    ) {
-        try {
-            ModelRouteSelection fallbackSelection = modelRouter.selectFromPlan(routePlan, List.of(primary.getId()));
-            AiModelConfig fallback = fallbackSelection.modelConfig();
-            PreparedModelCall prepared = preparePhysicalCall(fallback, command);
-            return executePhysicalCall(command, fallbackSelection, prepared, 2);
-        } catch (LocalModelPreparationException exception) {
-            log.error("备用模型本地配置无效: primaryId={}, reason={}",
-                    primary.getId(), exception.getMessage(), exception);
-            exception.addSuppressed(primaryFailure);
-            throw modelUnavailable("主备模型本地配置均不可用", exception);
-        } catch (PhysicalBillingException exception) {
-            throw exception;
-        } catch (BizException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw modelUnavailable("备用模型选择失败", exception);
-        }
     }
 
     private PreparedModelCall preparePhysicalCall(AiModelConfig modelConfig, ModelCallCommand command) {
@@ -265,7 +304,11 @@ public class SpringAiModelGatewayImpl implements IModelGateway {
     }
 
     private BizException modelUnavailable(String message, Throwable cause) {
-        log.error("{}: {}", message, cause.getMessage(), cause);
+        if (cause == null) {
+            log.error(message);
+        } else {
+            log.error("{}: {}", message, cause.getMessage(), cause);
+        }
         return new BizException(ErrorCode.MODEL_UNAVAILABLE, "模型调用失败，请稍后重试", cause);
     }
 
