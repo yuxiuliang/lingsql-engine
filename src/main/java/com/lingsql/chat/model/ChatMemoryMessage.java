@@ -44,6 +44,30 @@ public class ChatMemoryMessage {
     private String lastSeenId;
 
     /**
+     * 实体引用所在表。
+     *
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private String lastSeenTable;
+
+    /**
+     * 实体引用的关联字段。
+     *
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private String lastSeenColumn;
+
+    /**
+     * 上一条结果行数。
+     *
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private Integer lastSeenRows;
+
+    /**
      * 构建用户消息。
      *
      * @param content 用户内容
@@ -61,19 +85,24 @@ public class ChatMemoryMessage {
     /**
      * 构建 AI 消息。
      *
-     * @param content    AI 内容
-     * @param sql        SQL 文本
-     * @param lastSeenId 最近一次主键 ID
+     * @param content   AI 内容
+     * @param sql       SQL 文本
+     * @param reference 会话实体引用，可为空
      * @return 消息对象
      * @author 余炘洋
      * @date 2026-01-26
      */
-    public static ChatMemoryMessage assistant(String content, String sql, String lastSeenId) {
+    public static ChatMemoryMessage assistant(String content, String sql, ChatEntityReference reference) {
         ChatMemoryMessage message = new ChatMemoryMessage();
         message.setRole("AI");
         message.setContent(content);
         message.setSql(sql);
-        message.setLastSeenId(lastSeenId);
+        if (reference != null) {
+            message.setLastSeenId(reference.value());
+            message.setLastSeenTable(reference.tableName());
+            message.setLastSeenColumn(reference.columnName());
+            message.setLastSeenRows(reference.rowCount());
+        }
         return message;
     }
 }
