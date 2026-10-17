@@ -83,6 +83,8 @@ flowchart LR
     E --> F["业务分析师独立预留并调用模型"]
     F --> G["结算、审计并完成"]
     B -. "超时/断连/用量缺失或越界/结算不确定" .-> U["UNKNOWN，不退款、不自动切备用"]
+    B -. "本地准备失败且尚未出站" .-> C2["同一冻结计划内的下一个候选"]
+    C2 --> B
     F -. "超时/断连/用量缺失或越界/结算不确定" .-> U
     U --> R["管理端裁决：操作人 + 外部证据摘要"]
     R --> S["确认用量：SETTLED + 差额退款"]
@@ -346,7 +348,7 @@ Redis 只在 MySQL 事务 `afterCommit` 后清理 Access/Refresh 会话，用于
 
 每次物理模型调用已经产生独立 `invocationId` 和资金状态，记录 tenant/workflow/caller/stage/route/provider/model、实际模型配置 ID、调用时模型版本、选择时租户授权路由指纹、Prompt 摘要、最大与实际 Token、冻结价格、预留/实际/退款金额和终态；不保存 Prompt、模型原文、密钥或客户结果。`TenantModelRouting` 先按租户读取显式授权，只保留全局启用且最近真实探测为 `HEALTHY` 的物理模型，再冻结不可变 `ModelRoutePlan`。主模型和备用模型只能从该计划选择，不得在备用阶段重新查询全局池；未授权租户失败关闭。模型网关将计划指纹显式传给计费模块，禁止从 ThreadLocal 或事后当前配置反推。余额预留、`RESERVED -> DISPATCHED`、实际结算和差额退款均以 MySQL 为事实源，Redis 只作为可重建投影。
 
-模型网关是深模块：业务侧只提交显式 `ModelCallCommand` 并接收 `ModelCallResult`；内部适配器才执行一次指定模型的物理调用。主模型与备用模型不能共享资金事件。只有本地配置准备阶段明确尚未出站时才能换备用模型；一旦进入 `DISPATCHED`，异常只能进入 `UNKNOWN`，不能自动退款或继续用同一资金事件重试。
+模型网关是深模块：业务侧只提交显式 `ModelCallCommand` 并接收 `ModelCallResult`；内部适配器才执行一次指定模型的物理调用。主模型与备用模型不能共享资金事件。只有本地配置准备阶段明确尚未出站时才能换备用模型，并可按计划优先级继续回退到后续候选，每次尝试仍独立预留、独立 `invocationId`、独立结算；一旦进入 `DISPATCHED`，异常只能进入 `UNKNOWN`，不能自动退款或继续用同一资金事件重试。模型已结算但返回空内容属于派发后失败：同样不切换模型，只把该失败计入健康状态，让后续逻辑调用通过降权和熔断改走其他候选。
 
 管理操作审计已采用 durable inbox：执行业务前以独立事务写入 `PREPARED` 意图，写入失败则拒绝管理操作；业务完成后确认 `SUCCESS/FAILED` 并按 `eventId` 幂等发布，进程中断留下的意图只会转为 `UNKNOWN` 等待人工核对。投递失败会退避重试并最终进入 `DEAD`，两种异常状态都会触发健康失败，留存任务只删除已投递记录。
 
@@ -428,7 +430,7 @@ Redis 只在 MySQL 事务 `afterCommit` 后清理 Access/Refresh 会话，用于
 
 ### 已实现
 
-- Spring AI 2.0 模型网关、租户显式授权路由和模型熔断。
+- Spring AI 2.0 模型网关、租户显式授权路由、模型熔断和出站前故障切换（同一冻结计划内按优先级回退候选）。
 - 无 API Key 的内网 OpenAI-compatible Java 传输兼容。
 - `AgentExecutionContext` 显式上下文。
 - `IControlledAgentOrchestrator` 固定状态流入口。
