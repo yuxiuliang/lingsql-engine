@@ -39,6 +39,7 @@ VALUES
 ('MENU:ADMIN:SQLLOG', '菜单-SQL日志', 'MENU', 1),
 ('MENU:ADMIN:DIGITAL_EMPLOYEE', '菜单-数字员工', 'MENU', 1),
 ('MENU:ADMIN:PLUGIN', '菜单-插件治理', 'MENU', 1),
+('MENU:ADMIN:APPROVAL', '菜单-人工审批', 'MENU', 1),
 ('API:CHAT:ASK', '接口-问答', 'API', 1),
 ('API:CHAT:HISTORY:READ', '接口-问答历史查询', 'API', 1),
 ('API:CHAT:HISTORY:WRITE', '接口-问答历史维护', 'API', 1),
@@ -77,6 +78,8 @@ VALUES
 ('ADMIN:DIGITAL_EMPLOYEE:READ', '接口-数字员工读取', 'API', 1),
 ('ADMIN:DIGITAL_EMPLOYEE:WRITE', '接口-数字员工维护', 'API', 1),
 ('ADMIN:DIGITAL_EMPLOYEE:RUN', '接口-数字员工执行', 'API', 1),
+('ADMIN:APPROVAL:READ', '接口-人工审批读取', 'API', 1),
+('ADMIN:APPROVAL:WRITE', '接口-人工审批裁决与续跑', 'API', 1),
 ('ADMIN:PERM:READ', '接口-权限读取', 'API', 1),
 ('ADMIN:TENANT:POOL', '接口-租户权限池维护', 'API', 1),
 ('ADMIN:AUDIT:READ', '接口-审计日志读取', 'API', 1),
@@ -137,7 +140,8 @@ VALUES
 (NULL, 'MENU_ADMIN_ROLE', '角色管理', @menu_admin_id, '/role', 'RoleManage', 'role', 180, 1, 1, 'MENU:ADMIN:ROLE'),
 (NULL, 'MENU_ADMIN_PERMISSION', '权限管理', @menu_admin_id, '/permission', 'PermissionManage', 'permission', 190, 1, 1, 'MENU:ADMIN:PERMISSION'),
 (NULL, 'MENU_ADMIN_AUDIT', '审计日志', @menu_admin_id, '/audit', 'AuditLog', 'audit', 200, 1, 1, 'MENU:ADMIN:AUDIT'),
-(NULL, 'MENU_ADMIN_SQLLOG', 'SQL日志', @menu_admin_id, '/sql-log', 'SqlLog', 'sql', 210, 1, 1, 'MENU:ADMIN:SQLLOG')
+(NULL, 'MENU_ADMIN_SQLLOG', 'SQL日志', @menu_admin_id, '/sql-log', 'SqlLog', 'sql', 210, 1, 1, 'MENU:ADMIN:SQLLOG'),
+(NULL, 'MENU_ADMIN_APPROVAL', '人工审批', @menu_admin_id, '/approval', 'AgentApproval', 'approval', 205, 1, 1, 'MENU:ADMIN:APPROVAL')
 ON DUPLICATE KEY UPDATE
     menu_name = VALUES(menu_name),
     parent_id = VALUES(parent_id),

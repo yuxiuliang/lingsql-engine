@@ -11,6 +11,7 @@ package com.lingsql.agent.orchestration;
  * @param question 用户问题
  * @param requestSource 请求来源
  * @param requestId 请求链路标识
+ * @param requireHumanApproval 是否需要人工审批后再执行
  * @author 余炘洋
  * @date 2026-08-15
  */
@@ -20,6 +21,24 @@ public record AgentRunCommand(
         String conversationId,
         String question,
         String requestSource,
-        String requestId
+        String requestId,
+        boolean requireHumanApproval
 ) {
+
+    /**
+     * 兼容构造：默认不要求人工审批。
+     *
+     * @param tenantId 租户标识
+     * @param userId 用户标识
+     * @param conversationId 会话标识
+     * @param question 用户问题
+     * @param requestSource 请求来源
+     * @param requestId 请求链路标识
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    public AgentRunCommand(String tenantId, Long userId, String conversationId, String question,
+                           String requestSource, String requestId) {
+        this(tenantId, userId, conversationId, question, requestSource, requestId, false);
+    }
 }

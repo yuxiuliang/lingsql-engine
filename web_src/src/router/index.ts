@@ -81,6 +81,13 @@ const routes: Array<RouteRecordRaw> = [
                 component: () => import('@/views/digital-employee/index.vue'),
                 meta: {title: '数字员工', icon: 'Cpu'}
             },
+            // 人工审批工作台：裁决通过后可发起续跑，续跑仍完整经过 SQL 安全执行链。
+            {
+                path: '/approval',
+                name: 'AgentApproval',
+                component: () => import('@/views/approval/index.vue'),
+                meta: {title: '人工审批', icon: 'Stamp'}
+            },
             {
                 path: '/billing',
                 name: 'BillingManage',
