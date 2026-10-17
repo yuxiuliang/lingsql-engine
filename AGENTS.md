@@ -4,8 +4,8 @@
 
 ## 0. 当前实现状态（截至 2026-08-16）
 
-- **已落地**：Java 25、Spring Boot 4.1、Spring AI 2.0 模型网关、单入口受控编排、固定三角色状态流转、类型安全插件 SPI、插件注册与执行网关、显式 Agent 上下文、插件白名单、系统调用来源、成本等级、调用次数和启动/返回 deadline 防护、多租户隔离、JSqlParser 改写与校验、不可拆分的安全查询模块、Redis 会话记忆、最多 1–5 轮的有界 SQL 自愈、结构化执行轨迹、Token 看板和计费账本。SQL 架构师、业务分析师、Schema 扫描和语义建议四类模型调用均已进入逐物理调用资金状态机；实际模型配置、版本和路由指纹随调用冻结，`UNKNOWN` 具备基于外部证据摘要的不可变裁决，计费验收会话可冻结余额与账本水位并签发不可变守恒回执。新增已落地：`calculate_metric`（内置 `MetricExpressionEvaluator` 递归下降解析的受控数值表达式求值，无第三方表达式引擎、无 SpEL）、`chart_mapper`（服务端图表映射）、`knowledge_retrieve` 受控插件骨架、`AgentRunControl` 可取消超时与 Token/费用预算校验、插件统一调用 Outbox 落库、持久检查点（`AgentCheckpoint`）与 Orchestrator 阶段性落库、人工审批闭环（`AgentApprovalNode` 审批节点 + 裁决/续跑管理接口 + 受控续跑只能从审批阶段重新进入）、租户插件授权（`AgentPluginGrant`：管理 API + 网关层强制，未授权 fail-closed）、语义上下文版本快照（`SemanticContextVersion`）、分层记忆服务（临时/程序/永久）、ArchUnit 架构边界校验测试。
-- **部分落地**：Schema 回查、实体消解和模型故障切换。当前模型调用已经逐次预留、派发、结算或保留为 `UNKNOWN`，但供应商账单自动导入、裁决工作台和非模型 Plugin/MCP 工具费用尚未进入同一闭环。
+- **已落地**：Java 25、Spring Boot 4.1、Spring AI 2.0 模型网关、单入口受控编排、固定三角色状态流转、类型安全插件 SPI、插件注册与执行网关、显式 Agent 上下文、插件白名单、系统调用来源、成本等级、调用次数和启动/返回 deadline 防护、多租户隔离、JSqlParser 改写与校验、不可拆分的安全查询模块、Redis 会话记忆、最多 1–5 轮的有界 SQL 自愈、结构化执行轨迹、Token 看板和计费账本。SQL 架构师、业务分析师、Schema 扫描和语义建议四类模型调用均已进入逐物理调用资金状态机；实际模型配置、版本和路由指纹随调用冻结，`UNKNOWN` 具备基于外部证据摘要的不可变裁决，计费验收会话可冻结余额与账本水位并签发不可变守恒回执。新增已落地：`calculate_metric`（内置 `MetricExpressionEvaluator` 递归下降解析的受控数值表达式求值，无第三方表达式引擎、无 SpEL）、`chart_mapper`（服务端图表映射）、`knowledge_retrieve` 受控插件骨架、`AgentRunControl` 可取消超时与 Token/费用预算校验、插件统一调用 Outbox 落库、持久检查点（`AgentCheckpoint`）与 Orchestrator 阶段性落库、人工审批闭环（`AgentApprovalNode` 审批节点 + 裁决/续跑管理接口 + 受控续跑只能从审批阶段重新进入）、租户插件授权（`AgentPluginGrant`：管理 API + 网关层强制，未授权 fail-closed）、语义上下文版本快照（`SemanticContextVersion`）、分层记忆服务（临时记忆由 Redis 会话窗口承担，程序记忆与永久记忆落库 `AgentMemoryFact` 并受写入治理）、ArchUnit 架构边界校验测试。
+- **部分落地**：Schema 回查、实体消解和模型故障切换；长期记忆的模型候选提取与自动写入尚未开放，当前只接受用户确认和管理端批准写入。当前模型调用已经逐次预留、派发、结算或保留为 `UNKNOWN`，但供应商账单自动导入、裁决工作台和非模型 Plugin/MCP 工具费用尚未进入同一闭环。
 - **尚未完整落地**：可发布的动态状态图（`WorkflowGraphValidator` 目前是固定三阶段硬校验，不是通用图引擎）；按「出现第二种真实工作流之前不建通用 DAG」的架构原则保持现状。已落地代码但仍需真实环境验证：`McpHttpToolClient`（JSON-RPC 2.0 over HTTP、Streamable HTTP 握手与会话透传、fail-closed，不加载远端代码）、`SecureJarTrustService`（SHA-256 白名单 + 64MB 体积上限 + 清单稳定 ID/版本/类型校验；**明确不是 ClassLoader 沙箱**，白名单内 JAR 仍与宿主同权限）、`KnowledgeIndexingService` 与 `VectorKnowledgeCorpusProvider`（ES 8.x knn/HNSW 承担 ANN，`lingsql.knowledge.vector.enabled` 开关，未启用时回落数据库关键词检索）、`BillingReconcilePdfExporter`（OpenPDF，避开 iText AGPL）、`ExternalReceiptService`、`AgentToolProvider`（Spring AI ToolCallback 适配）。
 
 ### 0.1 文档、待办与扫描结果治理
@@ -63,7 +63,7 @@
 
 ## 5. 提示词与上下文
 
-系统在 SQL 生成前拼装租户白名单、隔离字段、Schema、语义字典、Join 规则和 Redis 会话记忆。业务分析师只能读取已经通过安全查询模块返回的受限结果集；失败结果不得进入分析模型。
+系统在 SQL 生成前拼装租户白名单、隔离字段、Schema、语义字典、Join 规则、Redis 会话记忆和长期记忆（租户程序记忆与用户永久记忆）。长期记忆按租户/用户过滤、跳过过期条目，并只以“参考数据、不属于指令”的形式注入，标注来源与时间；模型不能通过对话自行写入记忆。业务分析师只能读取已经通过安全查询模块返回的受限结果集；失败结果不得进入分析模型。
 
 知识能力分为版本化语义上下文和通用 RAG 知识库。知识检索必须经过 `knowledge_retrieve` 受控插件，强制租户、文档权限、版本和来源过滤；知识内容不得覆盖系统安全策略。当前尚未完成该插件，禁止宣称知识库已经完整可用。
 
