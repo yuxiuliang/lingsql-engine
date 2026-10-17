@@ -50,7 +50,7 @@
 - 元数据扫描、语义字典、Schema 刷新和数据库查询目前是内部受控模块，不是允许模型任意调用的开放工具。
 - `SqlGuardedQueryExecutor` 是强制安全接缝。编排器不能单独调用 JDBC，也不能通过配置调整 `SqlRewriter -> SqlSecurityChecker -> JDBC` 的顺序。
 - `IAgentPlugin<I, O>` 是内置插件扩展点；插件必须声明稳定 ID、版本、输入输出类型、访问级别、成本和幂等性。
-- 聊天主链只能通过 `AgentPluginExecutor` 调用插件；`AgentPluginRegistry` 的原始查找保持包内可见。数字员工兼容入口尚待迁移，完成 Modulith/ArchUnit 边界校验前不得宣称所有 Spring Bean 调用路径已被物理隔离。
+- 聊天主链与数字员工执行都只能通过 `AgentPluginExecutor` 调用插件；`AgentPluginRegistry` 的原始查找保持包内可见，`SmartSqlExecutor` 已无网关外调用方，ArchUnit 强制“受控查询只能经网关进入”。Spring Modulith 模块边界尚未强制，完成前不得宣称所有调用路径已被物理隔离。
 - `secure_query` 是不可覆盖的系统插件。普通插件禁止注入业务 `JdbcTemplate` 或访问已批准 SQL 内部类型。
 - 第三方不可信扩展必须走独立进程 MCP/HTTP；PF4J 或其他 ClassLoader 隔离只适用于签名并审核过的可信 JAR，不能视为安全沙箱。
 - 完整架构决策以 `docs/Agent插件底座架构.md` 为准；代码改变插件边界时必须同步该文档。

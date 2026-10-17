@@ -1,6 +1,12 @@
 package com.lingsql.employee;
 
 import com.lingsql.agent.orchestration.AgentExecutionContext;
+import com.lingsql.agent.orchestration.AgentRunControl;
+import com.lingsql.agent.orchestration.SqlQueryTask;
+import com.lingsql.agent.plugin.AgentPluginException;
+import com.lingsql.agent.plugin.AgentPluginExecutor;
+import com.lingsql.agent.plugin.AgentPluginFailureReason;
+import com.lingsql.billing.invocation.PhysicalBillingException;
 import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.employee.entity.DigitalEmployee;
 import com.lingsql.employee.entity.DigitalEmployeeRunLog;
@@ -29,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -43,7 +50,7 @@ class DigitalEmployeeServiceTest {
     void shouldGenerateEmployeeCodeWhenCreateRequestCodeIsNull() {
         DigitalEmployeeRepository employeeRepository = Mockito.mock(DigitalEmployeeRepository.class);
         DigitalEmployeeRunLogRepository runLogRepository = Mockito.mock(DigitalEmployeeRunLogRepository.class);
-        SmartSqlExecutor smartSqlExecutor = Mockito.mock(SmartSqlExecutor.class);
+        AgentPluginExecutor pluginExecutor = Mockito.mock(AgentPluginExecutor.class);
         ResultRefiner resultRefiner = Mockito.mock(ResultRefiner.class);
         PageParamResolver pageParamResolver = Mockito.mock(PageParamResolver.class);
         OpsAlertService opsAlertService = Mockito.mock(OpsAlertService.class);
@@ -59,7 +66,7 @@ class DigitalEmployeeServiceTest {
         DigitalEmployeeService service = new DigitalEmployeeService(
                 employeeRepository,
                 runLogRepository,
-                smartSqlExecutor,
+                pluginExecutor,
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
@@ -89,7 +96,7 @@ class DigitalEmployeeServiceTest {
     void shouldRunEmployeeSuccessfullyAndUpdateStats() {
         DigitalEmployeeRepository employeeRepository = Mockito.mock(DigitalEmployeeRepository.class);
         DigitalEmployeeRunLogRepository runLogRepository = Mockito.mock(DigitalEmployeeRunLogRepository.class);
-        SmartSqlExecutor smartSqlExecutor = Mockito.mock(SmartSqlExecutor.class);
+        AgentPluginExecutor pluginExecutor = Mockito.mock(AgentPluginExecutor.class);
         ResultRefiner resultRefiner = Mockito.mock(ResultRefiner.class);
         PageParamResolver pageParamResolver = Mockito.mock(PageParamResolver.class);
         OpsAlertService opsAlertService = Mockito.mock(OpsAlertService.class);
@@ -107,7 +114,8 @@ class DigitalEmployeeServiceTest {
         employee.setIsDeleted(0);
 
         when(employeeRepository.findByIdAndIsDeleted(eq(7L), eq(0))).thenReturn(Optional.of(employee));
-        when(smartSqlExecutor.execute(any(AgentExecutionContext.class), eq("统计昨日销售额"), eq("DIGITAL_EMPLOYEE")))
+        when(pluginExecutor.execute(eq(SmartSqlExecutor.PLUGIN_ID), any(AgentExecutionContext.class),
+                any(AgentRunControl.class), any(SqlQueryTask.class), eq(SqlExecutionResult.class)))
                 .thenReturn(SqlExecutionResult.success("SELECT SUM(amount) AS total FROM orders LIMIT 100", List.of(Map.of("total", 1024))));
         when(resultRefiner.refine(any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class)))
                 .thenReturn("昨日销售额为1024");
@@ -121,7 +129,7 @@ class DigitalEmployeeServiceTest {
         DigitalEmployeeService service = new DigitalEmployeeService(
                 employeeRepository,
                 runLogRepository,
-                smartSqlExecutor,
+                pluginExecutor,
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
@@ -136,6 +144,12 @@ class DigitalEmployeeServiceTest {
         assertEquals("统计昨日销售额", result.getQuestion());
         assertNotNull(result.getExecuteTime());
 
+        ArgumentCaptor<SqlQueryTask> taskCaptor = ArgumentCaptor.forClass(SqlQueryTask.class);
+        Mockito.verify(pluginExecutor).execute(eq(SmartSqlExecutor.PLUGIN_ID), any(AgentExecutionContext.class),
+                any(AgentRunControl.class), taskCaptor.capture(), eq(SqlExecutionResult.class));
+        assertEquals("统计昨日销售额", taskCaptor.getValue().question());
+        assertEquals("DIGITAL_EMPLOYEE", taskCaptor.getValue().requestSource());
+
         ArgumentCaptor<DigitalEmployee> employeeCaptor = ArgumentCaptor.forClass(DigitalEmployee.class);
         Mockito.verify(employeeRepository, Mockito.atLeastOnce()).save(employeeCaptor.capture());
         DigitalEmployee updated = employeeCaptor.getValue();
@@ -149,7 +163,7 @@ class DigitalEmployeeServiceTest {
     void shouldMaskFailureMessageWhenRunEmployeeFailed() {
         DigitalEmployeeRepository employeeRepository = Mockito.mock(DigitalEmployeeRepository.class);
         DigitalEmployeeRunLogRepository runLogRepository = Mockito.mock(DigitalEmployeeRunLogRepository.class);
-        SmartSqlExecutor smartSqlExecutor = Mockito.mock(SmartSqlExecutor.class);
+        AgentPluginExecutor pluginExecutor = Mockito.mock(AgentPluginExecutor.class);
         ResultRefiner resultRefiner = Mockito.mock(ResultRefiner.class);
         PageParamResolver pageParamResolver = Mockito.mock(PageParamResolver.class);
         OpsAlertService opsAlertService = Mockito.mock(OpsAlertService.class);
@@ -167,7 +181,8 @@ class DigitalEmployeeServiceTest {
         employee.setIsDeleted(0);
 
         when(employeeRepository.findByIdAndIsDeleted(eq(8L), eq(0))).thenReturn(Optional.of(employee));
-        when(smartSqlExecutor.execute(any(AgentExecutionContext.class), eq("统计近7天利润"), eq("DIGITAL_EMPLOYEE")))
+        when(pluginExecutor.execute(eq(SmartSqlExecutor.PLUGIN_ID), any(AgentExecutionContext.class),
+                any(AgentRunControl.class), any(SqlQueryTask.class), eq(SqlExecutionResult.class)))
                 .thenThrow(new RuntimeException("JDBC timeout"));
         when(resultRefiner.refine(any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class)))
                 .thenReturn("执行失败，请稍后重试");
@@ -181,7 +196,7 @@ class DigitalEmployeeServiceTest {
         DigitalEmployeeService service = new DigitalEmployeeService(
                 employeeRepository,
                 runLogRepository,
-                smartSqlExecutor,
+                pluginExecutor,
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
@@ -206,7 +221,7 @@ class DigitalEmployeeServiceTest {
     void shouldSendAlertWhenScheduledRunHitConfiguredRule() {
         DigitalEmployeeRepository employeeRepository = Mockito.mock(DigitalEmployeeRepository.class);
         DigitalEmployeeRunLogRepository runLogRepository = Mockito.mock(DigitalEmployeeRunLogRepository.class);
-        SmartSqlExecutor smartSqlExecutor = Mockito.mock(SmartSqlExecutor.class);
+        AgentPluginExecutor pluginExecutor = Mockito.mock(AgentPluginExecutor.class);
         ResultRefiner resultRefiner = Mockito.mock(ResultRefiner.class);
         PageParamResolver pageParamResolver = Mockito.mock(PageParamResolver.class);
         OpsAlertService opsAlertService = Mockito.mock(OpsAlertService.class);
@@ -230,7 +245,8 @@ class DigitalEmployeeServiceTest {
         employee.setIsDeleted(0);
 
         when(employeeRepository.findByIdAndIsDeleted(eq(9L), eq(0))).thenReturn(Optional.of(employee));
-        when(smartSqlExecutor.execute(any(AgentExecutionContext.class), eq("筛选异常订单"), eq("DIGITAL_EMPLOYEE")))
+        when(pluginExecutor.execute(eq(SmartSqlExecutor.PLUGIN_ID), any(AgentExecutionContext.class),
+                any(AgentRunControl.class), any(SqlQueryTask.class), eq(SqlExecutionResult.class)))
                 .thenReturn(SqlExecutionResult.success("SELECT * FROM t_order WHERE abnormal_flag = 1 LIMIT 100", List.of(Map.of("order_id", 1))));
         when(resultRefiner.refine(any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class)))
                 .thenReturn("发现 1 条异常订单");
@@ -248,7 +264,7 @@ class DigitalEmployeeServiceTest {
         DigitalEmployeeService service = new DigitalEmployeeService(
                 employeeRepository,
                 runLogRepository,
-                smartSqlExecutor,
+                pluginExecutor,
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
@@ -270,7 +286,7 @@ class DigitalEmployeeServiceTest {
     void shouldSendPushWhenScheduledRunSucceededAndPushEnabled() {
         DigitalEmployeeRepository employeeRepository = Mockito.mock(DigitalEmployeeRepository.class);
         DigitalEmployeeRunLogRepository runLogRepository = Mockito.mock(DigitalEmployeeRunLogRepository.class);
-        SmartSqlExecutor smartSqlExecutor = Mockito.mock(SmartSqlExecutor.class);
+        AgentPluginExecutor pluginExecutor = Mockito.mock(AgentPluginExecutor.class);
         ResultRefiner resultRefiner = Mockito.mock(ResultRefiner.class);
         PageParamResolver pageParamResolver = Mockito.mock(PageParamResolver.class);
         OpsAlertService opsAlertService = Mockito.mock(OpsAlertService.class);
@@ -296,7 +312,8 @@ class DigitalEmployeeServiceTest {
         employee.setIsDeleted(0);
 
         when(employeeRepository.findByIdAndIsDeleted(eq(10L), eq(0))).thenReturn(Optional.of(employee));
-        when(smartSqlExecutor.execute(any(AgentExecutionContext.class), eq("统计昨日销售额"), eq("DIGITAL_EMPLOYEE")))
+        when(pluginExecutor.execute(eq(SmartSqlExecutor.PLUGIN_ID), any(AgentExecutionContext.class),
+                any(AgentRunControl.class), any(SqlQueryTask.class), eq(SqlExecutionResult.class)))
                 .thenReturn(SqlExecutionResult.success(
                         "SELECT region, amount FROM t_order LIMIT 100",
                         List.of(Map.of("region", "华东", "amount", 1200), Map.of("region", "华南", "amount", 980))
@@ -318,7 +335,7 @@ class DigitalEmployeeServiceTest {
         DigitalEmployeeService service = new DigitalEmployeeService(
                 employeeRepository,
                 runLogRepository,
-                smartSqlExecutor,
+                pluginExecutor,
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
@@ -353,7 +370,7 @@ class DigitalEmployeeServiceTest {
     void shouldFallbackToTenantDefaultChannelsWhenEmployeeChannelsEmpty() {
         DigitalEmployeeRepository employeeRepository = Mockito.mock(DigitalEmployeeRepository.class);
         DigitalEmployeeRunLogRepository runLogRepository = Mockito.mock(DigitalEmployeeRunLogRepository.class);
-        SmartSqlExecutor smartSqlExecutor = Mockito.mock(SmartSqlExecutor.class);
+        AgentPluginExecutor pluginExecutor = Mockito.mock(AgentPluginExecutor.class);
         ResultRefiner resultRefiner = Mockito.mock(ResultRefiner.class);
         PageParamResolver pageParamResolver = Mockito.mock(PageParamResolver.class);
         OpsAlertService opsAlertService = Mockito.mock(OpsAlertService.class);
@@ -380,7 +397,8 @@ class DigitalEmployeeServiceTest {
 
         when(employeeRepository.findByIdAndIsDeleted(eq(11L), eq(0))).thenReturn(Optional.of(employee));
         when(tenantRepository.findByTenantIdAndIsDeleted(eq("TENANT_E"), eq(0))).thenReturn(Optional.of(tenant));
-        when(smartSqlExecutor.execute(any(AgentExecutionContext.class), eq("统计昨日库存"), eq("DIGITAL_EMPLOYEE")))
+        when(pluginExecutor.execute(eq(SmartSqlExecutor.PLUGIN_ID), any(AgentExecutionContext.class),
+                any(AgentRunControl.class), any(SqlQueryTask.class), eq(SqlExecutionResult.class)))
                 .thenReturn(SqlExecutionResult.success("SELECT sku, qty FROM t_stock LIMIT 100", List.of(Map.of("sku", "SKU-1", "qty", 18))));
         when(resultRefiner.refine(any(AgentExecutionContext.class), anyString(), any(SqlExecutionResult.class)))
                 .thenReturn("库存结果已生成");
@@ -398,7 +416,7 @@ class DigitalEmployeeServiceTest {
         DigitalEmployeeService service = new DigitalEmployeeService(
                 employeeRepository,
                 runLogRepository,
-                smartSqlExecutor,
+                pluginExecutor,
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
@@ -410,5 +428,46 @@ class DigitalEmployeeServiceTest {
         ArgumentCaptor<List<String>> channelsCaptor = ArgumentCaptor.forClass(List.class);
         Mockito.verify(opsAlertService).sendAlertToChannelsWithResult(anyString(), anyString(), anyMap(), channelsCaptor.capture());
         assertEquals(List.of("webhook"), channelsCaptor.getValue());
+    }
+
+    @Test
+    void shouldPropagatePhysicalBillingFailureFromPluginGateway() {
+        DigitalEmployeeRepository employeeRepository = Mockito.mock(DigitalEmployeeRepository.class);
+        DigitalEmployeeRunLogRepository runLogRepository = Mockito.mock(DigitalEmployeeRunLogRepository.class);
+        AgentPluginExecutor pluginExecutor = Mockito.mock(AgentPluginExecutor.class);
+        ResultRefiner resultRefiner = Mockito.mock(ResultRefiner.class);
+        PageParamResolver pageParamResolver = Mockito.mock(PageParamResolver.class);
+        OpsAlertService opsAlertService = Mockito.mock(OpsAlertService.class);
+        TenantRepository tenantRepository = Mockito.mock(TenantRepository.class);
+
+        DigitalEmployee employee = new DigitalEmployee();
+        employee.setId(12L);
+        employee.setTenantId("TENANT_F");
+        employee.setEmployeeCode("EMP006");
+        employee.setEmployeeName("对账助手");
+        employee.setDefaultQuestion("统计昨日销售额");
+        employee.setStatus(1);
+        employee.setIsDeleted(0);
+
+        when(employeeRepository.findByIdAndIsDeleted(eq(12L), eq(0))).thenReturn(Optional.of(employee));
+        PhysicalBillingException billingException = new PhysicalBillingException("计费结果不确定");
+        when(pluginExecutor.execute(eq(SmartSqlExecutor.PLUGIN_ID), any(AgentExecutionContext.class),
+                any(AgentRunControl.class), any(SqlQueryTask.class), eq(SqlExecutionResult.class)))
+                .thenThrow(new AgentPluginException(AgentPluginFailureReason.PLUGIN_FAILED, "Agent 插件执行失败", billingException));
+
+        DigitalEmployeeService service = new DigitalEmployeeService(
+                employeeRepository,
+                runLogRepository,
+                pluginExecutor,
+                resultRefiner,
+                pageParamResolver,
+                opsAlertService,
+                tenantRepository
+        );
+
+        PhysicalBillingException thrown = assertThrows(PhysicalBillingException.class,
+                () -> service.run(12L, new DigitalEmployeeRunRequest()));
+        assertEquals("计费结果不确定", thrown.getMessage());
+        Mockito.verifyNoInteractions(runLogRepository);
     }
 }

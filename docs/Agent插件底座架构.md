@@ -157,7 +157,7 @@ SQL 架构师、合规审计员和业务分析师是受控角色，不是三个�
 
 内置插件实现 `IAgentPlugin<I, O>`，必须声明唯一 ID、语义版本、输入/输出 Java 类型、访问级别、成本等级、幂等性和中文能力说明。
 
-注册中心在应用启动时校验元数据和重复 ID，失败则阻止启动；原始插件查找仅对网关包内可见。聊天主链必须通过网关。数字员工仍使用 `secure_query` 的兼容入口，Spring Bean 依赖边界也尚未由 Modulith/ArchUnit 强制，这两项必须迁移后才能宣称“所有路径不可绕过”。
+注册中心在应用启动时校验元数据和重复 ID，失败则阻止启动；原始插件查找仅对网关包内可见。聊天主链与数字员工执行都必须通过网关，ArchUnit 已强制禁止网关外直连 `secure_query`。Spring Modulith 模块边界尚未强制，完成前不能宣称“所有路径不可绕过”。
 
 ### 5.2 三类扩展
 
@@ -451,7 +451,7 @@ Redis 只在 MySQL 事务 `afterCommit` 后清理 Access/Refresh 会话，用于
 6. 实现 Spring AI `ToolCallback` 适配器、按需工具发现和 MCP 远程插件网关。
 7. 引入 Spring Modulith 或等价架构检查，阻止跨模块访问内部类型和 JDBC 绕过。
 8. 建立 Text-to-SQL 评测集、回归基线和多候选选择策略。
-9. 迁移数字员工兼容入口，并以 Spring Modulith/ArchUnit 强制插件网关与 JDBC 模块边界。
+9. 以 Spring Modulith 强制插件网关与 JDBC 模块边界（数字员工迁移到执行网关与 ArchUnit 调用边界已落地）。
 10. 将残留会话读取从 `TenantContext` 迁移为显式上下文，并为结构化并发和持久恢复建立上下文快照。
 
 ### 目标完成定义

@@ -1,7 +1,13 @@
 package com.lingsql.employee;
 
 import com.lingsql.billing.invocation.PhysicalBillingException;
+import com.lingsql.agent.orchestration.AgentCallerType;
 import com.lingsql.agent.orchestration.AgentExecutionContext;
+import com.lingsql.agent.orchestration.AgentRunControl;
+import com.lingsql.agent.orchestration.AgentRunPolicy;
+import com.lingsql.agent.orchestration.SqlQueryTask;
+import com.lingsql.agent.plugin.AgentPluginException;
+import com.lingsql.agent.plugin.AgentPluginExecutor;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.common.pagination.PageParam;
@@ -86,10 +92,21 @@ public class DigitalEmployeeService {
     private static final int MAX_WINDOW_HOURS = 24 * 7;
     private static final int MIN_WINDOW_HOURS = 1;
     private static final int TOP_EMPLOYEE_LIMIT = 5;
+    /**
+     * 数字员工单次运行的固定策略：只允许系统安全查询插件，一次调用，具备有界自愈与截止时间。
+     */
+    private static final AgentRunPolicy RUN_POLICY = new AgentRunPolicy(
+            Set.of(SmartSqlExecutor.PLUGIN_ID),
+            1,
+            AgentCallerType.SYSTEM,
+            3,
+            3,
+            120_000L
+    );
 
     private final DigitalEmployeeRepository employeeRepository;
     private final DigitalEmployeeRunLogRepository runLogRepository;
-    private final SmartSqlExecutor smartSqlExecutor;
+    private final AgentPluginExecutor pluginExecutor;
     private final ResultRefiner resultRefiner;
     private final PageParamResolver pageParamResolver;
     private final OpsAlertService opsAlertService;
@@ -460,6 +477,28 @@ public class DigitalEmployeeService {
         return overview;
     }
 
+    /**
+     * 从插件异常原因链中提取物理计费异常。
+     *
+     * <p>插件网关会把插件内部抛出的运行时异常统一包装为 {@link AgentPluginException}，
+     * 而计费状态机的不确定结果不能被降级为普通执行失败，必须继续向上传递。</p>
+     *
+     * @param throwable 插件异常
+     * @return 物理计费异常；不存在时返回 null
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    private PhysicalBillingException findPhysicalBillingException(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof PhysicalBillingException billingException) {
+                return billingException;
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
     private DigitalEmployeeRunResult runInternal(DigitalEmployee employee,
                                                  DigitalEmployeeRunRequest request,
                                                  LocalDateTime expectedScheduleTime) {
@@ -479,11 +518,19 @@ public class DigitalEmployeeService {
         long startMs = System.currentTimeMillis();
         SqlExecutionResult executionResult;
         try {
-            executionResult = smartSqlExecutor.execute(
+            executionResult = pluginExecutor.execute(
+                    SmartSqlExecutor.PLUGIN_ID,
                     executionContext,
-                    question,
-                    REQUEST_SOURCE_DIGITAL_EMPLOYEE
+                    new AgentRunControl(RUN_POLICY),
+                    new SqlQueryTask(question, REQUEST_SOURCE_DIGITAL_EMPLOYEE),
+                    SqlExecutionResult.class
             );
+        } catch (AgentPluginException ex) {
+            PhysicalBillingException billingException = findPhysicalBillingException(ex);
+            if (billingException != null) {
+                throw billingException;
+            }
+            executionResult = SqlExecutionResult.failure(null, EXECUTION_ERROR_MESSAGE);
         } catch (PhysicalBillingException ex) {
             throw ex;
         } catch (Exception ex) {
