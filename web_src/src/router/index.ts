@@ -148,6 +148,12 @@ const routes: Array<RouteRecordRaw> = [
                 meta: {title: '菜单治理', icon: 'Permission'}
             },
             {
+                path: '/plugin',
+                name: 'PluginManage',
+                component: () => import('@/views/plugin/index.vue'),
+                meta: {title: '插件治理', icon: 'Cpu'}
+            },
+            {
                 path: '/audit',
                 name: 'AuditLog',
                 component: () => import('@/views/audit/index.vue'),

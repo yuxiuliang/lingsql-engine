@@ -939,6 +939,8 @@ Content-Type: application/json
 
 写入必须显式携带 `granted`；插件不存在返回 `NOT_FOUND`，对系统插件授权或缺少 `granted` 返回 `INVALID_PARAM`。授权变更进入管理审计（动作 `TENANT_PLUGIN_GRANT_UPDATE`，资源 `TENANT_PLUGIN_GRANT`）。
 
+管理端 SPA 提供 `/plugin` 插件治理页面（菜单权限 `MENU:ADMIN:PLUGIN`）：上半部分是插件目录，下半部分按租户切换查看授权状态并提供授权开关；系统插件行固定显示“系统插件固定调用”，不接受开关操作。
+
 ---
 
 ## 5. 错误码字典
