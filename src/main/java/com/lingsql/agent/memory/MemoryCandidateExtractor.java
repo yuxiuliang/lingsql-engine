@@ -1,7 +1,7 @@
 package com.lingsql.agent.memory;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.lingsql.agent.orchestration.AgentExecutionContext;
 import com.lingsql.billing.invocation.PhysicalBillingException;
 import com.lingsql.common.exception.BizException;
@@ -161,11 +161,11 @@ public class MemoryCandidateExtractor {
             if (deduped.size() >= limit) {
                 break;
             }
-            String factText = normalize(node.path("fact").asText(""));
+            String factText = normalize(node.path("fact").asString(""));
             if (!StringUtils.hasText(factText)) {
                 continue;
             }
-            int confidence = node.path("confidence").isInt() ? node.path("confidence").asInt() : DEFAULT_CONFIDENCE;
+            int confidence = node.path("confidence").asInt(DEFAULT_CONFIDENCE);
             deduped.putIfAbsent(factText, new ExtractedCandidate(factText, Math.max(0, Math.min(100, confidence))));
         }
         return List.copyOf(deduped.values());

@@ -1,6 +1,5 @@
 package com.lingsql.agent.memory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lingsql.agent.orchestration.AgentExecutionContext;
 import com.lingsql.billing.invocation.PhysicalBillingException;
 import com.lingsql.common.exception.BizException;
@@ -12,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
