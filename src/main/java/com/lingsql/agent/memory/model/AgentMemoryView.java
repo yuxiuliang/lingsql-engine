@@ -1,6 +1,7 @@
 package com.lingsql.agent.memory.model;
 
 import com.lingsql.agent.entity.AgentMemoryFact;
+import com.lingsql.agent.memory.MemorySensitivity;
 import com.lingsql.agent.memory.MemorySourceType;
 import com.lingsql.agent.memory.MemoryStatus;
 import com.lingsql.agent.memory.MemoryTier;
@@ -88,6 +89,41 @@ public class AgentMemoryView {
     private String createdBy;
 
     /**
+     * 候选来源标识（会话或请求标识）。
+     */
+    private String sourceRef;
+
+    /**
+     * 敏感分类编码。
+     */
+    private String sensitivity;
+
+    /**
+     * 敏感分类中文名。
+     */
+    private String sensitivityLabel;
+
+    /**
+     * 候选复核人标识。
+     */
+    private String reviewedBy;
+
+    /**
+     * 候选复核时间。
+     */
+    private LocalDateTime reviewedAt;
+
+    /**
+     * 采纳后生成的生效记忆主键。
+     */
+    private Long approvedMemoryId;
+
+    /**
+     * 候选拒绝原因。
+     */
+    private String rejectReason;
+
+    /**
      * 保留期到期时间。
      */
     private LocalDateTime expiresAt;
@@ -129,6 +165,14 @@ public class AgentMemoryView {
         view.setVersion(fact.getVersion());
         view.setSupersedesId(fact.getSupersedesId());
         view.setCreatedBy(fact.getCreatedBy());
+        view.setSourceRef(fact.getSourceRef());
+        view.setSensitivity(fact.getSensitivity());
+        MemorySensitivity sensitivity = MemorySensitivity.of(fact.getSensitivity());
+        view.setSensitivityLabel(sensitivity == null ? fact.getSensitivity() : sensitivity.label());
+        view.setReviewedBy(fact.getReviewedBy());
+        view.setReviewedAt(fact.getReviewedAt());
+        view.setApprovedMemoryId(fact.getApprovedMemoryId());
+        view.setRejectReason(fact.getRejectReason());
         view.setExpiresAt(fact.getExpiresAt());
         view.setCreatedAt(fact.getCreatedAt());
         view.setUpdatedAt(fact.getUpdatedAt());

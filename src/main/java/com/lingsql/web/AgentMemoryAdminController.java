@@ -1,11 +1,14 @@
 package com.lingsql.web;
 
 import com.lingsql.agent.memory.AgentMemoryService;
+import com.lingsql.agent.memory.MemoryCandidateService;
 import com.lingsql.agent.memory.MemorySourceType;
 import com.lingsql.agent.memory.MemoryStatus;
 import com.lingsql.agent.memory.MemoryTier;
 import com.lingsql.agent.memory.model.AgentMemoryAdminSaveRequest;
 import com.lingsql.agent.memory.model.AgentMemoryCorrectRequest;
+import com.lingsql.agent.memory.model.AgentMemoryExportView;
+import com.lingsql.agent.memory.model.AgentMemoryRejectRequest;
 import com.lingsql.agent.memory.model.AgentMemoryView;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.exception.BizException;
@@ -33,7 +36,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 长期记忆治理接口：租户范围内的记忆查询、写入、纠正与撤销，全部进入审计。
+ * 长期记忆治理接口：租户范围内的记忆查询、写入、纠正、撤销、候选审核与彻底清除，全部进入审计。
  *
  * @author 余炘洋
  * @date 2026-10-18
@@ -44,6 +47,8 @@ import java.util.stream.Collectors;
 public class AgentMemoryAdminController {
 
     private final AgentMemoryService agentMemoryService;
+
+    private final MemoryCandidateService memoryCandidateService;
 
     private final AuditOperationExecutor auditOperationExecutor;
 
@@ -165,6 +170,135 @@ public class AgentMemoryAdminController {
                 http,
                 () -> AgentMemoryView.from(agentMemoryService.revokeByAdmin(secureTenantId, id))
         );
+    }
+
+    /**
+     * 查询租户内待确认的记忆候选。
+     *
+     * @param tenantId 租户ID，必须显式指定
+     * @param userId   用户ID，可为空
+     * @return 候选列表
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    @GetMapping("/candidates")
+    @PreAuthorize("hasAuthority('ADMIN:MEMORY:READ')")
+    public ApiResponse<List<AgentMemoryView>> listCandidates(
+            @RequestParam String tenantId,
+            @RequestParam(required = false) Long userId
+    ) {
+        String secureTenantId = SecureTenantResolver.resolveSecureTenantId(tenantId);
+        List<AgentMemoryView> views = memoryCandidateService
+                .listCandidatesForAdmin(secureTenantId, userId)
+                .stream()
+                .map(AgentMemoryView::from)
+                .collect(Collectors.toList());
+        return ApiResponse.success(views);
+    }
+
+    /**
+     * 批准租户内记忆候选：生成生效记忆，候选记录标记为已采纳。
+     *
+     * @param id       候选主键
+     * @param tenantId 租户ID，必须显式指定
+     * @param http     请求上下文
+     * @return 生成的生效记忆
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    @PostMapping("/candidates/{id}/approve")
+    @PreAuthorize("hasAuthority('ADMIN:MEMORY:WRITE')")
+    public ApiResponse<AgentMemoryView> approveCandidate(@PathVariable Long id,
+                                                        @RequestParam String tenantId,
+                                                        HttpServletRequest http) {
+        String secureTenantId = SecureTenantResolver.resolveSecureTenantId(tenantId);
+        String operator = currentOperator();
+        return auditOperationExecutor.execute(
+                "AGENT_MEMORY_CANDIDATE_APPROVE",
+                "AGENT_MEMORY",
+                "candidateId=" + id,
+                http,
+                () -> AgentMemoryView.from(
+                        memoryCandidateService.approveByAdmin(secureTenantId, id, operator))
+        );
+    }
+
+    /**
+     * 拒绝租户内记忆候选：只更新候选状态，不生成任何生效记忆。
+     *
+     * @param id       候选主键
+     * @param tenantId 租户ID，必须显式指定
+     * @param request  请求体，拒绝原因可为空
+     * @param http     请求上下文
+     * @return 候选记录
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    @PostMapping("/candidates/{id}/reject")
+    @PreAuthorize("hasAuthority('ADMIN:MEMORY:WRITE')")
+    public ApiResponse<AgentMemoryView> rejectCandidate(@PathVariable Long id,
+                                                       @RequestParam String tenantId,
+                                                       @Valid @RequestBody(required = false)
+                                                       AgentMemoryRejectRequest request,
+                                                       HttpServletRequest http) {
+        String secureTenantId = SecureTenantResolver.resolveSecureTenantId(tenantId);
+        String operator = currentOperator();
+        String reason = request == null ? null : request.getReason();
+        return auditOperationExecutor.execute(
+                "AGENT_MEMORY_CANDIDATE_REJECT",
+                "AGENT_MEMORY",
+                "candidateId=" + id,
+                http,
+                () -> AgentMemoryView.from(
+                        memoryCandidateService.rejectByAdmin(secureTenantId, id, reason, operator))
+        );
+    }
+
+    /**
+     * 彻底清除租户内记忆：删除记录本身，只留审计摘要，不记录正文。
+     *
+     * @param id       记忆主键
+     * @param tenantId 租户ID，必须显式指定
+     * @param http     请求上下文
+     * @return 空响应
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    @DeleteMapping("/{id}/purge")
+    @PreAuthorize("hasAuthority('ADMIN:MEMORY:WRITE')")
+    public ApiResponse<Void> purge(@PathVariable Long id,
+                                  @RequestParam String tenantId,
+                                  HttpServletRequest http) {
+        String secureTenantId = SecureTenantResolver.resolveSecureTenantId(tenantId);
+        return auditOperationExecutor.execute(
+                "AGENT_MEMORY_PURGE",
+                "AGENT_MEMORY",
+                "id=" + id,
+                http,
+                () -> {
+                    agentMemoryService.purgeByAdmin(secureTenantId, id);
+                    return null;
+                }
+        );
+    }
+
+    /**
+     * 导出租户内记忆与候选：内容与来源、时间、保留期一致，用于隐私自查与留档。
+     *
+     * @param tenantId 租户ID，必须显式指定
+     * @param userId   用户ID，可为空
+     * @return 导出视图
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    @GetMapping("/export")
+    @PreAuthorize("hasAuthority('ADMIN:MEMORY:READ')")
+    public ApiResponse<AgentMemoryExportView> export(
+            @RequestParam String tenantId,
+            @RequestParam(required = false) Long userId
+    ) {
+        String secureTenantId = SecureTenantResolver.resolveSecureTenantId(tenantId);
+        return ApiResponse.success(agentMemoryService.exportForAdmin(secureTenantId, userId));
     }
 
     /**
