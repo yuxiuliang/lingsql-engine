@@ -57,6 +57,7 @@ class AgentGovernanceFeatureTest {
     void dbKnowledgeCorpusReturnsTenantScopedHits() {
         KnowledgeDocumentRepository repository = mock(KnowledgeDocumentRepository.class);
         KnowledgeDocument doc = new KnowledgeDocument();
+        doc.setId(7L);
         doc.setTitle("销售额口径");
         doc.setContent("按自然月统计");
         doc.setVersion("1.0");
@@ -65,7 +66,12 @@ class AgentGovernanceFeatureTest {
         var result = provider.retrieve("t1", "口径", 5);
         assertTrue(result.success());
         assertEquals(1, result.hits().size());
-        assertTrue(result.hits().get(0).contains("销售额口径"));
+        // 说明：注入模型的每条知识都必须可追溯到具体文档版本。
+        assertEquals("7", result.hits().get(0).documentId());
+        assertEquals("销售额口径", result.hits().get(0).title());
+        assertEquals("1.0", result.hits().get(0).version());
+        assertEquals("DB_CORPUS", result.hits().get(0).source());
+        assertTrue(result.hits().get(0).snippet().contains("按自然月统计"));
     }
 
     @Test

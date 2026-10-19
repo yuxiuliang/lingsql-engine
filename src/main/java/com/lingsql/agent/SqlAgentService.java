@@ -1,5 +1,6 @@
 package com.lingsql.agent;
 
+import com.lingsql.agent.knowledge.KnowledgeContextService;
 import com.lingsql.agent.memory.AgentMemoryService;
 import com.lingsql.agent.prompt.SqlPromptTemplate;
 import com.lingsql.agent.orchestration.AgentExecutionContext;
@@ -51,6 +52,7 @@ public class SqlAgentService {
     private final LingSqlProperties properties;
     private final ChatMemoryService chatMemoryService;
     private final AgentMemoryService agentMemoryService;
+    private final KnowledgeContextService knowledgeContextService;
 
     /**
      * 将自然语言转换为 SQL。
@@ -155,8 +157,10 @@ public class SqlAgentService {
         if (!StringUtils.hasText(memoryPrompt)) {
             memoryPrompt = "无";
         }
+        // 说明：知识检索失败或未授权时按「无」降级，知识只作参考数据，不参与安全与权限判定。
+        String knowledgePrompt = knowledgeContextService.buildContext(context, userInput);
         String systemPrompt = sqlPromptTemplate.buildSystemPrompt(
-                schemaInfo, lexiconInfo, joinInfo, ruleInfo, historyPrompt, memoryPrompt);
+                schemaInfo, lexiconInfo, joinInfo, ruleInfo, historyPrompt, memoryPrompt, knowledgePrompt);
         String finalUserInput = buildUserPrompt(userInput, reason);
 
         log.info("AI 正在生成租户 [{}] 的 SQL...", tenantId);

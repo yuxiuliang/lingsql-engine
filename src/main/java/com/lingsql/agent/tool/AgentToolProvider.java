@@ -1,5 +1,6 @@
 package com.lingsql.agent.tool;
 
+import com.lingsql.agent.knowledge.KnowledgeReferenceRenderer;
 import com.lingsql.agent.orchestration.AgentCallerType;
 import com.lingsql.agent.orchestration.AgentExecutionContext;
 import com.lingsql.agent.orchestration.AgentRunControl;
@@ -45,7 +46,7 @@ public class AgentToolProvider {
         return String.valueOf(result.value());
     }
 
-    @Tool(description = "受控知识检索（租户/权限/版本过滤）")
+    @Tool(description = "受控知识检索（租户/权限/版本过滤，返回带来源与版本的参考数据）")
     public String knowledgeRetrieve(String tenantId, String query, int maxResults) {
         KnowledgeRetrievePlugin.Result result = pluginExecutor.execute(
                 KnowledgeRetrievePlugin.PLUGIN_ID,
@@ -54,7 +55,13 @@ public class AgentToolProvider {
                 new KnowledgeRetrievePlugin.Request(query, maxResults),
                 KnowledgeRetrievePlugin.Result.class
         );
-        return result.status();
+        if (result == null) {
+            return KnowledgeReferenceRenderer.NO_KNOWLEDGE;
+        }
+        // 说明：有命中时返回带溯源标注的参考数据；无命中时只回状态码，便于调用方区分“无内容”与“无权限/未配置”。
+        return KnowledgeReferenceRenderer.hasKnowledge(result)
+                ? KnowledgeReferenceRenderer.render(result)
+                : result.status();
     }
 
     private AgentExecutionContext toolContext(String tenantId, String pluginId) {
