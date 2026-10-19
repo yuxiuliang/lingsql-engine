@@ -123,6 +123,11 @@ jobs:
           PILOT_REPORT_FILE: ${{ github.workspace }}/reports/deterministic_full_stack_acceptance.md
         run: ./scripts/ops/bootstrap_demo_pilot.sh
 
+      - name: Verify Controlled Knowledge Retrieval Injection
+        env:
+          KNOWLEDGE_RETRIEVAL_REPORT_FILE: ${{ github.workspace }}/reports/deterministic_full_stack_knowledge_retrieval.md
+        run: bash scripts/ops/integration/knowledge_retrieval_acceptance.sh
+
       - name: Verify UNKNOWN Billing Resolution And Receipt
         env:
           UNKNOWN_BILLING_REPORT_FILE: ${{ github.workspace }}/reports/deterministic_full_stack_unknown_billing.md
@@ -132,8 +137,10 @@ jobs:
         run: |
           test -s reports/deterministic_full_stack_acceptance.md
           test -s reports/deterministic_full_stack_unknown_billing.md
+          test -s reports/deterministic_full_stack_knowledge_retrieval.md
           grep -q '验收结论: PASS' reports/deterministic_full_stack_acceptance.md
           grep -q '验收结论: PASS' reports/deterministic_full_stack_unknown_billing.md
+          grep -q '验收结论: PASS' reports/deterministic_full_stack_knowledge_retrieval.md
           {
             printf '%s\n' \
               '# 确定性全栈集成证据（非商业验收）' \

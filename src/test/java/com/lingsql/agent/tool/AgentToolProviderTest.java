@@ -14,6 +14,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -31,7 +32,7 @@ class AgentToolProviderTest {
     private final AgentPluginExecutor pluginExecutor = new AgentPluginExecutor(
             new AgentPluginRegistry(List.of(
                     new CalculateMetricPlugin(),
-                    new KnowledgeRetrievePlugin(Optional.empty()))),
+                    new KnowledgeRetrievePlugin(List.of()))),
             mock(PluginInvocationOutboxService.class),
             grantService);
 
@@ -67,5 +68,26 @@ class AgentToolProviderTest {
     @Test
     void knowledgeRetrieveRejectsMissingTenant() {
         assertThrows(IllegalArgumentException.class, () -> provider.knowledgeRetrieve(null, "口径", 3));
+    }
+
+    @Test
+    void knowledgeRetrieveReturnsTraceableContentWithTenant() {
+        when(grantService.isGranted(anyString(), anyString())).thenReturn(true);
+        KnowledgeRetrievePlugin.KnowledgeCorpusProvider corpusProvider = (tenantId, query, maxResults) ->
+                new KnowledgeRetrievePlugin.Result(true, "OK", List.of(
+                        new KnowledgeRetrievePlugin.KnowledgeHit(
+                                "7", "销售额口径", "1.0", "DB_CORPUS", "按自然月统计")));
+        AgentPluginExecutor executor = new AgentPluginExecutor(
+                new AgentPluginRegistry(List.of(new KnowledgeRetrievePlugin(List.of(corpusProvider)))),
+                mock(PluginInvocationOutboxService.class),
+                grantService);
+        AgentToolProvider toolProvider = new AgentToolProvider(executor);
+
+        String output = toolProvider.knowledgeRetrieve("tenant-a", "口径", 3);
+
+        // 说明：工具结果必须携带来源、版本与文档标识，保证模型引用的知识可回溯。
+        assertTrue(output.contains("销售额口径（版本 1.0）"));
+        assertTrue(output.contains("来源 DB_CORPUS，文档 7"));
+        assertTrue(output.contains("按自然月统计"));
     }
 }

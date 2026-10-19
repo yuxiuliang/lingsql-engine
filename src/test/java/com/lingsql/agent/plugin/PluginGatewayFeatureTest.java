@@ -22,7 +22,7 @@ class PluginGatewayFeatureTest {
 
     private final CalculateMetricPlugin metricPlugin = new CalculateMetricPlugin();
     private final ChartMapperPlugin chartMapperPlugin = new ChartMapperPlugin();
-    private final KnowledgeRetrievePlugin knowledgePlugin = new KnowledgeRetrievePlugin(java.util.Optional.empty());
+    private final KnowledgeRetrievePlugin knowledgePlugin = new KnowledgeRetrievePlugin(java.util.List.of());
 
     private AgentExecutionContext context() {
         return new AgentExecutionContext("exec-1", "req-1", "tenant-1", 1L, "conv-1");
