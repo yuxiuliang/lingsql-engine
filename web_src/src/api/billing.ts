@@ -168,3 +168,232 @@ export const upsertBillingOverride = async (
     body: JSON.stringify(payload)
   });
 };
+
+/**
+ * 通用分页结果。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+export interface PageResult<T> {
+  list: T[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+/**
+ * 供应商账单视图。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+export interface VendorBillEvent {
+  id: number;
+  tenantId?: string;
+  providerName?: string;
+  externalBillId?: string;
+  providerRequestId?: string;
+  amountMinor?: number;
+  vendorTokens?: number;
+  currency?: string;
+  status?: string;
+  matchState?: string;
+  matchStateDescription?: string;
+  matchedInvocationId?: string;
+  matchedState?: string;
+  matchedActualAmount?: number;
+  matchedActualTokens?: number;
+  evidenceHash?: string;
+  matchTime?: string;
+  createdAt?: string;
+}
+
+/**
+ * 供应商账单导入逐行结果。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+export interface VendorBillImportRow {
+  lineNumber: number;
+  externalBillId?: string;
+  outcome: string;
+  matchState?: string;
+  message?: string;
+}
+
+/**
+ * 供应商账单导入报告。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+export interface VendorBillImportReport {
+  csvSha256: string;
+  totalRows: number;
+  importedCount: number;
+  duplicateCount: number;
+  rejectedCount: number;
+  matchSummary?: Record<string, number>;
+  rows: VendorBillImportRow[];
+}
+
+/**
+ * UNKNOWN 物理调用视图。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+export interface BillingUnknownInvocation {
+  invocationId: string;
+  tenantId?: string;
+  workflowRequestId?: string;
+  logicalCallNo?: number;
+  stage?: string;
+  caller?: string;
+  providerName?: string;
+  modelName?: string;
+  modelVersion?: string;
+  maxBillableTokens?: number;
+  unitCost?: number;
+  reservedAmount?: number;
+  failureCode?: string;
+  reservedAt?: string;
+  dispatchedAt?: string;
+}
+
+/**
+ * UNKNOWN 物理调用裁决请求。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+export interface BillingInvocationResolutionRequest {
+  evidenceHash: string;
+  providerRequestId: string;
+  resolutionType: 'CONFIRMED_USAGE' | 'CONFIRMED_NOT_BILLED';
+  actualTokens?: number;
+}
+
+/**
+ * UNKNOWN 物理调用裁决回执。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+export interface BillingInvocationResolutionReceipt {
+  resolutionId: string;
+  invocationId: string;
+  tenantId?: string;
+  resolutionType: string;
+  state: string;
+  actualTokens?: number;
+  actualAmount: number;
+  refundAmount: number;
+  providerRequestId?: string;
+  evidenceHash: string;
+  operator?: string;
+  resolvedAt?: string;
+}
+
+/**
+ * 导入供应商账单 CSV。
+ *
+ * @param csv CSV 文本
+ * @return 导入报告
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+export const importVendorBills = async (csv: string): Promise<VendorBillImportReport> => {
+  return request<VendorBillImportReport>('/api/v1/admin/billing/vendor-bills/import', {
+    method: 'POST',
+    body: JSON.stringify({csv})
+  });
+};
+
+/**
+ * 查询供应商账单。
+ *
+ * @param params 查询参数
+ * @return 分页账单视图
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+export const fetchVendorBills = async (params: {
+  tenantId?: string;
+  providerName?: string;
+  matchState?: string;
+  externalBillId?: string;
+  page: number;
+  size: number;
+}): Promise<PageResult<VendorBillEvent>> => {
+  const query = new URLSearchParams({
+    page: String(params.page),
+    size: String(params.size)
+  });
+  if (params.tenantId) {
+    query.set('tenantId', params.tenantId);
+  }
+  if (params.providerName) {
+    query.set('providerName', params.providerName);
+  }
+  if (params.matchState) {
+    query.set('matchState', params.matchState);
+  }
+  if (params.externalBillId) {
+    query.set('externalBillId', params.externalBillId);
+  }
+  return request<PageResult<VendorBillEvent>>(`/api/v1/admin/billing/vendor-bills?${query.toString()}`);
+};
+
+/**
+ * 查询待裁决的 UNKNOWN 物理调用。
+ *
+ * @param params 查询参数
+ * @return 分页 UNKNOWN 物理调用
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+export const fetchUnknownInvocations = async (params: {
+  tenantId?: string;
+  providerName?: string;
+  page: number;
+  size: number;
+}): Promise<PageResult<BillingUnknownInvocation>> => {
+  const query = new URLSearchParams({
+    page: String(params.page),
+    size: String(params.size)
+  });
+  if (params.tenantId) {
+    query.set('tenantId', params.tenantId);
+  }
+  if (params.providerName) {
+    query.set('providerName', params.providerName);
+  }
+  return request<PageResult<BillingUnknownInvocation>>(
+    `/api/v1/admin/billing/invocations/unknown?${query.toString()}`
+  );
+};
+
+/**
+ * 依据外部证据裁决 UNKNOWN 物理调用。
+ *
+ * @param invocationId 物理调用ID
+ * @param payload 裁决请求
+ * @return 裁决回执
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+export const resolveUnknownInvocation = async (
+  invocationId: string,
+  payload: BillingInvocationResolutionRequest
+): Promise<BillingInvocationResolutionReceipt> => {
+  return request<BillingInvocationResolutionReceipt>(
+    `/api/v1/admin/billing/invocations/${encodeURIComponent(invocationId)}/resolve`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    }
+  );
+};
