@@ -161,6 +161,18 @@ const routes: Array<RouteRecordRaw> = [
                 meta: {title: '插件治理', icon: 'Cpu'}
             },
             {
+                path: '/memory',
+                name: 'Memory',
+                component: () => import('@/views/memory/index.vue'),
+                meta: {title: '我的记忆', icon: 'Collection'}
+            },
+            {
+                path: '/memory-admin',
+                name: 'MemoryAdmin',
+                component: () => import('@/views/memory-admin/index.vue'),
+                meta: {title: '记忆治理', icon: 'Collection'}
+            },
+            {
                 path: '/audit',
                 name: 'AuditLog',
                 component: () => import('@/views/audit/index.vue'),
