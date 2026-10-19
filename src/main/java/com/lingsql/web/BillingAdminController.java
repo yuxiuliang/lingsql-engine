@@ -4,11 +4,13 @@ import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.billing.BillingAdminService;
 import com.lingsql.billing.BillingCommercialReadinessService;
 import com.lingsql.billing.BillingReconcileLogService;
+import com.lingsql.billing.VendorBillEvidenceDigest;
 import com.lingsql.billing.acceptance.BillingAcceptanceReceipt;
 import com.lingsql.billing.acceptance.BillingAcceptanceSessionReceipt;
 import com.lingsql.billing.acceptance.IBillingAcceptanceSession;
 import com.lingsql.billing.entity.BillingPolicyVersion;
 import com.lingsql.billing.entity.TenantBillingOverride;
+import com.lingsql.billing.invocation.BillingInvocationWorkbenchService;
 import com.lingsql.billing.invocation.IPhysicalBillingResolution;
 import com.lingsql.billing.invocation.PhysicalBillingResolutionCommand;
 import com.lingsql.billing.invocation.PhysicalBillingResolutionReceipt;
@@ -21,7 +23,16 @@ import com.lingsql.billing.model.BillingPolicyVersionRequest;
 import com.lingsql.billing.model.BillingReconcileLogQuery;
 import com.lingsql.billing.model.BillingReconcileLogView;
 import com.lingsql.billing.model.BillingReconcileResolveRequest;
+import com.lingsql.billing.model.BillingUnknownInvocationQuery;
+import com.lingsql.billing.model.BillingUnknownInvocationView;
 import com.lingsql.billing.model.TenantBillingOverrideRequest;
+import com.lingsql.billing.model.VendorBillEventView;
+import com.lingsql.billing.model.VendorBillImportAudit;
+import com.lingsql.billing.model.VendorBillImportReport;
+import com.lingsql.billing.model.VendorBillImportRequest;
+import com.lingsql.billing.model.VendorBillQuery;
+import com.lingsql.billing.service.VendorBillImportService;
+import com.lingsql.billing.service.VendorBillQueryService;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.common.result.PageResult;
 import com.lingsql.rbac.security.RbacSecurityUtils;
@@ -42,6 +53,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 计费配置管理接口。
@@ -63,6 +75,9 @@ public class BillingAdminController {
     private final BillingCommercialReadinessService billingCommercialReadinessService;
     private final IPhysicalBillingResolution physicalBillingResolution;
     private final IBillingAcceptanceSession billingAcceptanceSession;
+    private final VendorBillImportService vendorBillImportService;
+    private final VendorBillQueryService vendorBillQueryService;
+    private final BillingInvocationWorkbenchService billingInvocationWorkbenchService;
 
     /**
      * 查询计费策略版本列表。
@@ -350,6 +365,117 @@ public class BillingAdminController {
                 () -> physicalBillingResolution.resolve(command),
                 receipt -> receipt
         );
+    }
+
+    /**
+     * 导入供应商账单 CSV，逐行校验后落库并自动匹配平台物理调用。
+     *
+     * <p>审计只记录 CSV 摘要与计数，不落原始账单明文；已导入账单不可变，
+     * 重复行按重复返回，不覆盖既有记录。</p>
+     *
+     * @param request 导入请求
+     * @param http    HTTP 请求
+     * @return 导入报告
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    @PostMapping("/vendor-bills/import")
+    @PreAuthorize("hasAuthority('ADMIN:BILLING:WRITE')")
+    public ApiResponse<VendorBillImportReport> importVendorBills(
+            @RequestBody(required = false) VendorBillImportRequest request,
+            HttpServletRequest http
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        String csv = request == null ? null : request.csv();
+        VendorBillImportAudit intent = new VendorBillImportAudit(
+                VendorBillEvidenceDigest.sha256Hex(csv),
+                csv == null ? 0 : csv.length(),
+                0,
+                0,
+                0,
+                0,
+                Map.of()
+        );
+        return auditOperationExecutor.executeCommittedResult(
+                "BILLING_VENDOR_BILL_IMPORT",
+                "BILLING_VENDOR_BILL",
+                intent,
+                http,
+                () -> vendorBillImportService.importCsv(csv),
+                report -> new VendorBillImportAudit(
+                        intent.csvSha256(),
+                        intent.csvLength(),
+                        report.totalRows(),
+                        report.importedCount(),
+                        report.duplicateCount(),
+                        report.rejectedCount(),
+                        report.matchSummary()
+                )
+        );
+    }
+
+    /**
+     * 分页查询供应商账单与匹配结果。
+     *
+     * @param tenantId       租户ID
+     * @param providerName   供应商名称
+     * @param matchState     匹配状态
+     * @param externalBillId 外部账单标识
+     * @param page           页码
+     * @param size           每页大小
+     * @return 分页账单视图
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    @GetMapping("/vendor-bills")
+    @PreAuthorize("hasAuthority('ADMIN:BILLING:READ')")
+    public ApiResponse<PageResult<VendorBillEventView>> listVendorBills(
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) String providerName,
+            @RequestParam(required = false) String matchState,
+            @RequestParam(required = false) String externalBillId,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        VendorBillQuery query = new VendorBillQuery();
+        query.setTenantId(tenantId);
+        query.setProviderName(providerName);
+        query.setMatchState(matchState);
+        query.setExternalBillId(externalBillId);
+        return ApiResponse.success(vendorBillQueryService.query(query, page, size));
+    }
+
+    /**
+     * 分页查询处于 UNKNOWN 的物理调用，供裁决工作台核对供应商账单后发起裁决。
+     *
+     * @param tenantId     租户ID
+     * @param providerName 供应商名称
+     * @param page         页码
+     * @param size         每页大小
+     * @return 分页 UNKNOWN 物理调用视图
+     * @author 余炘洋
+     * @date 2026-10-17
+     */
+    @GetMapping("/invocations/unknown")
+    @PreAuthorize("hasAuthority('ADMIN:BILLING:READ')")
+    public ApiResponse<PageResult<BillingUnknownInvocationView>> listUnknownInvocations(
+            @RequestParam(required = false) String tenantId,
+            @RequestParam(required = false) String providerName,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        if (!isSysAdmin()) {
+            return ApiResponse.forbidden("无权限访问");
+        }
+        BillingUnknownInvocationQuery query = new BillingUnknownInvocationQuery();
+        query.setTenantId(tenantId);
+        query.setProviderName(providerName);
+        return ApiResponse.success(billingInvocationWorkbenchService.queryUnknown(query, page, size));
     }
 
     /**

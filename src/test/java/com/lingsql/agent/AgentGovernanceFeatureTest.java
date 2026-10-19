@@ -5,8 +5,10 @@ import com.lingsql.agent.knowledge.KnowledgeDocument;
 import com.lingsql.agent.knowledge.KnowledgeDocumentRepository;
 import com.lingsql.agent.orchestration.WorkflowGraphValidator;
 import com.lingsql.billing.entity.VendorBillEvent;
+import com.lingsql.billing.invocation.BillingInvocationRepository;
 import com.lingsql.billing.repository.VendorBillEventRepository;
 import com.lingsql.billing.service.VendorBillImportService;
+import com.lingsql.common.exception.BizException;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -35,18 +37,20 @@ class AgentGovernanceFeatureTest {
     void vendorBillImportParsesCsvRows() {
         VendorBillEventRepository repository = mock(VendorBillEventRepository.class);
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        VendorBillImportService service = new VendorBillImportService(repository);
-        String csv = "tenant,provider,bill,amount,currency,status\nt1,openai,b-1,1230,USD,SETTLED";
-        List<VendorBillEvent> events = service.importCsv(csv);
-        assertEquals(1, events.size());
-        assertEquals("openai", events.get(0).getProviderName());
-        assertEquals(1230L, events.get(0).getAmountMinor());
+        VendorBillImportService service = new VendorBillImportService(repository, mock(BillingInvocationRepository.class));
+        String csv = "tenantId,providerName,externalBillId,amountMinor,currency,status\n"
+                + "t1,openai,b-1,1230,USD,BILLED";
+        var report = service.importCsv(csv);
+        assertEquals(1, report.importedCount());
+        assertEquals(1, report.matchSummary().getOrDefault("NO_REFERENCE", 0));
+        verify(repository).save(any(VendorBillEvent.class));
     }
 
     @Test
-    void vendorBillImportIgnoresBlankInput() {
-        VendorBillImportService service = new VendorBillImportService(mock(VendorBillEventRepository.class));
-        assertTrue(service.importCsv("").isEmpty());
+    void vendorBillImportRejectsBlankInput() {
+        VendorBillImportService service = new VendorBillImportService(mock(VendorBillEventRepository.class),
+                mock(BillingInvocationRepository.class));
+        assertThrows(BizException.class, () -> service.importCsv(""));
     }
 
     @Test

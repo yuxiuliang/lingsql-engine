@@ -146,6 +146,61 @@ close_acceptance_session() {
   jq -c '.data' <<< "${response}"
 }
 
+verify_vendor_bill_reconciliation() {
+  local invocation_id="$1" receipt="$2"
+  local settled_amount vendor_tokens bill_id_matched bill_id_missing csv csv_sha body
+  local import_response report list_response bill unknown_response
+  settled_amount="$(jq -r '.actualAmount' <<< "${receipt}")"
+  vendor_tokens="$(jq -r '.actualTokens' <<< "${receipt}")"
+  bill_id_matched="ci-bill-${invocation_id:0:16}"
+  bill_id_missing="ci-bill-unmatched"
+  # 合成账单仅用于验证导入、匹配与证据摘要链路，不代表真实供应商账单。
+  csv="tenantId,providerName,externalBillId,amountMinor,currency,status,providerRequestId,vendorTokens
+${LINGSQL_DEMO_TENANT_ID},CI_PROTOCOL_STUB,${bill_id_matched},${settled_amount},CNY,BILLED,chatcmpl-ci-unknown-settle,${vendor_tokens}
+${LINGSQL_DEMO_TENANT_ID},CI_PROTOCOL_STUB,${bill_id_missing},1,CNY,BILLED,chatcmpl-ci-unknown-not-found,
+${LINGSQL_DEMO_TENANT_ID},CI_PROTOCOL_STUB,${bill_id_matched},${settled_amount},CNY,BILLED,chatcmpl-ci-unknown-settle,${vendor_tokens}"
+  csv_sha="$(printf '%s' "${csv}" | sha256sum | awk '{print $1}')"
+  body="$(jq -cn --arg csv "${csv}" '{csv:$csv}')"
+  import_response="$(api_request POST '/api/v1/admin/billing/vendor-bills/import' \
+    "${body}" "${CONTROL_TOKEN}" "${LINGSQL_ADMIN_TENANT_ID}")"
+  [[ "$(jq -r '.code // 0' <<< "${import_response}")" == "200" ]] || {
+    log_error "供应商账单导入失败: $(jq -r '.message // "无错误说明"' <<< "${import_response}")"
+    exit 2
+  }
+  report="$(jq -c '.data' <<< "${import_response}")"
+  [[ "$(jq -r '.totalRows' <<< "${report}")" == "3" \
+    && "$(jq -r '.importedCount' <<< "${report}")" == "2" \
+    && "$(jq -r '.duplicateCount' <<< "${report}")" == "1" \
+    && "$(jq -r '.rejectedCount' <<< "${report}")" == "0" \
+    && "$(jq -r '.matchSummary.MATCHED // 0' <<< "${report}")" == "1" \
+    && "$(jq -r '.matchSummary.NOT_FOUND // 0' <<< "${report}")" == "1" \
+    && "$(jq -r '.csvSha256' <<< "${report}")" == "${csv_sha}" ]] || {
+    log_error "供应商账单导入报告与预期不一致: ${report}"
+    exit 2
+  }
+
+  list_response="$(api_get "/api/v1/admin/billing/vendor-bills?tenantId=${LINGSQL_DEMO_TENANT_ID}&externalBillId=${bill_id_matched}" \
+    "${CONTROL_TOKEN}" "${LINGSQL_ADMIN_TENANT_ID}")"
+  bill="$(jq -c '.data.list[0]' <<< "${list_response}")"
+  [[ "$(jq -r '.matchState' <<< "${bill}")" == "MATCHED" \
+    && "$(jq -r '.matchedInvocationId' <<< "${bill}")" == "${invocation_id}" \
+    && "$(jq -r '.matchedState' <<< "${bill}")" == "SETTLED" \
+    && "$(jq -r '.providerRequestId' <<< "${bill}")" == "chatcmpl-ci-unknown-settle" \
+    && "$(jq -r '.evidenceHash' <<< "${bill}")" =~ ^[0-9a-f]{64}$ ]] || {
+    log_error "已结算调用与合成账单未形成 MATCHED 匹配: ${bill}"
+    exit 2
+  }
+  VENDOR_BILL_EVIDENCE_HASH="$(jq -r '.evidenceHash' <<< "${bill}")"
+  VENDOR_BILL_MATCHED_AMOUNT="${settled_amount}"
+
+  unknown_response="$(api_get "/api/v1/admin/billing/invocations/unknown?tenantId=${LINGSQL_DEMO_TENANT_ID}" \
+    "${CONTROL_TOKEN}" "${LINGSQL_ADMIN_TENANT_ID}")"
+  [[ "$(jq --arg a "${invocation_id}" '[.data.list[].invocationId] | index($a) == null' <<< "${unknown_response}")" == "true" ]] || {
+    log_error "已裁决物理调用仍然出现在 UNKNOWN 裁决工作台"
+    exit 2
+  }
+}
+
 main() {
   for command in curl jq docker sha256sum seq wc tr awk; do require_cmd "${command}"; done
   [[ -f "${ENV_FILE}" ]] || { log_error "未找到 ${ENV_FILE}"; exit 1; }
@@ -238,12 +293,14 @@ main() {
     exit 2
   }
 
+  verify_vendor_bill_reconciliation "${invocation_usage}" "${usage_receipt}"
+
   mkdir -p "$(dirname "${REPORT_FILE}")"
   [[ ! -e "${REPORT_FILE}" ]] || { log_error "拒绝覆盖已有报告: ${REPORT_FILE}"; exit 2; }
   cat > "${REPORT_FILE}" <<EOF
 # UNKNOWN 物理调用确定性全栈验收（非供应商账单证据）
 
-> 本报告使用 CI OpenAI 协议桩故意省略 usage，只验证系统 UNKNOWN 状态机、人工裁决、幂等冲突和 MySQL 资金守恒；不得作为真实供应商账单、客户 UAT 或商业收款证据。
+> 本报告使用 CI OpenAI 协议桩故意省略 usage，只验证系统 UNKNOWN 状态机、人工裁决、幂等冲突和 MySQL 资金守恒；合成账单只用于验证导入、匹配与证据摘要链路，不得作为真实供应商账单、客户 UAT 或商业收款证据。
 
 - 验收结论: PASS
 - UNKNOWN 原因: USAGE_MISSING × 2
@@ -251,6 +308,7 @@ main() {
 - CONFIRMED_NOT_BILLED: CANCELLED，实际金额 0，退款 $(jq -r '.refundAmount' <<< "${cancel_receipt}")
 - 相同证据重放: 两种裁决均返回原不可变回执
 - 不同证据重放: 冲突并拒绝覆盖
+- 合成供应商账单: 导入 2 行（MATCHED 1，NOT_FOUND 1），重复 1 行跳过；MATCHED 金额 ${VENDOR_BILL_MATCHED_AMOUNT} 分，证据摘要 ${VENDOR_BILL_EVIDENCE_HASH}
 - 验收请求数: $(jq -r '.requestIds | length' <<< "${acceptance_receipt}")
 - 物理调用: $(jq -r '.invocationCount' <<< "${acceptance_receipt}")（SETTLED $(jq -r '.settledInvocationCount' <<< "${acceptance_receipt}")，CANCELLED $(jq -r '.cancelledInvocationCount' <<< "${acceptance_receipt}")）
 - MySQL 余额: $(jq -r '.balanceBefore' <<< "${acceptance_receipt}") -> $(jq -r '.balanceAfter' <<< "${acceptance_receipt}")

@@ -5,14 +5,21 @@ import {
   activateBillingPolicy,
   BillingPolicyVersion,
   BillingPolicyVersionRequest,
+  BillingUnknownInvocation,
   createBillingPolicy,
   fetchBillingOverride,
   fetchBillingOverrides,
   fetchBillingPolicies,
+  fetchUnknownInvocations,
+  fetchVendorBills,
+  importVendorBills,
+  resolveUnknownInvocation,
   TenantBillingOverride,
   TenantBillingOverrideRequest,
   updateBillingPolicy,
-  upsertBillingOverride
+  upsertBillingOverride,
+  VendorBillEvent,
+  VendorBillImportReport
 } from '@/api/billing';
 
 const policyList = ref<BillingPolicyVersion[]>([]);
@@ -389,8 +396,363 @@ const isMessageBoxCancel = (error: unknown) => {
   return error === 'cancel' || error === 'close';
 };
 
+/**
+ * 供应商账单匹配状态选项。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const VENDOR_BILL_MATCH_STATE_OPTIONS = [
+  {value: 'NO_REFERENCE', label: '无请求标识'},
+  {value: 'NOT_FOUND', label: '未找到调用'},
+  {value: 'PENDING', label: '调用待终态'},
+  {value: 'UNKNOWN', label: '调用 UNKNOWN'},
+  {value: 'MATCHED', label: '一致'},
+  {value: 'MISMATCH', label: '不一致'},
+  {value: 'CONFLICT', label: '冲突'}
+];
+
+const vendorBillList = ref<VendorBillEvent[]>([]);
+const vendorBillLoading = ref(false);
+const vendorBillImporting = ref(false);
+const vendorBillCsv = ref('');
+const vendorBillImportReport = ref<VendorBillImportReport | null>(null);
+const vendorBillFilter = reactive({tenantId: '', providerName: '', matchState: '', externalBillId: ''});
+const vendorBillPage = reactive({page: 1, size: 10, total: 0});
+
+const unknownList = ref<BillingUnknownInvocation[]>([]);
+const unknownLoading = ref(false);
+const unknownFilter = reactive({tenantId: '', providerName: ''});
+const unknownPage = reactive({page: 1, size: 10, total: 0});
+
+const resolveDialogVisible = ref(false);
+const resolveSaving = ref(false);
+const resolveTarget = ref<BillingUnknownInvocation | null>(null);
+const evidenceBills = ref<VendorBillEvent[]>([]);
+const evidenceSearch = reactive({externalBillId: ''});
+const resolveForm = reactive({
+  resolutionType: 'CONFIRMED_USAGE',
+  evidenceHash: '',
+  providerRequestId: '',
+  actualTokens: null as number | null
+});
+
+/**
+ * 加载供应商账单列表。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const loadVendorBills = async () => {
+  vendorBillLoading.value = true;
+  try {
+    const result = await fetchVendorBills({
+      tenantId: vendorBillFilter.tenantId.trim() || undefined,
+      providerName: vendorBillFilter.providerName.trim() || undefined,
+      matchState: vendorBillFilter.matchState || undefined,
+      externalBillId: vendorBillFilter.externalBillId.trim() || undefined,
+      page: vendorBillPage.page,
+      size: vendorBillPage.size
+    });
+    vendorBillList.value = result.list;
+    vendorBillPage.total = result.total;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载供应商账单失败');
+  } finally {
+    vendorBillLoading.value = false;
+  }
+};
+
+/**
+ * 按条件查询供应商账单。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const handleSearchVendorBills = async () => {
+  vendorBillPage.page = 1;
+  await loadVendorBills();
+};
+
+/**
+ * 导入供应商账单 CSV。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const handleImportVendorBills = async () => {
+  if (!vendorBillCsv.value.trim()) {
+    ElMessage.warning('请粘贴供应商账单 CSV');
+    return;
+  }
+  vendorBillImporting.value = true;
+  try {
+    const report = await importVendorBills(vendorBillCsv.value);
+    vendorBillImportReport.value = report;
+    ElMessage.success(
+      `导入完成：导入 ${report.importedCount} 行，重复 ${report.duplicateCount} 行，拒绝 ${report.rejectedCount} 行`
+    );
+    vendorBillPage.page = 1;
+    await loadVendorBills();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导入供应商账单失败');
+  } finally {
+    vendorBillImporting.value = false;
+  }
+};
+
+/**
+ * 供应商账单翻页。
+ *
+ * @param page 页码
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const handleVendorBillPageChange = async (page: number) => {
+  vendorBillPage.page = page;
+  await loadVendorBills();
+};
+
+/**
+ * 加载 UNKNOWN 物理调用列表。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const loadUnknownInvocations = async () => {
+  unknownLoading.value = true;
+  try {
+    const result = await fetchUnknownInvocations({
+      tenantId: unknownFilter.tenantId.trim() || undefined,
+      providerName: unknownFilter.providerName.trim() || undefined,
+      page: unknownPage.page,
+      size: unknownPage.size
+    });
+    unknownList.value = result.list;
+    unknownPage.total = result.total;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '加载 UNKNOWN 调用失败');
+  } finally {
+    unknownLoading.value = false;
+  }
+};
+
+/**
+ * 按条件查询 UNKNOWN 物理调用。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const handleSearchUnknown = async () => {
+  unknownPage.page = 1;
+  await loadUnknownInvocations();
+};
+
+/**
+ * UNKNOWN 调用翻页。
+ *
+ * @param page 页码
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const handleUnknownPageChange = async (page: number) => {
+  unknownPage.page = page;
+  await loadUnknownInvocations();
+};
+
+/**
+ * 打开裁决弹窗。
+ *
+ * @param row UNKNOWN 物理调用
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const handleOpenResolve = (row: BillingUnknownInvocation) => {
+  resolveTarget.value = row;
+  resolveForm.resolutionType = 'CONFIRMED_USAGE';
+  resolveForm.evidenceHash = '';
+  resolveForm.providerRequestId = '';
+  resolveForm.actualTokens = null;
+  evidenceSearch.externalBillId = '';
+  evidenceBills.value = [];
+  resolveDialogVisible.value = true;
+};
+
+/**
+ * 检索可用于裁决的供应商账单证据。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const handleSearchEvidence = async () => {
+  const target = resolveTarget.value;
+  if (!target || !target.tenantId) {
+    ElMessage.warning('当前调用缺少租户信息，无法检索账单');
+    return;
+  }
+  try {
+    const result = await fetchVendorBills({
+      tenantId: target.tenantId,
+      providerName: target.providerName || undefined,
+      externalBillId: evidenceSearch.externalBillId.trim() || undefined,
+      page: 1,
+      size: 10
+    });
+    evidenceBills.value = result.list;
+    if (result.list.length === 0) {
+      ElMessage.info('未找到匹配账单，请手动填写证据摘要与供应商请求ID');
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '检索供应商账单失败');
+  }
+};
+
+/**
+ * 引用账单证据填充裁决表单。
+ *
+ * @param bill 供应商账单
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const handleApplyBillEvidence = (bill: VendorBillEvent) => {
+  resolveForm.evidenceHash = bill.evidenceHash || '';
+  resolveForm.providerRequestId = bill.providerRequestId || '';
+  if (bill.vendorTokens !== undefined && bill.vendorTokens !== null) {
+    resolveForm.actualTokens = bill.vendorTokens;
+  }
+  ElMessage.success('已引用账单证据，请核对后提交裁决');
+};
+
+/**
+ * 复制证据摘要。
+ *
+ * @param value 摘要文本
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const handleCopyEvidence = async (value?: string) => {
+  if (!value) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(value);
+    ElMessage.success('证据摘要已复制');
+  } catch {
+    ElMessage.warning('当前环境不支持自动复制，请手动选择摘要文本');
+  }
+};
+
+/**
+ * 提交 UNKNOWN 裁决。
+ *
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const handleResolve = async () => {
+  const target = resolveTarget.value;
+  if (!target) {
+    return;
+  }
+  const evidenceHash = resolveForm.evidenceHash.trim();
+  if (!/^[0-9a-fA-F]{64}$/.test(evidenceHash)) {
+    ElMessage.warning('证据摘要必须为 64 位十六进制 SHA-256');
+    return;
+  }
+  const providerRequestId = resolveForm.providerRequestId.trim();
+  if (!providerRequestId) {
+    ElMessage.warning('请填写供应商请求ID');
+    return;
+  }
+  const confirmedUsage = resolveForm.resolutionType === 'CONFIRMED_USAGE';
+  if (confirmedUsage && (resolveForm.actualTokens === null || resolveForm.actualTokens === undefined)) {
+    ElMessage.warning('确认用量时必须填写实际 Token');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm('裁决不可逆：确认后将按外部证据固化该物理调用的资金状态。', '确认裁决', {
+      type: 'warning'
+    });
+  } catch (error) {
+    if (isMessageBoxCancel(error)) {
+      return;
+    }
+    ElMessage.error('裁决确认失败，请重试');
+    return;
+  }
+  resolveSaving.value = true;
+  try {
+    const receipt = await resolveUnknownInvocation(target.invocationId, {
+      evidenceHash,
+      providerRequestId,
+      resolutionType: resolveForm.resolutionType as 'CONFIRMED_USAGE' | 'CONFIRMED_NOT_BILLED',
+      actualTokens: confirmedUsage && resolveForm.actualTokens !== null ? resolveForm.actualTokens : undefined
+    });
+    ElMessage.success(`裁决完成：${receipt.state}，结算 ${receipt.actualAmount} 分，退款 ${receipt.refundAmount} 分`);
+    resolveDialogVisible.value = false;
+    await Promise.all([loadUnknownInvocations(), loadVendorBills()]);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '裁决失败');
+  } finally {
+    resolveSaving.value = false;
+  }
+};
+
+/**
+ * 匹配状态本地化标签。
+ *
+ * @param state 匹配状态
+ * @return 状态标签
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const formatMatchState = (state?: string) => {
+  if (!state) {
+    return '-';
+  }
+  const option = VENDOR_BILL_MATCH_STATE_OPTIONS.find((item) => item.value === state);
+  return option ? option.label : state;
+};
+
+/**
+ * 匹配状态标签样式。
+ *
+ * @param state 匹配状态
+ * @return Element Plus 标签类型
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const matchStateTagType = (state?: string) => {
+  if (state === 'MATCHED') {
+    return 'success';
+  }
+  if (state === 'MISMATCH' || state === 'CONFLICT') {
+    return 'danger';
+  }
+  if (state === 'UNKNOWN') {
+    return 'warning';
+  }
+  return 'info';
+};
+
+/**
+ * 金额格式化。
+ *
+ * @param value 金额（分）
+ * @return 展示文本
+ * @author 余炘洋
+ * @date 2026-10-17
+ */
+const formatMinor = (value?: number | null) => {
+  if (value === undefined || value === null) {
+    return '-';
+  }
+  return `${(value / 100).toFixed(2)} 元（${value} 分）`;
+};
+
 onMounted(loadPolicies);
 onMounted(loadOverrides);
+onMounted(loadVendorBills);
+onMounted(loadUnknownInvocations);
 </script>
 
 <template>
@@ -455,6 +817,149 @@ onMounted(loadOverrides);
             </template>
           </el-table-column>
         </el-table>
+      </el-tab-pane>
+      <el-tab-pane label="供应商账单">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <el-input v-model="vendorBillFilter.tenantId" placeholder="租户ID" style="width: 150px"/>
+            <el-input v-model="vendorBillFilter.providerName" placeholder="供应商" style="width: 150px"/>
+            <el-select v-model="vendorBillFilter.matchState" placeholder="匹配状态" clearable style="width: 150px">
+              <el-option
+                v-for="option in VENDOR_BILL_MATCH_STATE_OPTIONS"
+                :key="option.value"
+                :value="option.value"
+                :label="option.label"
+              />
+            </el-select>
+            <el-input v-model="vendorBillFilter.externalBillId" placeholder="外部账单标识" style="width: 180px"/>
+            <el-button type="primary" @click="handleSearchVendorBills">查询</el-button>
+          </div>
+          <div class="toolbar-right">
+            <el-button @click="loadVendorBills">刷新</el-button>
+          </div>
+        </div>
+        <el-input
+          v-model="vendorBillCsv"
+          type="textarea"
+          :rows="4"
+          placeholder="tenantId,providerName,externalBillId,amountMinor,currency,status,providerRequestId,vendorTokens"
+        />
+        <div class="toolbar import-actions">
+          <div class="toolbar-left">
+            <div class="form-tip">
+              逐行校验导入：非法行拒绝、重复行跳过且不覆盖已导入账单；未携带供应商请求标识的账单匹配状态为「无请求标识」。
+            </div>
+          </div>
+          <div class="toolbar-right">
+            <el-button @click="vendorBillCsv = ''">清空</el-button>
+            <el-button type="primary" :loading="vendorBillImporting" @click="handleImportVendorBills">导入账单</el-button>
+          </div>
+        </div>
+        <div v-if="vendorBillImportReport" class="import-report">
+          <div class="form-tip">
+            上次导入：数据行 {{ vendorBillImportReport.totalRows }}，导入 {{ vendorBillImportReport.importedCount }}，
+            重复 {{ vendorBillImportReport.duplicateCount }}，拒绝 {{ vendorBillImportReport.rejectedCount }}；
+            CSV 摘要 {{ vendorBillImportReport.csvSha256.slice(0, 16) }}…
+          </div>
+          <el-table :data="vendorBillImportReport.rows" border size="small" class="import-rows">
+            <el-table-column prop="lineNumber" label="行号" width="70"/>
+            <el-table-column prop="externalBillId" label="账单标识" min-width="140"/>
+            <el-table-column prop="outcome" label="结果" width="110"/>
+            <el-table-column label="匹配" width="120">
+              <template #default="scope">{{ formatMatchState(scope.row.matchState) }}</template>
+            </el-table-column>
+            <el-table-column prop="message" label="说明" min-width="240"/>
+          </el-table>
+        </div>
+        <el-table :data="vendorBillList" border v-loading="vendorBillLoading">
+          <el-table-column prop="tenantId" label="租户ID" min-width="120"/>
+          <el-table-column prop="providerName" label="供应商" min-width="120"/>
+          <el-table-column prop="externalBillId" label="账单标识" min-width="140"/>
+          <el-table-column prop="providerRequestId" label="供应商请求ID" min-width="160"/>
+          <el-table-column label="账单金额" min-width="150">
+            <template #default="scope">{{ formatMinor(scope.row.amountMinor) }}</template>
+          </el-table-column>
+          <el-table-column prop="vendorTokens" label="账单Token" width="100"/>
+          <el-table-column prop="currency" label="币种" width="80"/>
+          <el-table-column label="匹配状态" width="120">
+            <template #default="scope">
+              <el-tag :type="matchStateTagType(scope.row.matchState)">
+                {{ formatMatchState(scope.row.matchState) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="平台结算" min-width="150">
+            <template #default="scope">{{ formatMinor(scope.row.matchedActualAmount) }}</template>
+          </el-table-column>
+          <el-table-column prop="matchedState" label="调用状态" width="110"/>
+          <el-table-column label="证据摘要" min-width="180">
+            <template #default="scope">
+              <el-button
+                v-if="scope.row.evidenceHash"
+                link
+                type="primary"
+                @click="handleCopyEvidence(scope.row.evidenceHash)"
+              >
+                {{ scope.row.evidenceHash.slice(0, 16) }}…
+              </el-button>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="matchTime" label="匹配时间" min-width="160"/>
+        </el-table>
+        <el-pagination
+          class="pagination"
+          layout="total, prev, pager, next"
+          :total="vendorBillPage.total"
+          :current-page="vendorBillPage.page"
+          :page-size="vendorBillPage.size"
+          @current-change="handleVendorBillPageChange"
+        />
+      </el-tab-pane>
+      <el-tab-pane label="UNKNOWN 裁决">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <el-input v-model="unknownFilter.tenantId" placeholder="租户ID" style="width: 160px"/>
+            <el-input v-model="unknownFilter.providerName" placeholder="供应商" style="width: 160px"/>
+            <el-button type="primary" @click="handleSearchUnknown">查询</el-button>
+          </div>
+          <div class="toolbar-right">
+            <el-button @click="loadUnknownInvocations">刷新</el-button>
+          </div>
+        </div>
+        <div class="form-tip unknown-hint">
+          调用已派发但缺少可信用量，必须依据外部证据（供应商账单或供应商控制台记录）裁决，裁决结果不可回退。
+        </div>
+        <el-table :data="unknownList" border v-loading="unknownLoading">
+          <el-table-column prop="invocationId" label="物理调用ID" min-width="180"/>
+          <el-table-column prop="tenantId" label="租户ID" min-width="120"/>
+          <el-table-column prop="stage" label="阶段" width="130"/>
+          <el-table-column label="模型" min-width="160">
+            <template #default="scope">
+              {{ scope.row.modelName }}{{ scope.row.modelVersion ? ` / ${scope.row.modelVersion}` : '' }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="providerName" label="供应商" min-width="120"/>
+          <el-table-column prop="maxBillableTokens" label="最大可计费Token" width="150"/>
+          <el-table-column label="预留金额" min-width="150">
+            <template #default="scope">{{ formatMinor(scope.row.reservedAmount) }}</template>
+          </el-table-column>
+          <el-table-column prop="failureCode" label="失败原因" min-width="140"/>
+          <el-table-column prop="dispatchedAt" label="派发时间" min-width="160"/>
+          <el-table-column label="操作" width="110" fixed="right">
+            <template #default="scope">
+              <el-button size="small" type="warning" @click="handleOpenResolve(scope.row)">裁决</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-pagination
+          class="pagination"
+          layout="total, prev, pager, next"
+          :total="unknownPage.total"
+          :current-page="unknownPage.page"
+          :page-size="unknownPage.size"
+          @current-change="handleUnknownPageChange"
+        />
       </el-tab-pane>
     </el-tabs>
 
@@ -570,6 +1075,69 @@ onMounted(loadOverrides);
         <el-button type="primary" :loading="overrideSaving" @click="handleSaveOverride">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="resolveDialogVisible"
+      title="UNKNOWN 裁决"
+      width="680px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-width="140px">
+        <el-form-item label="物理调用ID">
+          <el-input :model-value="resolveTarget?.invocationId || ''" disabled/>
+        </el-form-item>
+        <el-form-item label="调用信息">
+          <div class="resolve-summary">
+            <span>租户：{{ resolveTarget?.tenantId || '-' }}</span>
+            <span>供应商：{{ resolveTarget?.providerName || '-' }}</span>
+            <span>模型：{{ resolveTarget?.modelName || '-' }}</span>
+            <span>预留：{{ formatMinor(resolveTarget?.reservedAmount ?? null) }}</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="检索账单证据">
+          <div class="evidence-toolbar">
+            <el-input v-model="evidenceSearch.externalBillId" placeholder="外部账单标识（可留空）"/>
+            <el-button @click="handleSearchEvidence">检索</el-button>
+          </div>
+          <el-table v-if="evidenceBills.length" :data="evidenceBills" border size="small" class="import-rows">
+            <el-table-column prop="externalBillId" label="账单标识" min-width="140"/>
+            <el-table-column prop="providerRequestId" label="供应商请求ID" min-width="150"/>
+            <el-table-column label="金额" min-width="130">
+              <template #default="scope">{{ formatMinor(scope.row.amountMinor) }}</template>
+            </el-table-column>
+            <el-table-column prop="vendorTokens" label="Token" width="90"/>
+            <el-table-column label="匹配" width="110">
+              <template #default="scope">{{ formatMatchState(scope.row.matchState) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="90">
+              <template #default="scope">
+                <el-button size="small" @click="handleApplyBillEvidence(scope.row)">引用</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="form-tip">引用后自动填充证据摘要与供应商请求ID，可再手工核对修改。</div>
+        </el-form-item>
+        <el-form-item label="裁决类型">
+          <el-select v-model="resolveForm.resolutionType" style="width: 100%">
+            <el-option value="CONFIRMED_USAGE" label="确认已产生用量（结算）"/>
+            <el-option value="CONFIRMED_NOT_BILLED" label="确认未计费（退款取消）"/>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="证据摘要" required>
+          <el-input v-model="resolveForm.evidenceHash" placeholder="外部证据 SHA-256（64 位十六进制）"/>
+        </el-form-item>
+        <el-form-item label="供应商请求ID" required>
+          <el-input v-model="resolveForm.providerRequestId" placeholder="供应商账单或控制台中的请求标识"/>
+        </el-form-item>
+        <el-form-item v-if="resolveForm.resolutionType === 'CONFIRMED_USAGE'" label="实际 Token" required>
+          <el-input-number v-model="resolveForm.actualTokens" :min="0" :step="1" style="width: 100%"/>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="resolveDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="resolveSaving" @click="handleResolve">提交裁决</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -619,5 +1187,40 @@ onMounted(loadOverrides);
   font-size: 12px;
   color: #64748b;
   margin-top: 6px;
+}
+
+.import-actions {
+  margin-top: 12px;
+}
+
+.import-report {
+  margin-bottom: 16px;
+}
+
+.import-rows {
+  margin-top: 8px;
+}
+
+.unknown-hint {
+  margin-bottom: 12px;
+}
+
+.pagination {
+  margin-top: 12px;
+  justify-content: flex-end;
+}
+
+.evidence-toolbar {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.resolve-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: #475569;
 }
 </style>
