@@ -12,7 +12,7 @@
 * **🧩 受控三角色编排**：SQL 架构师、合规审计员、业务分析师依次工作；审计拒绝不会进入 JDBC，角色轨迹可随会话历史持久化。
 * **🔁 有上限的 SQL 自愈**：字段/表失配与 SQL 语法错误才允许重试；字段或表失配会刷新 Schema，默认最多 3 轮，可通过 `LINGSQL_SQL_EXECUTION_SELF_HEALING_MAX_ATTEMPTS` 调整至 1–5 轮。
 * **🌍 多租户动态路由**：支持物理库隔离与逻辑字段隔离双模式，按租户懒加载连接池。
-* **🧠 元数据与语义能力**：已内置 Schema 扫描、语义字典、Join 规则和会话记忆；版本化语义上下文、通用 RAG 知识库和 Aviator 指标计算仍在规划中。
+* **🧠 元数据与语义能力**：已内置 Schema 扫描、语义字典、Join 规则和会话记忆；受控知识检索 `knowledge_retrieve` 已接入 SQL 生成前上下文（配向量库走 ES 语义召回，未配置时回落关键词检索，结果强制带来源与版本），版本化语义上下文与 Aviator 指标计算（`calculate_metric` 已提供内置表达式求值）仍在规划中；知识文档录入入口尚未建设。
 * **🔌 插件化 Agent 底座**：已建立类型安全 Java 插件 SPI、注册中心、统一执行网关，以及白名单、系统调用来源、成本等级、调用次数和启动/返回 deadline 防护；受控业务插件必须经租户插件授权后执行，未授权 fail-closed。可信 JAR 加载、全链路可取消超时与 MCP 远程插件仍按安全路线逐步开放。
 * **📦 可追溯供应链**：发布包生成前后端 CycloneDX SBOM、第三方许可证索引和绑定 Git commit/JAR 哈希的供应链 Manifest；开源许可与第三方组件边界见 [LICENSE](LICENSE) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 * **⚖️ Spring AI 模型网关**：基于 Spring AI 2.0 对接 OpenAI 兼容模型，物理模型由系统统一管理；每个租户必须显式授权可用模型，并可独立配置优先级和权重。未授权时失败关闭，不会回退到全局模型池；主备模型从同一次冻结计划中选择并保留 Token、模型身份和路由指纹证据。
@@ -138,6 +138,7 @@ cp .env.example .env
   - `scripts/ops/commercial_acceptance_gate.sh`（工程、计费、三问、可靠性、安全和值守技术放行；不替代 40 题与客户签字）
 - **CI/CD 门禁工作流**：
   - `.github/workflows/ci.yml`（持续集成：后端测试 + 前端构建 + MySQL 8.4 空库迁移/旧库接管 + npm 高危漏洞门禁）
+  - `.github/workflows/full-stack-integration.yml`（确定性全栈集成：演示开户与三问、`UNKNOWN` 计费裁决与资金守恒、受控知识检索授权/留痕/降级）
   - `.github/workflows/security.yml`（依赖安全：Dependency Review + Trivy 高危/严重扫描）
   - `.github/workflows/codeql.yml`（代码安全：Java + JS/TS 静态分析）
   - `.github/workflows/auto-remediation.yml`（自动修复：CI/安全扫描失败后尝试自愈并自动提 PR）
@@ -196,7 +197,7 @@ cp .env.example .env
 ### 未实现或存在边界
 
 - 可信 JAR 加载、MCP 远程插件与 Spring AI ToolCallback 接入模型调用链尚未完成；插件管理 API 已提供目录只读与租户授权维护，现有插件仍不接受模型任意调用。
-- 通用知识库和版本化语义上下文尚未完成；当前只有语义字典、Join 规则、会话记忆和受控长期记忆基础。
+- 知识检索 `knowledge_retrieve` 与 SQL 生成前受控注入已落地（租户与发布状态过滤、来源与版本标注、异常降级为“无知识”），但知识文档录入入口（管理端上传/API）、文件解析与 ACL 标签、引用回溯界面尚未完成；版本化语义上下文仍只有语义字典、Join 规则、会话记忆和受控长期记忆基础。
 - 长期记忆尚不支持模型候选自动提取与自动写入，也没有记忆管理界面和记忆隐私导出；当前 Redis 会话窗口默认只保留 10 条、30 分钟，MySQL 聊天历史展示不等于长期记忆检索。
 - `calculate_metric`：已基于内置递归下降表达式求值落地（无第三方表达式引擎、无 SpEL），指标管理界面与指标口径审批尚未实现。
 - 服务端版本化 `chart_mapper` 契约；目前图表建议仅在前端基于结果行做确定性映射，历史回放不保存图表决策。
