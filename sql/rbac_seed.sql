@@ -39,12 +39,14 @@ VALUES
 ('MENU:ADMIN:SQLLOG', '菜单-SQL日志', 'MENU', 1),
 ('MENU:ADMIN:DIGITAL_EMPLOYEE', '菜单-数字员工', 'MENU', 1),
 ('MENU:ADMIN:PLUGIN', '菜单-插件治理', 'MENU', 1),
+('MENU:MEMORY', '菜单-我的记忆', 'MENU', 1),
 ('MENU:ADMIN:APPROVAL', '菜单-人工审批', 'MENU', 1),
 ('API:CHAT:ASK', '接口-问答', 'API', 1),
 ('API:CHAT:HISTORY:READ', '接口-问答历史查询', 'API', 1),
 ('API:CHAT:HISTORY:WRITE', '接口-问答历史维护', 'API', 1),
 ('API:CHAT:MEMORY:READ', '接口-问答记忆查询', 'API', 1),
 ('API:CHAT:MEMORY:WRITE', '接口-问答记忆维护', 'API', 1),
+('MENU:ADMIN:MEMORY', '菜单-记忆治理', 'MENU', 1),
 ('ADMIN:SCHEMA:SYNC', '接口-元数据同步', 'API', 1),
 ('ADMIN:SEMANTIC:REFRESH', '接口-语义缓存刷新', 'API', 1),
 ('ADMIN:MODEL:ENABLE', '接口-模型启用', 'API', 1),
@@ -112,6 +114,7 @@ ON DUPLICATE KEY UPDATE
 INSERT INTO t_lingsql_engine_menu (tenant_id, menu_code, menu_name, parent_id, path, component, icon, sort, visible, status, perm_code)
 VALUES
 (NULL, 'MENU_CHAT', '智能问答', NULL, '/chat', 'ChatPage', 'chat', 10, 1, 1, 'MENU:CHAT'),
+(NULL, 'MENU_MEMORY', '我的记忆', NULL, '/memory', 'MemoryPage', 'collection', 15, 1, 1, 'MENU:MEMORY'),
 (NULL, 'MENU_CHAT_HISTORY', '问答历史', NULL, '/chat/history', 'ChatHistory', 'chat', 20, 1, 1, 'MENU:CHAT:HISTORY'),
 (NULL, 'MENU_ADMIN', '管理后台', NULL, '/layout', 'Layout', 'model', 100, 1, 1, 'MENU:ADMIN')
 ON DUPLICATE KEY UPDATE
@@ -132,6 +135,7 @@ VALUES
 (NULL, 'MENU_ADMIN_DATASOURCE', '数据源管理', @menu_admin_id, '/datasource', 'TenantConfig', 'tenant', 115, 1, 1, 'MENU:ADMIN:TENANT'),
 (NULL, 'MENU_ADMIN_DIGITAL_EMPLOYEE', '数字员工', @menu_admin_id, '/digital-employee', 'DigitalEmployee', 'robot', 116, 1, 1, 'MENU:ADMIN:DIGITAL_EMPLOYEE'),
 (NULL, 'MENU_ADMIN_PLUGIN', '插件治理', @menu_admin_id, '/plugin', 'PluginManage', 'robot', 196, 1, 1, 'MENU:ADMIN:PLUGIN'),
+(NULL, 'MENU_ADMIN_MEMORY', '记忆治理', @menu_admin_id, '/memory-admin', 'MemoryAdmin', 'collection', 197, 1, 1, 'MENU:ADMIN:MEMORY'),
 (NULL, 'MENU_ADMIN_MODEL', '模型资源池', @menu_admin_id, '/model', 'ModelConfig', 'model', 120, 1, 1, 'MENU:ADMIN:MODEL'),
 (NULL, 'MENU_ADMIN_SEMANTIC', '语义字典', @menu_admin_id, '/lexicon', 'SemanticConfig', 'lexicon', 130, 1, 1, 'MENU:ADMIN:SEMANTIC'),
 (NULL, 'MENU_ADMIN_JOIN', 'Join规则', @menu_admin_id, '/join-rule', 'JoinRule', 'join', 140, 1, 1, 'MENU:ADMIN:JOIN'),
@@ -175,6 +179,7 @@ SELECT @experience_role_id, id FROM t_lingsql_engine_permission
 WHERE perm_code IN (
     'MENU:CHAT',
     'MENU:CHAT:HISTORY',
+    'MENU:MEMORY',
     'API:CHAT:ASK',
     'API:CHAT:HISTORY:READ',
     'API:CHAT:HISTORY:WRITE',
@@ -241,7 +246,7 @@ SELECT @tenant_id, id FROM t_lingsql_engine_permission;
 -- 体验账号策略示例（可按需修改）
 INSERT INTO t_lingsql_engine_user_experience_policy (user_id, menu_whitelist, data_scope_override, status)
 VALUES
-(@experience_user_id, '["MENU_CHAT","MENU_CHAT_HISTORY"]', '{"scopeType":"TENANT"}', 1)
+(@experience_user_id, '["MENU_CHAT","MENU_CHAT_HISTORY","MENU_MEMORY"]', '{"scopeType":"TENANT"}', 1)
 ON DUPLICATE KEY UPDATE
     menu_whitelist = VALUES(menu_whitelist),
     data_scope_override = VALUES(data_scope_override),
