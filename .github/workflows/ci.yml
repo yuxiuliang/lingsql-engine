@@ -67,6 +67,9 @@ jobs:
       - name: Audit Dependencies (High/Critical)
         run: ../scripts/ops/npm_audit_with_fallback.sh
 
+      - name: Type Check (vue-tsc)
+        run: npm run typecheck
+
       - name: Build Admin UI
         run: npm run build
 
