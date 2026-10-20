@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.0</version>
+        <version>4.1.1</version>
         <relativePath/>
     </parent>
 
@@ -18,8 +18,8 @@
 
     <properties>
         <java.version>25</java.version>
-        <spring-ai.version>2.0.0</spring-ai.version>
-        <jsqlparser.version>5.3</jsqlparser.version>
+        <spring-ai.version>2.0.1</spring-ai.version>
+        <jsqlparser.version>5.4</jsqlparser.version>
         <jjwt.version>0.13.0</jjwt.version>
         <poi.version>5.5.1</poi.version>
         <openpdf.version>3.0.5</openpdf.version>
@@ -155,7 +155,7 @@
         <dependency>
             <groupId>com.tngtech.archunit</groupId>
             <artifactId>archunit-junit5</artifactId>
-            <version>1.4.1</version>
+            <version>1.5.1</version>
             <scope>test</scope>
         </dependency>
 
@@ -175,7 +175,7 @@
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
-                            <version>1.18.46</version>
+                            <version>1.18.48</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
