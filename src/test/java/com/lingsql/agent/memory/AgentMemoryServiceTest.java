@@ -1,6 +1,7 @@
 package com.lingsql.agent.memory;
 
 import com.lingsql.agent.entity.AgentMemoryFact;
+import com.lingsql.agent.memory.model.AgentMemoryExportView;
 import com.lingsql.agent.repository.AgentMemoryFactRepository;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
@@ -21,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -353,6 +355,111 @@ class AgentMemoryServiceTest {
     @Test
     void buildPromptContextShouldReturnEmptyWhenTenantMissing() {
         assertEquals("", agentMemoryService.buildPromptContext(null, 7L));
+    }
+
+    @Test
+    void expireDueMemoriesShouldExpireActiveAndCandidateFacts() {
+        LocalDateTime now = LocalDateTime.now();
+        AgentMemoryFact active = fact(90L, "PERMANENT", 7L, "过期生效记忆",
+                "ACTIVE", "USER_CONFIRMED", 1, now.minusDays(30), now.minusDays(1));
+        AgentMemoryFact candidate = fact(91L, "PERMANENT", 7L, "过期候选",
+                "CANDIDATE", "MODEL_CANDIDATE", 1, now.minusDays(30), now.minusDays(1));
+        when(memoryFactRepository.findTop500ByStatusInAndExpiresAtLessThanEqualOrderByIdAsc(
+                eq(List.of("ACTIVE", "CANDIDATE")), any(LocalDateTime.class)))
+                .thenReturn(List.of(active, candidate));
+
+        int expired = agentMemoryService.expireDueMemories();
+
+        assertEquals(2, expired);
+        assertEquals("EXPIRED", active.getStatus());
+        assertEquals("EXPIRED", candidate.getStatus());
+        assertTrue(active.getUpdatedAt().isAfter(now.minusMinutes(1)));
+        verify(memoryFactRepository).saveAll(List.of(active, candidate));
+    }
+
+    @Test
+    void expireDueMemoriesShouldDoNothingWhenNothingDue() {
+        when(memoryFactRepository.findTop500ByStatusInAndExpiresAtLessThanEqualOrderByIdAsc(
+                eq(List.of("ACTIVE", "CANDIDATE")), any(LocalDateTime.class)))
+                .thenReturn(List.of());
+
+        assertEquals(0, agentMemoryService.expireDueMemories());
+        verify(memoryFactRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void purgeByAdminShouldDeleteWithinTenantScope() {
+        LocalDateTime now = LocalDateTime.now();
+        AgentMemoryFact fact = fact(95L, "PERMANENT", 7L, "待清除记忆",
+                "REVOKED", "USER_CONFIRMED", 1, now, now.plusDays(1));
+        when(memoryFactRepository.findByIdAndTenantId(95L, "t1")).thenReturn(Optional.of(fact));
+
+        agentMemoryService.purgeByAdmin("t1", 95L);
+
+        verify(memoryFactRepository).delete(fact);
+    }
+
+    @Test
+    void purgeByAdminShouldRejectUnknownFact() {
+        when(memoryFactRepository.findByIdAndTenantId(96L, "t1")).thenReturn(Optional.empty());
+
+        BizException ex = assertThrows(BizException.class, () -> agentMemoryService.purgeByAdmin("t1", 96L));
+
+        assertEquals(ErrorCode.NOT_FOUND, ex.getErrorCode());
+        verify(memoryFactRepository, never()).delete(any(AgentMemoryFact.class));
+    }
+
+    @Test
+    void exportOwnShouldKeepSourceTimeAndRetentionConsistent() {
+        LocalDateTime now = LocalDateTime.now();
+        AgentMemoryFact active = fact(97L, "PERMANENT", 7L, "生效记忆",
+                "ACTIVE", "USER_CONFIRMED", 1, now, now.plusDays(365));
+        AgentMemoryFact revoked = fact(98L, "PERMANENT", 7L, "已撤销记忆",
+                "REVOKED", "USER_CONFIRMED", 1, now.minusDays(2), now.plusDays(365));
+        AgentMemoryFact candidate = fact(99L, "PERMANENT", 7L, "候选记忆",
+                "CANDIDATE", "MODEL_CANDIDATE", 1, now.minusDays(3), now.plusDays(365));
+        candidate.setSensitivity("SENSITIVE");
+        candidate.setSourceRef("conv-1");
+        when(memoryFactRepository.findTop200ByTenantIdAndUserIdOrderByUpdatedAtDesc("t1", 7L))
+                .thenReturn(List.of(active, revoked, candidate));
+
+        AgentMemoryExportView export = agentMemoryService.exportOwn("t1", 7L);
+
+        assertEquals(3, export.total());
+        assertEquals("t1", export.tenantId());
+        assertEquals(7L, export.userId());
+        assertNotNull(export.exportedAt());
+        assertEquals("用户确认", export.memories().get(0).getSourceLabel());
+        assertEquals(now.plusDays(365), export.memories().get(0).getExpiresAt());
+        assertEquals("已撤销", export.memories().get(1).getStatusLabel());
+        assertEquals("候选待确认", export.memories().get(2).getStatusLabel());
+        assertEquals("敏感", export.memories().get(2).getSensitivityLabel());
+        assertEquals("conv-1", export.memories().get(2).getSourceRef());
+    }
+
+    @Test
+    void exportOwnShouldRequireUserIdentity() {
+        BizException ex = assertThrows(BizException.class, () -> agentMemoryService.exportOwn("t1", null));
+
+        assertEquals(ErrorCode.INVALID_PARAM, ex.getErrorCode());
+    }
+
+    @Test
+    void exportForAdminShouldFilterByUserAndKeepTenantScope() {
+        LocalDateTime now = LocalDateTime.now();
+        AgentMemoryFact mine = fact(101L, "PERMANENT", 7L, "我的记忆",
+                "ACTIVE", "USER_CONFIRMED", 1, now, now.plusDays(10));
+        AgentMemoryFact other = fact(102L, "PERMANENT", 8L, "他人记忆",
+                "ACTIVE", "USER_CONFIRMED", 1, now, now.plusDays(10));
+        when(memoryFactRepository.findTop200ByTenantIdOrderByUpdatedAtDesc("t1"))
+                .thenReturn(List.of(mine, other));
+
+        AgentMemoryExportView export = agentMemoryService.exportForAdmin("t1", 7L);
+
+        assertEquals(1, export.total());
+        assertEquals(7L, export.userId());
+        assertEquals("我的记忆", export.memories().get(0).getFactText());
+        assertNotNull(export.scope());
     }
 
     private AgentMemoryFact fact(Long id,

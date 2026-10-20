@@ -59,6 +59,66 @@ public class MemoryContentGuard {
     }
 
     /**
+     * 敏感分类：候选事实先分类再决定是否可采纳，内容本身不做改写。
+     *
+     * @param factText 记忆正文
+     * @return 敏感分类
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    public MemorySensitivity classify(String factText) {
+        if (!StringUtils.hasText(factText)) {
+            return MemorySensitivity.SENSITIVE;
+        }
+        return containsSensitive(factText) ? MemorySensitivity.SENSITIVE : MemorySensitivity.NORMAL;
+    }
+
+    /**
+     * 是否命中疑似 Prompt 注入特征。
+     *
+     * @param factText 记忆正文
+     * @return 是否命中
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    public boolean containsInjection(String factText) {
+        if (!StringUtils.hasText(factText)) {
+            return false;
+        }
+        List<String> keywords = properties.getSecurity().getPromptInjectionKeywords();
+        if (keywords == null || keywords.isEmpty()) {
+            return false;
+        }
+        String lowerText = factText.toLowerCase();
+        for (String keyword : keywords) {
+            if (StringUtils.hasText(keyword) && lowerText.contains(keyword.toLowerCase())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 是否命中敏感信息特征。
+     *
+     * @param factText 记忆正文
+     * @return 是否敏感
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    public boolean containsSensitive(String factText) {
+        if (!StringUtils.hasText(factText)) {
+            return false;
+        }
+        for (Pattern pattern : SENSITIVE_PATTERNS) {
+            if (pattern.matcher(factText).find()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 注入关键词检测：记忆属于高信任上下文，命中即拒绝写入。
      *
      * @param factText 记忆正文
@@ -66,15 +126,8 @@ public class MemoryContentGuard {
      * @date 2026-10-18
      */
     private void validateInjection(String factText) {
-        List<String> keywords = properties.getSecurity().getPromptInjectionKeywords();
-        if (keywords == null || keywords.isEmpty()) {
-            return;
-        }
-        String lowerText = factText.toLowerCase();
-        for (String keyword : keywords) {
-            if (StringUtils.hasText(keyword) && lowerText.contains(keyword.toLowerCase())) {
-                throw new BizException(ErrorCode.SECURITY_VIOLATION, "记忆内容包含疑似 Prompt 注入指令，已拒绝写入");
-            }
+        if (containsInjection(factText)) {
+            throw new BizException(ErrorCode.SECURITY_VIOLATION, "记忆内容包含疑似 Prompt 注入指令，已拒绝写入");
         }
     }
 
@@ -86,10 +139,8 @@ public class MemoryContentGuard {
      * @date 2026-10-18
      */
     private void validateSensitive(String factText) {
-        for (Pattern pattern : SENSITIVE_PATTERNS) {
-            if (pattern.matcher(factText).find()) {
-                throw new BizException(ErrorCode.SECURITY_VIOLATION, "记忆内容包含敏感信息，已拒绝写入");
-            }
+        if (containsSensitive(factText)) {
+            throw new BizException(ErrorCode.SECURITY_VIOLATION, "记忆内容包含敏感信息，已拒绝写入");
         }
     }
 }

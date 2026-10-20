@@ -1,11 +1,14 @@
 package com.lingsql.agent.memory;
 
 import com.lingsql.agent.entity.AgentMemoryFact;
+import com.lingsql.agent.memory.model.AgentMemoryExportView;
+import com.lingsql.agent.memory.model.AgentMemoryView;
 import com.lingsql.agent.repository.AgentMemoryFactRepository;
 import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -496,5 +499,119 @@ public class AgentMemoryService {
         return "- [" + (tier == null ? fact.getTier() : tier.label())
                 + "]（" + (sourceType == null ? fact.getSourceType() : sourceType.label())
                 + " · " + fact.getUpdatedAt().toLocalDate() + "）" + text;
+    }
+
+    /**
+     * 保留期到期失效任务：把已过保留期的生效记忆与待确认候选转为失效状态。
+     *
+     * <p>此前只在查询与提示词注入时过滤过期条目，过期数据会长期停留在生效状态；
+     * 该任务把状态推进到 {@code EXPIRED}，查询与注入自然不再命中。状态迁移是幂等的，
+     * 多实例同时执行只会得到同一结果。</p>
+     *
+     * @return 本次处理的条数
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    @Scheduled(cron = "${lingsql.memory.retention-expire-cron:0 30 3 * * ?}")
+    @Transactional
+    public int expireDueMemories() {
+        LocalDateTime now = LocalDateTime.now();
+        List<AgentMemoryFact> due = memoryFactRepository.findTop500ByStatusInAndExpiresAtLessThanEqualOrderByIdAsc(
+                List.of(MemoryStatus.ACTIVE.name(), MemoryStatus.CANDIDATE.name()), now);
+        if (due.isEmpty()) {
+            return 0;
+        }
+        for (AgentMemoryFact fact : due) {
+            fact.setStatus(MemoryStatus.EXPIRED.name());
+            fact.setUpdatedAt(now);
+        }
+        memoryFactRepository.saveAll(due);
+        log.info("长期记忆保留期到期处理: expired={}", due.size());
+        return due.size();
+    }
+
+    /**
+     * 管理端彻底清除记忆：删除记录本身，只记录范围与计数摘要，不记录正文。
+     *
+     * @param tenantId 租户标识
+     * @param id       记忆主键
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    @Transactional
+    public void purgeByAdmin(String tenantId, Long id) {
+        AgentMemoryFact fact = load(tenantId, id);
+        memoryFactRepository.delete(fact);
+        log.info("管理端清除长期记忆: tenantId={}, memoryId={}, tier={}, status={}",
+                fact.getTenantId(), id, fact.getTier(), fact.getStatus());
+    }
+
+    /**
+     * 用户隐私导出：导出自己的全部记忆与候选，含来源、时间与保留期。
+     *
+     * @param tenantId 租户标识
+     * @param userId   用户标识
+     * @return 导出视图
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    public AgentMemoryExportView exportOwn(String tenantId, Long userId) {
+        requireScope(tenantId, userId, MemoryTier.PERMANENT);
+        String tenant = tenantId.trim();
+        List<AgentMemoryFact> facts = memoryFactRepository
+                .findTop200ByTenantIdAndUserIdOrderByUpdatedAtDesc(tenant, userId);
+        return buildExport(tenant, userId, "用户永久记忆与候选（含历史状态）", facts);
+    }
+
+    /**
+     * 管理端隐私导出：按租户导出，可叠加用户过滤。
+     *
+     * @param tenantId 租户标识
+     * @param userId   用户标识，可为空
+     * @return 导出视图
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    public AgentMemoryExportView exportForAdmin(String tenantId, Long userId) {
+        String tenant = requireTenant(tenantId);
+        List<AgentMemoryFact> facts = memoryFactRepository.findTop200ByTenantIdOrderByUpdatedAtDesc(tenant);
+        if (userId != null) {
+            facts = facts.stream()
+                    .filter(fact -> userId.equals(fact.getUserId()))
+                    .collect(Collectors.toList());
+        }
+        String scope = userId == null ? "租户全部记忆与候选（含历史状态）" : "指定用户的记忆与候选（含历史状态）";
+        return buildExport(tenant, userId, scope, facts);
+    }
+
+    /**
+     * 构建导出视图。
+     *
+     * @param tenantId 租户标识
+     * @param userId   用户标识
+     * @param scope    导出范围说明
+     * @param facts    记忆列表
+     * @return 导出视图
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    private AgentMemoryExportView buildExport(String tenantId, Long userId, String scope, List<AgentMemoryFact> facts) {
+        List<AgentMemoryView> items = facts.stream().map(AgentMemoryView::from).collect(Collectors.toList());
+        return new AgentMemoryExportView(tenantId, userId, scope, items.size(), LocalDateTime.now(), items);
+    }
+
+    /**
+     * 校验并规范化租户标识。
+     *
+     * @param tenantId 租户标识
+     * @return 规范化租户标识
+     * @author 余炘洋
+     * @date 2026-10-19
+     */
+    private String requireTenant(String tenantId) {
+        if (!StringUtils.hasText(tenantId)) {
+            throw new BizException(ErrorCode.INVALID_PARAM, "租户标识不能为空");
+        }
+        return tenantId.trim();
     }
 }

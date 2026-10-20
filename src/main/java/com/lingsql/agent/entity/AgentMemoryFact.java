@@ -91,6 +91,45 @@ public class AgentMemoryFact {
     private String createdBy;
 
     /**
+     * 候选来源标识（会话或请求标识），用于回溯候选事实来自哪次对话。
+     */
+    @Column(name = "source_ref", length = 128)
+    private String sourceRef;
+
+    /**
+     * 敏感分类：NORMAL 普通 / SENSITIVE 敏感，敏感候选不允许采纳。
+     *
+     * <p>默认取普通：写入生效记忆前已由 {@link com.lingsql.agent.memory.MemoryContentGuard}
+     * 强制校验，能写入的正文必然未命中敏感特征。</p>
+     */
+    @Column(name = "sensitivity", nullable = false, length = 32)
+    private String sensitivity = "NORMAL";
+
+    /**
+     * 候选复核人标识（用户或管理端操作人）。
+     */
+    @Column(name = "reviewed_by", length = 64)
+    private String reviewedBy;
+
+    /**
+     * 候选复核时间。
+     */
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
+
+    /**
+     * 采纳后生成的生效记忆主键，候选记录本身不生效。
+     */
+    @Column(name = "approved_memory_id")
+    private Long approvedMemoryId;
+
+    /**
+     * 候选拒绝原因。
+     */
+    @Column(name = "reject_reason", length = 256)
+    private String rejectReason;
+
+    /**
      * 保留期到期时间，为空表示不自动过期。
      */
     @Column(name = "expires_at")
