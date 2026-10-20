@@ -89,7 +89,7 @@
 
 ### 7.2 测试要求
 - 后端代码变更后，至少执行一次：`mvn -B test`。
-- 前端代码变更后，至少执行一次：`cd web_src && npx vue-tsc --noEmit` 与 `cd web_src && npm run build`。
+- 前端代码变更后，至少执行一次：`cd web_src && npm run typecheck` 与 `cd web_src && npm run build`。
 - 修复缺陷时应补充或更新对应测试，避免同类问题回归。
 - 若存在无法执行的测试项，必须在交付说明中明确原因和影响范围。
 

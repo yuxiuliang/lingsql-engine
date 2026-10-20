@@ -32,6 +32,12 @@ updates:
       time: "04:15"
       timezone: "Asia/Shanghai"
     open-pull-requests-limit: 5
+    # TypeScript 7（原生编译器）尚未被 vue-tsc 支持，主版本升级会让 `npm run typecheck` 直接失败；
+    # 待 vue-tsc 官方支持后移除该忽略项，次版本与补丁仍正常升级。
+    ignore:
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
     groups:
       npm-minor-patch:
         patterns:
