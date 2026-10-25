@@ -14,6 +14,8 @@ import com.lingsql.common.pagination.PageParam;
 import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.common.result.PageResult;
 import com.lingsql.common.trace.RequestTraceContext;
+import com.lingsql.context.SessionInfo;
+import com.lingsql.context.TenantContext;
 import com.lingsql.employee.entity.DigitalEmployee;
 import com.lingsql.employee.entity.DigitalEmployeeRunLog;
 import com.lingsql.employee.model.DigitalEmployeeCreateRequest;
@@ -56,6 +58,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -351,7 +354,7 @@ public class DigitalEmployeeService {
         if (!ACTIVE_STATUS.equals(employee.getStatus())) {
             throw new BizException(ErrorCode.INVALID_PARAM, "数字员工已停用，无法执行");
         }
-        return runInternal(employee, request, null);
+        return withEmployeeTenant(employee, () -> runInternal(employee, request, null));
     }
 
     /**
@@ -369,7 +372,44 @@ public class DigitalEmployeeService {
         if (!ACTIVE_STATUS.equals(employee.getStatus()) || !ACTIVE_STATUS.equals(employee.getScheduleEnabled())) {
             throw new BizException(ErrorCode.INVALID_PARAM, "数字员工未开启定时执行");
         }
-        return runInternal(employee, null, expectedScheduleTime);
+        return withEmployeeTenant(employee, () -> runInternal(employee, null, expectedScheduleTime));
+    }
+
+    /**
+     * 在员工所属租户的上下文中执行，结束后精确还原调用方原有上下文。
+     *
+     * <p>{@code DynamicDataSource} 通过 {@link TenantContext} 选择租户数据源：HTTP 请求由过滤器写入上下文，
+     * 而定时调度线程没有任何请求上下文。若此处不显式建立租户上下文，查询会回落到默认数据源（控制库），
+     * 表现为 {@code StatementCallback; bad SQL grammar}（底层实为表不存在）。手工调用
+     * {@code /admin/digital-employees/\{id\}/run} 时上下文是管理员租户，同样会让执行落到错误的库。</p>
+     *
+     * <p>调度线程会被复用，必须在 {@code finally} 中还原，避免租户上下文泄漏到下一个任务。</p>
+     *
+     * @param employee 数字员工
+     * @param action   在租户上下文中执行的逻辑
+     * @param <T>      返回类型
+     * @return 执行结果
+     * @author 余炘洋
+     * @date 2026-10-25
+     */
+    private <T> T withEmployeeTenant(DigitalEmployee employee, Supplier<T> action) {
+        SessionInfo previousSession = TenantContext.getSessionInfo();
+        String previousConversationId = TenantContext.getConversationId();
+        TenantContext.setTenantId(employee.getTenantId());
+        try {
+            return action.get();
+        }
+        finally {
+            if (previousSession == null) {
+                TenantContext.clear();
+            }
+            else {
+                TenantContext.setSessionInfo(previousSession);
+            }
+            if (StringUtils.hasText(previousConversationId)) {
+                TenantContext.setConversationId(previousConversationId);
+            }
+        }
     }
 
     /**
