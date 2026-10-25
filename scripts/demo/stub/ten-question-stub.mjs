@@ -49,7 +49,9 @@ LIMIT 100`,
   {
     id: 'Q3',
     question: '按商品统计9月销售额，从高到低排列。',
-    sql: `SELECT p.product_name, SUM(i.quantity * i.sale_price) AS sales_amount
+    // 别名用中文：结果表头、结果概览的「主维度/合计」以及图表标题都直接取结果列名，
+    // 用英文别名会在界面上露出 product_name / sales_amount，业务用户看不懂。
+    sql: `SELECT p.product_name AS \`商品名称\`, SUM(i.quantity * i.sale_price) AS \`销售额\`
 FROM demo_sales_order o
 JOIN demo_sales_order_item i ON i.order_id = o.order_id
 JOIN demo_product p ON p.product_id = i.product_id
@@ -57,10 +59,10 @@ WHERE o.order_status = 'COMPLETED'
   AND o.order_date >= '${MONTH_START}'
   AND o.order_date < '${MONTH_END}'
 GROUP BY p.product_id, p.product_name
-ORDER BY sales_amount DESC
+ORDER BY \`销售额\` DESC
 LIMIT 100`,
     answer: (rows) => `9 月销售额从高到低（前 ${Math.min(rows.length, 5)} 名）：` +
-      rows.slice(0, 5).map((row, index) => `${index + 1}. ${row.product_name} ${money(row.sales_amount)}`).join('；') +
+      rows.slice(0, 5).map((row, index) => `${index + 1}. ${row['商品名称']} ${money(row['销售额'])}`).join('；') +
       (rows.length > 5 ? `；其余 ${rows.length - 5} 个商品见结果表。` : '。')
   },
   {
@@ -174,9 +176,10 @@ LIMIT 100`,
   {
     id: 'D1',
     question: '昨天销售额、订单数和毛利分别是多少？',
-    sql: `SELECT COUNT(DISTINCT o.order_id) AS order_count,
-       SUM(i.quantity * i.sale_price) AS sales_amount,
-       SUM(i.quantity * (i.sale_price - p.unit_cost)) AS gross_profit
+    // 同上：日报的三个指标也用中文别名，推送预览与结果概览才读得懂。
+    sql: `SELECT COUNT(DISTINCT o.order_id) AS \`订单数\`,
+       SUM(i.quantity * i.sale_price) AS \`销售额\`,
+       SUM(i.quantity * (i.sale_price - p.unit_cost)) AS \`毛利\`
 FROM demo_sales_order o
 JOIN demo_sales_order_item i ON i.order_id = o.order_id
 JOIN demo_product p ON p.product_id = i.product_id
@@ -185,11 +188,11 @@ WHERE o.order_status = 'COMPLETED'
 LIMIT 100`,
     answer: (rows) => {
       const row = rows[0] ?? {};
-      const orders = Number(row.order_count);
+      const orders = Number(row['订单数']);
       if (!Number.isFinite(orders) || orders === 0) {
         return '昨天没有已完成订单，日报无数据可推。';
       }
-      return `昨日销售额 ${money(row.sales_amount)}，订单 ${orders} 单，毛利 ${money(row.gross_profit)}。`;
+      return `昨日销售额 ${money(row['销售额'])}，订单 ${orders} 单，毛利 ${money(row['毛利'])}。`;
     }
   }
 ];
