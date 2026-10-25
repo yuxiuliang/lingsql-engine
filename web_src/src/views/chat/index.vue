@@ -558,7 +558,10 @@ const handleSend = async () => {
     messages.value.push(assistantMessage);
     currentConversationId.value = result.conversationId || currentConversationId.value;
     activeConversationId.value = currentConversationId.value;
-    if (shouldShowTrace(assistantMessage.trace)) {
+    // 只在发生自愈重试时自动展开执行轨迹——那才是用户真正需要知道的异常。
+    // 正常首轮完成时保持折叠，把答案、结果概览和图表留在首屏；
+    // 轨迹仍可随时通过「查看执行轨迹」按钮展开。
+    if (hasSelfHealing(assistantMessage.trace)) {
       expandTrace(assistantMessage.id);
     }
     await loadHistory();
