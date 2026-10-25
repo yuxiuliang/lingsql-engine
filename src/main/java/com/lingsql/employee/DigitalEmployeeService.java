@@ -783,7 +783,7 @@ public class DigitalEmployeeService {
         return opsAlertService.sendAlertToChannelsWithResult(
                 title,
                 message,
-                buildPushDetails(employee, runLog, executionResult, question, answer),
+                buildPushDetails(employee, runLog, executionResult),
                 resolveEffectivePushChannels(employee)
         );
     }
@@ -823,23 +823,20 @@ public class DigitalEmployeeService {
         );
     }
 
+    /**
+     * 构造面向客户群的推送详情块。
+     *
+     * <p>该详情块会被 {@code OpsAlertService} 原样渲染进钉钉/企微 markdown 正文并直接送达客户群，
+     * 因此只允许包含客户可见的事实：执行时间、结果行数和结果预览。租户标识、内部任务标识、
+     * 触发来源、通道配置和生成 SQL 一律不得进入，避免向客户泄露内部配置与库表结构。
+     * 内部运维告警请使用 {@link #buildAlertDetails}。</p>
+     */
     private Map<String, Object> buildPushDetails(DigitalEmployee employee,
                                                  DigitalEmployeeRunLog runLog,
-                                                 SqlExecutionResult executionResult,
-                                                 String question,
-                                                 String answer) {
+                                                 SqlExecutionResult executionResult) {
         Map<String, Object> details = new LinkedHashMap<>();
-        details.put("tenantId", employee.getTenantId());
-        details.put("employeeId", employee.getId());
-        details.put("employeeName", employee.getEmployeeName());
-        details.put("scenario", defaultText(employee.getScenario()));
-        details.put("question", defaultText(question));
-        details.put("triggerSource", defaultText(runLog.getTriggerSource()));
-        details.put("pushChannels", resolveEffectivePushChannels(employee));
-        details.put("resultRows", resolveResultRows(executionResult));
         details.put("executeTime", runLog.getCreateTime());
-        details.put("answer", abbreviate(answer, 300));
-        details.put("sql", abbreviate(executionResult.getSql(), 300));
+        details.put("resultRows", resolveResultRows(executionResult));
         List<String> preview = renderPreviewRows(executionResult.getData(), resolveSafePushMaxRows(employee.getPushMaxRows()));
         details.put("previewRows", preview.isEmpty() ? List.of("无") : preview);
         return details;
