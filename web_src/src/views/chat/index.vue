@@ -465,7 +465,7 @@ const loadHistory = async () => {
       keyword: historyKeyword.value.trim()
     });
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载历史记录失败');
+    ElMessage.error(toCustomerFacingError(error instanceof Error ? error.message : '加载历史记录失败'));
   }
 };
 
@@ -510,7 +510,7 @@ const loadHistoryDetail = async (item: ChatHistoryItem) => {
     await scrollToBottom();
   } catch (error) {
     if (requestSeq === historyRequestSeq.value) {
-      ElMessage.error(error instanceof Error ? error.message : '加载历史详情失败');
+      ElMessage.error(toCustomerFacingError(error instanceof Error ? error.message : '加载历史详情失败'));
     }
   } finally {
     if (requestSeq === historyRequestSeq.value) {
@@ -602,7 +602,7 @@ const handleRename = async (item: ChatHistoryItem) => {
     ElMessage.success('历史记录已更新');
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error(error instanceof Error ? error.message : '更新失败');
+      ElMessage.error(toCustomerFacingError(error instanceof Error ? error.message : '更新失败'));
     }
   }
 };
@@ -629,7 +629,7 @@ const handleDelete = async (item: ChatHistoryItem) => {
     ElMessage.success('历史记录已删除');
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error(error instanceof Error ? error.message : '删除失败');
+      ElMessage.error(toCustomerFacingError(error instanceof Error ? error.message : '删除失败'));
     }
   }
 };
