@@ -1,5 +1,15 @@
-# 演示 10 问：逐个调用 /api/v1/chat/ask，输出「答得出 / 说明原因」的分类结果与证据摘要。
-# 期望形态：7 问有数据，3 问明确说明「库里没有这个数据」并给出澄清问题。
+# 演示 10 问：逐个调用 /api/v1/chat/ask，记录返回行数、答案与实际执行的 SQL。
+#
+# 与旧版的区别：不再写死「答得出 / 答不了」预期，而是按**实际返回**判定结果类型。
+# 原因：演示数据集有两套（生成器数据集只到 9 月底，刷新数据集覆盖到当天），
+# 写死的预期会在换数据后与事实直接矛盾，报告反而变成误导。
+#
+# 结果类型：
+#   有数据   —— 返回行数 > 0 且答案不是拒答
+#   明确拒答 —— 答案命中拒答特征（库里没有这份数据 / 算不出 / 查不到 …）
+#   空结果   —— 返回 0 行且不是拒答
+#   失败     —— 接口返回非 200 或带 failureCode
+# 另会标注「行数>0 但拒答」的异常：聚合查询无匹配时返回一行 NULL，属正常现象。
 
 [CmdletBinding()]
 param(
@@ -20,20 +30,28 @@ if ($ReportPath -eq '') {
 }
 
 $questions = @(
-    @{ Id = 'Q1'; Kind = '答得出'; Text = '2026年9月已完成订单的销售额是多少？' }
-    @{ Id = 'Q2'; Kind = '答得出'; Text = '哪些商品当前库存低于安全库存？' }
-    @{ Id = 'Q3'; Kind = '答得出'; Text = '按商品统计9月销售额，从高到低排列。' }
-    @{ Id = 'Q4'; Kind = '答得出'; Text = '华东地区客户9月贡献了多少销售额？' }
-    @{ Id = 'Q5'; Kind = '答得出'; Text = '各销售渠道的订单数量分别是多少？' }
-    @{ Id = 'Q6'; Kind = '答得出'; Text = '哪个商品的毛利率最高？' }
-    @{ Id = 'Q7'; Kind = '答得出'; Text = '2026年9月有多少个客户下过单？' }
-    # Q8 的预期取决于当前加载的演示数据集：
-    #   - 刷新数据集（sql/demo_sales_inventory_refresh.sql）覆盖到当天，10 月有数据 → 答得出；
-    #   - 生成器数据集（scripts/demo/seed/generate-demo-data.mjs）只到 9 月底 → 答不了。
-    @{ Id = 'Q8'; Kind = '答得出'; Text = '2026年10月的销售额是多少？' }
-    @{ Id = 'Q9'; Kind = '答不了'; Text = '和2025年9月相比销售额增长了多少？' }
-    @{ Id = 'Q10'; Kind = '答不了'; Text = '各客户的满意度评分是多少？' }
+    @{ Id = 'Q1'; Text = '2026年9月已完成订单的销售额是多少？' }
+    @{ Id = 'Q2'; Text = '哪些商品当前库存低于安全库存？' }
+    @{ Id = 'Q3'; Text = '按商品统计9月销售额，从高到低排列。' }
+    @{ Id = 'Q4'; Text = '华东地区客户9月贡献了多少销售额？' }
+    @{ Id = 'Q5'; Text = '各销售渠道的订单数量分别是多少？' }
+    @{ Id = 'Q6'; Text = '哪个商品的毛利率最高？' }
+    @{ Id = 'Q7'; Text = '2026年9月有多少个客户下过单？' }
+    @{ Id = 'Q8'; Text = '2026年10月的销售额是多少？' }
+    @{ Id = 'Q9'; Text = '和2025年9月相比销售额增长了多少？' }
+    @{ Id = 'Q10'; Text = '各客户的满意度评分是多少？' }
 )
+
+# 拒答特征：说明「库里没有这份数据 / 算不出来」，而不是给出数字。
+$refusalPattern = '没有导入|算不出|查不到|无法|没有「|没有该|需要接入|为空|不存在|没有相关数据|答不了'
+
+function Get-ResultKind {
+    param([int]$RowCount, [string]$Answer, [bool]$Failed)
+    if ($Failed) { return '失败' }
+    if ($Answer -match $refusalPattern) { return '明确拒答' }
+    if ($RowCount -gt 0) { return '有数据' }
+    return '空结果'
+}
 
 function Invoke-DemoApi {
     param([string]$Method, [string]$Path, [object]$Body, [string]$Token = '', [string]$Tenant = '')
@@ -73,49 +91,82 @@ foreach ($question in $questions) {
     $rowCount = if ($data -and $data.data) { @($data.data).Count } else { 0 }
     $answer = if ($data) { $data.answer } else { $response.message }
     $failed = ($response.code -ne 200) -or ($data -and $data.failureCode)
+    $kind = Get-ResultKind -RowCount $rowCount -Answer $answer -Failed ([bool]$failed)
     $results += [pscustomobject]@{
-        Id       = $question.Id
-        Kind     = $question.Kind
-        Question = $question.Text
-        RowCount = $rowCount
-        Answer   = $answer
-        Sql      = if ($data) { $data.sql } else { '' }
-        Failed   = [bool]$failed
+        Id        = $question.Id
+        Question  = $question.Text
+        RowCount  = $rowCount
+        Kind      = $kind
+        Answer    = $answer
+        Sql       = if ($data) { $data.sql } else { '' }
+        Failed    = [bool]$failed
+        # 行数>0 却拒答：聚合查询无匹配时返回一行 NULL，不是缺陷，但必须在报告里说清
+        NullRow   = ($kind -eq '明确拒答' -and $rowCount -gt 0)
     }
-    $flag = if ($failed) { 'FAIL' } elseif ($rowCount -gt 0) { 'OK  ' } else { 'EMPTY' }
+    $flag = switch ($kind) { '有数据' { 'OK   ' } '明确拒答' { 'REFUSE' } '空结果' { 'EMPTY ' } default { 'FAIL  ' } }
     Write-Host ("      [{0}] {1} 行={2}  {3}" -f $flag, $question.Id, $rowCount, $answer)
     if ($QuestionDelayMs -gt 0) { Start-Sleep -Milliseconds $QuestionDelayMs }
 }
 
-$answered = @($results | Where-Object { $_.RowCount -gt 0 })
-$explained = @($results | Where-Object { $_.RowCount -eq 0 -and -not $_.Failed })
-$failed = @($results | Where-Object { $_.Failed })
+$withData = @($results | Where-Object { $_.Kind -eq '有数据' })
+$refused = @($results | Where-Object { $_.Kind -eq '明确拒答' })
+$empty = @($results | Where-Object { $_.Kind -eq '空结果' })
+$failed = @($results | Where-Object { $_.Kind -eq '失败' })
+$nullRows = @($results | Where-Object { $_.NullRow })
+
+# 依据 Q1（9 月）与 Q8（10 月）是否真有数据，反推当前数据集覆盖了哪些月份。
+$q1 = $results | Where-Object { $_.Id -eq 'Q1' } | Select-Object -First 1
+$q8 = $results | Where-Object { $_.Id -eq 'Q8' } | Select-Object -First 1
+$september = if ($q1 -and $q1.Kind -eq '有数据') { '有数据' } else { '无数据' }
+$october = if ($q8 -and $q8.Kind -eq '有数据') { '有数据' } else { '无数据' }
 
 $lines = @()
 $lines += '# LingSQL 演示 10 问结果'
 $lines += ''
 $lines += "- 生成时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 $lines += "- 环境：$BaseUrl（租户 $TenantId）"
-$lines += "- 汇总：有数据 $($answered.Count) 问，说明原因 $($explained.Count) 问，执行失败 $($failed.Count) 问"
+$lines += "- 汇总：有数据 $($withData.Count) 问，明确拒答 $($refused.Count) 问，空结果 $($empty.Count) 问，失败 $($failed.Count) 问"
+$lines += "- 数据覆盖推断（依据 Q1／Q8 是否真有返回行，不是配置）：2026 年 9 月$september，2026 年 10 月$october"
 $lines += ''
-$lines += '| # | 预期 | 问题 | 返回行数 | 回答 |'
+$lines += '> 本报告只记录**实际发生的结果**，不再写死"预期答得出/答不了"。'
+$lines += '> 换演示数据集后无需改脚本，直接重跑即可，报告不会与事实矛盾。'
+$lines += ''
+$lines += '| # | 问题 | 返回行数 | 结果类型 | 回答 |'
 $lines += '|---|---|---|---|---|'
 foreach ($row in $results) {
     $answer = ($row.Answer -replace '\|', '\|' -replace "`r?`n", ' ')
-    $lines += "| $($row.Id) | $($row.Kind) | $($row.Question) | $($row.RowCount) | $answer |"
+    $kindLabel = if ($row.NullRow) { '明确拒答（返回 1 行 NULL）' } else { $row.Kind }
+    $lines += "| $($row.Id) | $($row.Question) | $($row.RowCount) | $kindLabel | $answer |"
 }
 $lines += ''
+
+if ($nullRows.Count -gt 0) {
+    $lines += '## 说明：行数大于 0 但属于拒答'
+    $lines += ''
+    $lines += "涉及的题号：$((($nullRows | ForEach-Object { $_.Id }) -join '、'))。"
+    $lines += '这类问题的 SQL 是聚合查询，无匹配行时数据库仍会返回一行 NULL，因此"返回行数=1"并不代表有数据。'
+    $lines += '判定以答案是否给出具体数值为准，这是正常现象，不是缺陷。'
+    $lines += ''
+}
+
 $lines += '## 实际执行的 SQL'
 $lines += ''
 foreach ($row in $results) {
     $sql = ($row.Sql -replace "`r?`n", ' ')
     $lines += "- **$($row.Id)**：$sql"
 }
+$lines += ''
+$lines += '## 判定口径'
+$lines += ''
+$lines += "拒答特征（正则）：``$refusalPattern``。命中即判为「明确拒答」，优先于行数判断。"
+$lines += ''
 
 $directory = Split-Path -Parent $ReportPath
 if ($directory -and -not (Test-Path -LiteralPath $directory)) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
 $lines | Set-Content -LiteralPath $ReportPath -Encoding utf8
 
 Write-Host ''
-Write-Host "汇总：有数据 $($answered.Count) 问 / 说明原因 $($explained.Count) 问 / 失败 $($failed.Count) 问"
+Write-Host "汇总：有数据 $($withData.Count) 问 / 明确拒答 $($refused.Count) 问 / 空结果 $($empty.Count) 问 / 失败 $($failed.Count) 问"
+if ($nullRows.Count -gt 0) { Write-Host "注意：$((($nullRows | ForEach-Object { $_.Id }) -join '、')) 返回行数>0 但属拒答（聚合无匹配返回 NULL 行，正常）" }
+Write-Host "数据覆盖推断：9 月$september / 10 月$october"
 Write-Host "报告：$ReportPath"
