@@ -13,7 +13,9 @@
 param(
     [string]$MysqlHome = 'D:\Software\Tools\Database\mysql-8.4.2-winx64',
     [switch]$SkipBuild,
-    [switch]$SkipDataInit
+    [switch]$SkipDataInit,
+    # 需要演示「经营日报」推送时传入；不传则告警通道保持关闭，数字员工能执行但不会投递。
+    [string]$AlertWebhookUrl = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -136,6 +138,13 @@ if (-not (Test-DemoPort -Port $appPort)) {
     $env:LINGSQL_RUNTIME_DATA_SNAPSHOT_ID = 'demo-sales-20261025'
     # 演示环境显式暴露健康明细：聚合健康若因审计/计费等待项为 DOWN，能直接看出是哪个组件。
     $env:MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS = 'always'
+    # 告警通道只由 OpsAlertService 的全局配置决定，不从租户配置读。要演示经营日报推送，
+    # 必须在启动应用前把 webhook 地址灌进环境变量，否则数字员工执行成功但 push_delivery_status 为空。
+    if ($AlertWebhookUrl) {
+        $env:LINGSQL_ALERT_ENABLED = 'true'
+        $env:LINGSQL_ALERT_WEBHOOK_URL = $AlertWebhookUrl
+        $env:LINGSQL_ALERT_REQUIRE_ALL_CHANNELS = 'false'
+    }
     Start-DemoProcess -Name 'app' -FilePath 'java' -Arguments @('-jar', $jar) -WorkingDirectory $root | Out-Null
     if (-not (Wait-DemoHttp -Url "http://127.0.0.1:$appPort/actuator/health/readiness" -TimeoutSeconds 180)) {
         throw "应用未在 180 秒内就绪，请查看 $runtime/logs/app.out.log"
