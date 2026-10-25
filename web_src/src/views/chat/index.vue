@@ -15,6 +15,7 @@ import {
 } from '@/api/chat';
 import {fetchChatRuntimeConfig} from '@/api/config';
 import {useChatStore} from '@/store/chat';
+import {toCustomerFacingError} from '@/utils/customer-facing-error';
 import ResultInsightPanel from '@/views/chat/ResultInsightPanel.vue';
 
 /**
@@ -74,33 +75,6 @@ const maxQuestionLength = ref(resolveMaxQuestionLength());
 const questionPlaceholder = computed(() => {
   return `请输入你的问题，回车发送，Shift+Enter 换行（最多${maxQuestionLength.value}字）`;
 });
-
-/**
- * 后端错误消息里可能夹带的内部术语（计费账本、物理调用、数据源配置等）。
- * 这些内容直接显示在聊天页，会让客户以为产品在乱扣钱或环境没配好，也暴露内部实现。
- *
- * @author 余炘洋
- * @date 2026-10-25
- */
-const INTERNAL_ERROR_PATTERN = /账本|结算|预留|物理调用|数据源配置|模型已返回|计费|invocation/i;
-
-/**
- * 命中内部术语时使用的兜底文案。
- *
- * @author 余炘洋
- * @date 2026-10-25
- */
-const CUSTOMER_SAFE_ERROR = '这次没能算出结果，可以换一种问法再试一次；如果反复出现，请把提问时间告诉我们，我们会去查。';
-
-/**
- * 把后端错误翻译成客户看得懂的话：命中内部术语换成兜底文案，其余保持原样。
- *
- * @author 余炘洋
- * @date 2026-10-25
- */
-const toCustomerFacingError = (raw: string): string => {
-  return INTERNAL_ERROR_PATTERN.test(raw) ? CUSTOMER_SAFE_ERROR : raw;
-};
 
 /**
  * 加载聊天运行时配置。
