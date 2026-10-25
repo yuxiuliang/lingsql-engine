@@ -359,7 +359,12 @@ class DigitalEmployeeServiceTest {
         assertNotNull(previewRows);
         assertEquals(2, previewRows.size());
         assertTrue(previewRows.get(0).contains("region=华东"));
-        assertEquals(List.of("dingtalk", "wecom"), detailsCaptor.getValue().get("pushChannels"));
+        assertEquals(2, ((Number) detailsCaptor.getValue().get("resultRows")).intValue());
+        assertFalse(detailsCaptor.getValue().containsKey("tenantId"), "客户可见推送不得携带租户标识");
+        assertFalse(detailsCaptor.getValue().containsKey("employeeId"), "客户可见推送不得携带内部任务标识");
+        assertFalse(detailsCaptor.getValue().containsKey("pushChannels"), "客户可见推送不得携带通道配置");
+        assertFalse(detailsCaptor.getValue().containsKey("triggerSource"), "客户可见推送不得携带触发来源");
+        assertFalse(detailsCaptor.getValue().containsKey("sql"), "客户可见推送不得携带生成 SQL");
         ArgumentCaptor<DigitalEmployeeRunLog> runLogCaptor = ArgumentCaptor.forClass(DigitalEmployeeRunLog.class);
         Mockito.verify(runLogRepository).save(runLogCaptor.capture());
         assertEquals(1, runLogCaptor.getValue().getPushDeliveryStatus());
