@@ -23,19 +23,20 @@ const CASES = [
   {
     id: 'Q1',
     question: '2026年9月已完成订单的销售额是多少？',
-    sql: `SELECT SUM(i.quantity * i.sale_price) AS sales_amount
+    sql: `SELECT SUM(i.quantity * i.sale_price) AS \`销售额\`
 FROM demo_sales_order o
 JOIN demo_sales_order_item i ON i.order_id = o.order_id
 WHERE o.order_status = 'COMPLETED'
   AND o.order_date >= '${MONTH_START}'
   AND o.order_date < '${MONTH_END}'
 LIMIT 100`,
-    answer: (rows) => `2026 年 9 月已完成订单的销售额合计 ${money(rows[0]?.sales_amount)}。`
+    answer: (rows) => `2026 年 9 月已完成订单的销售额合计 ${money(rows[0]?.['销售额'])}。`
   },
   {
     id: 'Q2',
     question: '哪些商品当前库存低于安全库存？',
-    sql: `SELECT p.product_name, s.warehouse_name, s.available_quantity, s.safety_quantity
+    sql: `SELECT p.product_name AS \`商品名称\`, s.warehouse_name AS \`仓库\`,
+       s.available_quantity AS \`可用数量\`, s.safety_quantity AS \`安全库存\`
 FROM demo_inventory_snapshot s
 JOIN demo_product p ON p.product_id = s.product_id
 WHERE s.available_quantity < s.safety_quantity
@@ -44,7 +45,7 @@ LIMIT 100`,
     answer: (rows) => rows.length === 0
       ? '当前没有商品低于安全库存。'
       : `当前有 ${rows.length} 个商品低于安全库存：` +
-        rows.map((row) => `${row.product_name}（${row.warehouse_name} 可用 ${row.available_quantity}，安全线 ${row.safety_quantity}，缺口 ${row.safety_quantity - row.available_quantity}）`).join('；') + '。'
+        rows.map((row) => `${row['商品名称']}（${row['仓库']} 可用 ${row['可用数量']}，安全线 ${row['安全库存']}，缺口 ${row['安全库存'] - row['可用数量']}）`).join('；') + '。'
   },
   {
     id: 'Q3',
@@ -68,7 +69,7 @@ LIMIT 100`,
   {
     id: 'Q4',
     question: '华东地区客户9月贡献了多少销售额？',
-    sql: `SELECT c.region_name, SUM(i.quantity * i.sale_price) AS sales_amount
+    sql: `SELECT c.region_name AS \`地区\`, SUM(i.quantity * i.sale_price) AS \`销售额\`
 FROM demo_sales_order o
 JOIN demo_sales_order_item i ON i.order_id = o.order_id
 JOIN demo_customer c ON c.customer_id = o.customer_id
@@ -80,47 +81,47 @@ GROUP BY c.region_name
 LIMIT 100`,
     answer: (rows) => rows.length === 0
       ? '没有华东地区 9 月已完成订单的记录。'
-      : `华东地区客户 9 月贡献的已完成订单销售额为 ${money(rows[0].sales_amount)}。`
+      : `华东地区客户 9 月贡献的已完成订单销售额为 ${money(rows[0]['销售额'])}。`
   },
   {
     id: 'Q5',
     question: '各销售渠道的订单数量分别是多少？',
-    sql: `SELECT o.sales_channel, COUNT(*) AS order_count
+    sql: `SELECT o.sales_channel AS \`销售渠道\`, COUNT(*) AS \`订单数\`
 FROM demo_sales_order o
 GROUP BY o.sales_channel
-ORDER BY order_count DESC
+ORDER BY \`订单数\` DESC
 LIMIT 100`,
-    answer: (rows) => `各销售渠道订单数：${rows.map((row) => `${row.sales_channel} ${row.order_count} 单`).join('；')}。`
+    answer: (rows) => `各销售渠道订单数：${rows.map((row) => `${row['销售渠道']} ${row['订单数']} 单`).join('；')}。`
   },
   {
     id: 'Q6',
     question: '哪个商品的毛利率最高？',
-    sql: `SELECT p.product_name,
-       ROUND((p.unit_price - p.unit_cost) / p.unit_price * 100, 1) AS gross_margin_pct
+    sql: `SELECT p.product_name AS \`商品\`,
+       ROUND((p.unit_price - p.unit_cost) / p.unit_price * 100, 1) AS \`毛利率\`
 FROM demo_product p
-ORDER BY gross_margin_pct DESC
+ORDER BY \`毛利率\` DESC
 LIMIT 100`,
     answer: (rows) => rows.length === 0
       ? '商品主数据为空，无法计算毛利率。'
-      : `毛利率最高的是 ${rows[0].product_name}，毛利率 ${rows[0].gross_margin_pct}%。`
+      : `毛利率最高的是 ${rows[0]['商品']}，毛利率 ${rows[0]['毛利率']}%。`
   },
   {
     id: 'Q7',
     question: '2026年9月有多少个客户下过单？',
-    sql: `SELECT COUNT(DISTINCT o.customer_id) AS customer_count
+    sql: `SELECT COUNT(DISTINCT o.customer_id) AS \`客户数\`
 FROM demo_sales_order o
 WHERE o.order_date >= '${MONTH_START}'
   AND o.order_date < '${MONTH_END}'
   AND o.order_status = 'COMPLETED'
 LIMIT 100`,
-    answer: (rows) => `2026 年 9 月有 ${rows[0]?.customer_count} 个客户完成了下单。`
+    answer: (rows) => `2026 年 9 月有 ${rows[0]?.['客户数']} 个客户完成了下单。`
   },
   {
     id: 'Q8',
     question: '2026年10月的销售额是多少？',
     // 注意：这里必须是单行汇总，不能 GROUP BY o.order_id——按订单分组会返回最多 100 行
     // 每条订单的小计，既不是"总销售额"，也会让 LIMIT 截断。
-    sql: `SELECT SUM(i.quantity * i.sale_price) AS sales_amount
+    sql: `SELECT SUM(i.quantity * i.sale_price) AS \`销售额\`
 FROM demo_sales_order o
 JOIN demo_sales_order_item i ON i.order_id = o.order_id
 WHERE o.order_status = 'COMPLETED'
@@ -130,7 +131,7 @@ LIMIT 100`,
     // 答案必须由结果驱动：演示数据集换成覆盖 10 月的那一份后，写死的"10 月没有数据"会与
     // 实际返回的行直接矛盾，在客户面前等于演示失败。
     answer: (rows) => {
-      const amount = rows[0]?.sales_amount;
+      const amount = rows[0]?.['销售额'];
       const number = Number(amount);
       if (!Number.isFinite(number) || number <= 0) {
         return '演示库里 2026 年 10 月还没有已完成订单，这个月的销售额为空。' +
@@ -143,7 +144,7 @@ LIMIT 100`,
     id: 'Q9',
     question: '和2025年9月相比销售额增长了多少？',
     // 同上：同比需要单行汇总，不能按订单分组。
-    sql: `SELECT SUM(i.quantity * i.sale_price) AS sales_amount
+    sql: `SELECT SUM(i.quantity * i.sale_price) AS \`销售额\`
 FROM demo_sales_order o
 JOIN demo_sales_order_item i ON i.order_id = o.order_id
 WHERE o.order_status = 'COMPLETED'
@@ -151,7 +152,7 @@ WHERE o.order_status = 'COMPLETED'
   AND o.order_date < '2025-10-01'
 LIMIT 100`,
     answer: (rows) => {
-      const amount = rows[0]?.sales_amount;
+      const amount = rows[0]?.['销售额'];
       const number = Number(amount);
       if (!Number.isFinite(number) || number <= 0) {
         return '演示库没有导入 2025 年的历史数据，因此算不出同比。' +
@@ -163,7 +164,7 @@ LIMIT 100`,
   {
     id: 'Q10',
     question: '各客户的满意度评分是多少？',
-    sql: `SELECT c.customer_name, c.customer_level
+    sql: `SELECT c.customer_name AS \`客户\`, c.customer_level AS \`客户等级\`
 FROM demo_customer c
 WHERE c.customer_level = 'S'
 LIMIT 100`,
