@@ -84,6 +84,13 @@ $seedText | Set-Content -LiteralPath $generatedSeed -Encoding utf8
 Invoke-MysqlScript -MysqlBin $MysqlBin -HostName $HostName -Port $Port -User $RootUser `
     -Password $RootPassword -Database $SalesDatabase -ScriptPath $generatedSeed | Out-Null
 
+# 语义字典：让模型知道「销售额／毛利／安全库存」等业务词对应哪张表哪个字段。
+# 缺了这份数据，演示租户的语义层就是空的，模型只能靠列名猜。
+Write-Host '      导入演示租户语义字典'
+Invoke-MysqlScript -MysqlBin $MysqlBin -HostName $HostName -Port $Port -User $RootUser `
+    -Password $RootPassword -Database $ControlDatabase `
+    -ScriptPath (Join-Path $root 'sql/demo_semantic_lexicon.sql') | Out-Null
+
 Write-Host '[6/7] 创建应用账号与只读演示账号'
 $appUser = $secrets.mysql.appUser
 $readerUser = $secrets.mysql.readerUser
