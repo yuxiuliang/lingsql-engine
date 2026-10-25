@@ -11,8 +11,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -137,6 +139,50 @@ class OpsAlertServiceTest {
         assertTrue(service.isAlertEnabled());
         assertEquals(List.of("webhook", "wecom"), service.getConfiguredChannels());
         assertEquals(List.of("dingtalk"), service.getUnconfiguredChannels());
+    }
+
+    /**
+     * 客户群可见的推送正文不得携带任何内部字段。
+     *
+     * <p>钉钉、企微与通用 Webhook 都会把 details 整块渲染进消息正文，而详情块直接下发到
+     * 客户群聊。此处以 DigitalEmployeeService#buildPushDetails 修复后的实际产出为输入，
+     * 断言三条通道的正文都只包含客户可见事实，防止后续往推送里重新加回租户标识、
+     * 内部任务标识、触发来源、通道配置或生成 SQL。</p>
+     */
+    @Test
+    void shouldNotLeakInternalFieldsIntoCustomerFacingPush() throws Exception {
+        try (MockWebhookServer webhook = new MockWebhookServer(200);
+             MockWebhookServer dingTalk = new MockWebhookServer(200);
+             MockWebhookServer weCom = new MockWebhookServer(200)) {
+            LingSqlProperties properties = new LingSqlProperties();
+            properties.getAlert().setEnabled(true);
+            properties.getAlert().setWebhookUrl(webhook.url());
+            properties.getAlert().setDingTalkWebhookUrl(dingTalk.url());
+            properties.getAlert().setWeComWebhookUrl(weCom.url());
+            OpsAlertService service = new OpsAlertService(properties, new ObjectMapper());
+
+            Map<String, Object> customerDetails = new LinkedHashMap<>();
+            customerDetails.put("executeTime", LocalDateTime.of(2026, 10, 24, 8, 0));
+            customerDetails.put("resultRows", 1);
+            customerDetails.put("previewRows", List.of("销售额=3037.11", "订单数=10"));
+
+            AlertDispatchResult result = service.sendAlertToChannelsWithResult(
+                    "【昨日经营快报】10-24",
+                    "销售额 3,037 元，订单 10 单",
+                    customerDetails,
+                    List.of("webhook", "dingtalk", "wecom"));
+
+            assertTrue(result.success());
+            List<String> forbiddenFields = List.of("tenantId", "employeeId", "triggerSource", "pushChannels", "SELECT");
+            for (MockWebhookServer target : List.of(webhook, dingTalk, weCom)) {
+                assertEquals(1, target.requestCount());
+                String body = target.firstBody();
+                assertTrue(body.contains("销售额=3037.11"), "结果预览必须送达客户");
+                for (String forbidden : forbiddenFields) {
+                    assertFalse(body.contains(forbidden), "客户推送不得包含内部字段: " + forbidden);
+                }
+            }
+        }
     }
 
     private static final class MockWebhookServer implements AutoCloseable {
