@@ -162,6 +162,29 @@ ORDER BY id DESC LIMIT 3;
 
 > 手工调 `/admin/digital-employees/{id}/run` 时**不要**指望推送——推送只在 `triggerSource=SCHEDULED` 分支发生。手工触发请显式传 `{"triggerSource":"SCHEDULED"}`，或直接等定时。
 
+### 4.4 语义字典与界面就绪项（演示时该期待什么）
+
+**语义字典**（演示租户 `demo_sales` 预置 21 条）
+
+- 来源：`sql/demo_semantic_lexicon.sql`，`init-demo-databases.ps1` 会自动导入；
+- 作用：被渲染成 `术语 => 映射` 逐行注入 SQL 架构师的提示词，让模型知道「毛利」对应
+  `SUM(quantity * (sale_price - unit_cost))`，而不是靠列名猜；
+- 查看：管理端语义配置页，或 `GET /api/v1/admin/config/semantic?tenantId=demo_sales`；
+- **改完必须刷缓存**，否则要等缓存过期才生效：`POST /api/v1/admin/refresh-semantic/demo_sales`；
+- 重置：重跑 `sql/demo_semantic_lexicon.sql` 后刷缓存。
+
+> ⚠️ `mapping` 会被拼成 `SELECT <mapping> FROM dual` 做语法校验，因此只能写**表达式**
+> （列引用或聚合）。写完整 `SELECT` 或 `WHERE` 谓词会以「映射表达式语法错误」被拒绝。
+> ⚠️ 用离线桩演示时**看不到**字典的效果（桩的 SQL 是固定命中的），它的价值在真实模型下体现。
+
+**界面上已经就绪的三处**（不必再解释"为什么是英文"）
+
+| 项 | 现在的行为 |
+| --- | --- |
+| 结果表头、结果概览、图表标题 | 中文列名（商品名称／销售额／毛利率…），不再出现 `product_name` |
+| 执行轨迹 | 默认折叠，只留「首轮完成」状态胶囊；**仅当发生自愈重试时才自动展开** |
+| 错误提示 | 后端内部术语（账本／结算／数据源配置／物理调用）会被替换为面向客户的兜底文案 |
+
 ---
 
 ## 5. 换成真实模型（演示前必做，否则展示的是离线桩）
@@ -199,6 +222,8 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 | `scripts/demo/install-redis-windows.ps1` | 便携版 Redis 下载解压 |
 | `scripts/demo/seed/generate-demo-data.mjs` | 确定性演示数据生成器 |
 | `scripts/demo/stub/ten-question-stub.mjs` | 确定性模型桩 |
+| `sql/demo_semantic_lexicon.sql` | 演示租户语义字典（21 条术语），由 init 脚本自动导入 |
+| `sql/demo_sales_inventory_refresh.sql` | 刷新数据集（覆盖到当天），用于演示昨日日报 |
 | `.local-private/demo/logs/` | 四个组件的 stdout／stderr |
 | `.local-private/demo/pids/` | 进程 PID（停止脚本依赖） |
 
