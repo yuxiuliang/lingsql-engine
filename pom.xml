@@ -21,7 +21,7 @@
         <spring-ai.version>2.0.1</spring-ai.version>
         <jsqlparser.version>5.4</jsqlparser.version>
         <jjwt.version>0.13.0</jjwt.version>
-        <poi.version>5.5.1</poi.version>
+        <poi.version>6.0.0</poi.version>
         <openpdf.version>3.0.5</openpdf.version>
         <netty.version>4.2.17.Final</netty.version>
         <jackson-bom.version>3.1.5</jackson-bom.version>
