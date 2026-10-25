@@ -298,14 +298,19 @@ onBeforeUnmount(() => {
             <div class="slogan-desc">
               多租户 Text-to-SQL 智能引擎，助力业务快速洞察与决策。
             </div>
+            <!--
+              这里只放可被客户当场验证的事实。
+              原先的「99.9% 查询可用性」「100+ 企业租户」没有测量依据，且在零客户阶段属虚假陈述，
+              对第一个客户的杀伤力最大，故替换为可验证的能力描述。
+            -->
             <div class="slogan-metrics">
               <div class="metric">
-                <div class="metric-value">99.9%</div>
-                <div class="metric-label">查询可用性</div>
+                <div class="metric-value">只读</div>
+                <div class="metric-label">数据权限</div>
               </div>
               <div class="metric">
-                <div class="metric-value">100+</div>
-                <div class="metric-label">企业租户</div>
+                <div class="metric-value">全程</div>
+                <div class="metric-label">调用留痕</div>
               </div>
               <div class="metric">
                 <div class="metric-value">秒级</div>
