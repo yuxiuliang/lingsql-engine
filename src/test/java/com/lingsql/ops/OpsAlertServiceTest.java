@@ -188,6 +188,8 @@ class OpsAlertServiceTest {
                 String body = target.firstBody();
                 assertFalse(body.contains("executeTime"), "群消息正文不得出现 executeTime");
                 assertFalse(body.contains("resultRows"), "群消息正文不得出现 resultRows");
+                assertEquals(body.indexOf("结果预览:"), body.lastIndexOf("结果预览:"),
+                        "「结果预览」标签只应出现一次（曾因渲染器与模板各加一次而重复）");
             }
             // 通用 webhook 是给机器读的 JSON，必须保留完整 details
             assertTrue(webhook.firstBody().contains("executeTime"), "webhook 需保留完整 details");

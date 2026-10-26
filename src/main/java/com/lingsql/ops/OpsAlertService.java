@@ -395,7 +395,8 @@ public class OpsAlertService {
         if (!(preview instanceof Collection<?> rows) || rows.isEmpty()) {
             return linePrefix + "无";
         }
-        StringBuilder builder = new StringBuilder(linePrefix).append("结果预览:").append('\n');
+        // 标签由外层模板输出（> 结果预览:），这里只渲染内容行，避免出现两行「结果预览:」
+        StringBuilder builder = new StringBuilder();
         for (Object row : rows) {
             builder.append(linePrefix).append(row).append('\n');
         }
