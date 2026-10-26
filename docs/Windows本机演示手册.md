@@ -282,9 +282,13 @@ WHERE create_time >= CURDATE() ORDER BY id;
 | `0` | 尝试了但失败，`push_delivery_detail` 里写明哪个通道挂了 |
 | `NULL` | **根本没尝试**——通常是没有配置任何通道（`系统告警总开关未启用`） |
 
-> **手工执行不会推送**（2026-10-27 实测：`MANUAL` 的 `push_delivery_status` 恒为 `NULL`，
-> `SCHEDULED` 才会出现 0 或 1）。所以演示时"我手动跑一次给你看"不会发到客户群里，
-> 客户问"手动跑了怎么没收到"，答案是这个，不是通道坏了。
+> **手工执行不会推送，这是设计如此**（2026-10-27 核对代码：`sendScheduledAlertIfNecessary`
+> 与 `sendScheduledResultIfNecessary` 都显式要求 `triggerSource == SCHEDULED`）。
+> 原因是手工执行用于调试，不应该把测试内容发到客户群里。
+> 实测也一致：`MANUAL` 的 `push_delivery_status` 恒为 `NULL`，`SCHEDULED` 才会出现 0 或 1。
+>
+> **对演示的影响**：想真的让客户手机响，只有两条路——① 把 cron 设到下一分钟，等一轮（约 15 秒后）；
+> ② 更稳的做法：提前抓一条真实推送原文，现场直接发给他，**不要当场等**。
 
 **③ 数字对不对（抽一条）**
 
