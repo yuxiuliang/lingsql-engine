@@ -217,7 +217,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
   -ModelProvider 'DASHSCOPE' `
   -ModelName 'qwen-plus' `
   -ModelVersion '2026-10' `
-  -ModelBaseUrl 'https://dashscope.aliyuncs.com/compatible-mode' `
+  -ModelBaseUrl 'https://dashscope.aliyuncs.com/compatible-mode/v1' `
   -ModelApiKey $env:LINGSQL_DEMO_MODEL_API_KEY
 ```
 
@@ -225,7 +225,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 
 > 注意顺序：**更新模型配置会把启用状态重置**，因此脚本里固定是「PUT → probe → enable → 授权」，少一步就会出现「当前租户没有已启用且验证健康的授权模型」。
 
-> 另注：`-ModelBaseUrl` 要按供应商的 OpenAI 兼容文档填到**能拼出 `/v1/chat/completions` 的那一层**（阿里云百炼一般是 `https://dashscope.aliyuncs.com/compatible-mode/v1`，上面示例少了 `/v1`，请以供应商文档为准）。填错时的表现是 `provision-demo.ps1` 抛「模型探测未通过」，而不是 URL 解析错误——别被这个提示误导去查别的地方。
+> 另注：`-ModelBaseUrl` 要填到**能拼出 `/v1/chat/completions` 的那一层**（上面示例已含 `/v1`；各家路径不同，以供应商的 OpenAI 兼容文档为准）。填错时的表现是 `provision-demo.ps1` 抛「模型探测未通过」，而不是 URL 解析错误——别被这个提示误导去查别的地方。
 
 切换后 10 个问题仍然可用，但 SQL 与回答由模型真实生成，Q8–Q10 也可能出现「模型坚持给一个错误答案」的情况——这正是需要演示时主动讲的部分。
 
