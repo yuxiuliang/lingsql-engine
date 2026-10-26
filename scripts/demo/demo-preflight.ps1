@@ -96,6 +96,31 @@ catch {
     Report-Check '应用 readiness' $false $_.Exception.Message
 }
 
+# 2.5 构建对齐：应用必须是从磁盘上这个 jar 启动的。
+# 2026-10-27 发现过一次「jar 从工作区构建、不对应任何提交，且进程比 jar 旧」的情况，
+# 演示时无法回答「这是哪个版本」。这里用「jar 时间 ≤ 进程启动时间」判定，
+# 并把提交号与 jar 短哈希一并打印，便于口头报版本。
+try {
+    $listener = Get-NetTCPConnection -State Listen -LocalPort $AppPort -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $listener) {
+        Report-Check '构建对齐' $false "端口 $AppPort 无监听进程"
+    } else {
+        $proc = Get-Process -Id $listener.OwningProcess
+        $jar = Get-Item (Join-Path $root 'target/lingsql-engine-1.0.0-SNAPSHOT.jar') -ErrorAction SilentlyContinue
+        if (-not $jar) {
+            Report-Check '构建对齐' $false '未找到 target 下的 jar'
+        } else {
+            $aligned = $jar.LastWriteTime -le $proc.StartTime
+            $head = (& git -C $root rev-parse --short HEAD 2>$null)
+            $jarHash = (Get-FileHash -LiteralPath $jar.FullName -Algorithm SHA256).Hash.Substring(0, 12).ToLower()
+            Report-Check '构建对齐' $aligned ("jar={0} 进程={1} HEAD={2} jarHash={3}" -f $jar.LastWriteTime.ToString('HH:mm:ss'), $proc.StartTime.ToString('HH:mm:ss'), "$head".Trim(), $jarHash)
+        }
+    }
+}
+catch {
+    Report-Check '构建对齐' $false $_.Exception.Message
+}
+
 # 3. 演示数据是否覆盖「昨天」
 $yesterday = (Get-Date).Date.AddDays(-1).ToString('yyyy-MM-dd')
 $maxOrderDate = Invoke-Sql -Database 'lingsql_demo_sales' -Sql 'SELECT MAX(order_date) FROM demo_sales_order;'
