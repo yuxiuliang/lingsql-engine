@@ -85,6 +85,10 @@ public class DigitalEmployeeService {
     private static final String ALERT_RULE_EMPTY_RESULT = "EMPTY_RESULT";
     private static final String ALERT_RULE_RESULT_ROWS_GT = "RESULT_ROWS_GT";
     private static final String ALERT_RULE_RESULT_ROWS_LT = "RESULT_ROWS_LT";
+    /**
+     * 日报推送使用的消息级别：日报是正常产出，不应按告警级投递。
+     */
+    private static final String PUSH_LEVEL_INFO = "INFO";
     private static final int DEFAULT_PUSH_MAX_ROWS = 3;
     private static final int MAX_PUSH_MAX_ROWS = 10;
     private static final int MAX_PUSH_TITLE_TEMPLATE_LENGTH = 255;
@@ -820,11 +824,14 @@ public class DigitalEmployeeService {
         Map<String, String> templateValues = buildPushTemplateValues(employee, runLog, executionResult, question, answer);
         String title = renderPushTemplate(employee.getPushTitleTemplate(), DEFAULT_PUSH_TITLE_TEMPLATE, templateValues);
         String message = renderPushTemplate(employee.getPushMessageTemplate(), DEFAULT_PUSH_MESSAGE_TEMPLATE, templateValues);
+        // 日报属于「正常产出」而非告警：能走到这里说明运行成功（失败已在守卫处返回），
+        // 因此固定用 INFO，避免客户侧按 level 着色时把每天的正常日报显示成告警。
         return opsAlertService.sendAlertToChannelsWithResult(
                 title,
                 message,
                 buildPushDetails(employee, runLog, executionResult),
-                resolveEffectivePushChannels(employee)
+                resolveEffectivePushChannels(employee),
+                PUSH_LEVEL_INFO
         );
     }
 

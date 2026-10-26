@@ -35,6 +35,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OpsAlertService {
 
+    /**
+     * 默认消息级别。告警类消息沿用 WARN；日报等「正常产出」可显式传 INFO。
+     */
+    private static final String DEFAULT_ALERT_LEVEL = "WARN";
+
     private final LingSqlProperties properties;
     private final ObjectMapper objectMapper;
 
@@ -78,7 +83,24 @@ public class OpsAlertService {
      * @date 2026-04-15
      */
     public AlertDispatchResult sendAlertWithResult(String title, String message, Map<String, Object> details) {
-        return sendAlertInternal(title, message, details, null);
+        return sendAlertWithResult(title, message, details, DEFAULT_ALERT_LEVEL);
+    }
+
+    /**
+     * 发送告警并返回结构化投递结果，可指定消息级别。
+     *
+     * <p>日报等「正常产出」的推送应传 {@code INFO}，否则客户侧按级别着色时会把正常日报显示成告警。</p>
+     *
+     * @param title   告警标题
+     * @param message 告警内容
+     * @param details 扩展字段
+     * @param level   消息级别；为空时按默认级别处理
+     * @return 投递结果
+     * @author 余炘洋
+     * @date 2026-10-26
+     */
+    public AlertDispatchResult sendAlertWithResult(String title, String message, Map<String, Object> details, String level) {
+        return sendAlertInternal(title, message, details, null, level);
     }
 
     /**
@@ -96,7 +118,27 @@ public class OpsAlertService {
                                                              String message,
                                                              Map<String, Object> details,
                                                              List<String> channels) {
-        return sendAlertInternal(title, message, details, channels);
+        return sendAlertToChannelsWithResult(title, message, details, channels, DEFAULT_ALERT_LEVEL);
+    }
+
+    /**
+     * 按指定通道发送告警并返回结构化投递结果，可指定消息级别。
+     *
+     * @param title    告警标题
+     * @param message  告警内容
+     * @param details  扩展字段
+     * @param channels 指定通道
+     * @param level    消息级别；为空时按默认级别处理
+     * @return 投递结果
+     * @author 余炘洋
+     * @date 2026-10-26
+     */
+    public AlertDispatchResult sendAlertToChannelsWithResult(String title,
+                                                             String message,
+                                                             Map<String, Object> details,
+                                                             List<String> channels,
+                                                             String level) {
+        return sendAlertInternal(title, message, details, channels, level);
     }
 
     /**
@@ -153,7 +195,8 @@ public class OpsAlertService {
     private AlertDispatchResult sendAlertInternal(String title,
                                                   String message,
                                                   Map<String, Object> details,
-                                                  List<String> channels) {
+                                                  List<String> channels,
+                                                  String level) {
         LingSqlProperties.Alert alert = properties.getAlert();
         if (alert == null || !alert.isEnabled()) {
             return AlertDispatchResult.skipped("系统告警总开关未启用");
@@ -173,7 +216,7 @@ public class OpsAlertService {
             boolean anySuccess = false;
             boolean allSuccess = true;
             for (AlertTarget target : targets) {
-                AlertDispatchChannelResult channelResult = sendToTarget(client, readTimeout, target, title, message, details);
+                AlertDispatchChannelResult channelResult = sendToTarget(client, readTimeout, target, title, message, details, level);
                 channelResults.add(channelResult);
                 anySuccess = anySuccess || channelResult.success();
                 allSuccess = allSuccess && channelResult.success();
@@ -190,9 +233,10 @@ public class OpsAlertService {
                                                     AlertTarget target,
                                                     String title,
                                                     String message,
-                                                    Map<String, Object> details) {
+                                                    Map<String, Object> details,
+                                                    String level) {
         try {
-            Map<String, Object> payload = buildPayloadByChannel(target.channel(), title, message, details);
+            Map<String, Object> payload = buildPayloadByChannel(target.channel(), title, message, details, level);
             String body = objectMapper.writeValueAsString(payload);
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(target.url()))
@@ -253,20 +297,21 @@ public class OpsAlertService {
     private Map<String, Object> buildPayloadByChannel(String channel,
                                                       String title,
                                                       String message,
-                                                      Map<String, Object> details) {
+                                                      Map<String, Object> details,
+                                                      String level) {
         return switch (channel) {
             case "dingtalk" -> buildDingTalkPayload(title, message, details);
             case "wecom" -> buildWeComPayload(title, message, details);
-            default -> buildGenericPayload(title, message, details);
+            default -> buildGenericPayload(title, message, details, level);
         };
     }
 
-    private Map<String, Object> buildGenericPayload(String title, String message, Map<String, Object> details) {
+    private Map<String, Object> buildGenericPayload(String title, String message, Map<String, Object> details, String level) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("app", "lingsql-engine");
         payload.put("title", StringUtils.hasText(title) ? title : "LingSQL 告警");
         payload.put("message", StringUtils.hasText(message) ? message : "系统告警");
-        payload.put("level", "WARN");
+        payload.put("level", StringUtils.hasText(level) ? level : DEFAULT_ALERT_LEVEL);
         payload.put("timestamp", Instant.now().toString());
         payload.put("details", details == null ? Collections.emptyMap() : details);
         return payload;
