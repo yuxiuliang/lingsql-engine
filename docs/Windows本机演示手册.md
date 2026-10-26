@@ -253,7 +253,43 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 
 ---
 
-## 7. 已知边界
+## 7. 每天早上的三分钟巡检（上线后每天做）
+
+> 演示环境用不到；**客户上线后每天 08:05 左右做一遍**，比事后解释便宜得多。
+
+**① 今天到底跑没跑**
+
+```sql
+SELECT id, employee_id, trigger_source, success,
+       DATE_FORMAT(create_time,'%H:%i:%s') AS 执行时间,
+       result_rows, push_delivery_status
+FROM t_lingsql_engine_digital_employee_run_log
+WHERE create_time >= CURDATE() ORDER BY id;
+```
+
+- 应看到：三条日报各一条 `SCHEDULED`、`success=1`
+- 时间应在 08:00–08:15 之间（轮询 15 秒，实测偏差约 13 秒）
+- **没有记录** → 员工被停用或 cron 被改（查 `schedule_enabled` / `schedule_cron`）
+
+**② 推送到底有没有发出去**
+
+看上一行的 `push_delivery_status`：
+
+| 值 | 含义 |
+| --- | --- |
+| `1` | 成功，明细里有每个通道的 HTTP 状态 |
+| `0` | 尝试了但失败，`push_delivery_detail` 里写明哪个通道挂了 |
+| `NULL` | **根本没尝试**——通常是没有配置任何通道（`系统告警总开关未启用`） |
+
+**③ 数字对不对（抽一条）**
+
+挑一条日报，用同一口径直接查库比对。不一致就问清楚口径，**不要自己改 SQL 去凑**。
+
+> 三条都过 → 当天不用管。任一条不对 → 把 run log 的 `id` 记下来，那是唯一能追溯的凭据。
+
+---
+
+## 8. 已知边界
 
 1. **离线桩不是智能能力。** 它按问题命中固定 SQL，回答基于真实结果拼装；换真实模型后才具备推理与兜底判断。
 2. **聚合健康检查可能返回 503，这是设计使然而非故障。** 常见原因是 `physicalModelBilling` 组件：只要有一次物理模型调用停在 `DISPATCHED` 且没拿到可信用量（例如演示中途强杀过进程、模型超时），它就会被持久化为 `UNKNOWN`，计费健康随即 `DOWN`。应用可用性请以 `/actuator/health/readiness` 为准；演示脚本显式打开了健康明细（`MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always`），`/actuator/health` 会直接给出是哪一项在报 DOWN。清理路径是管理端 UNKNOWN 裁决（`GET /api/v1/admin/billing/invocations/unknown`），不是删表。
@@ -265,7 +301,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 
 ---
 
-## 8. 排错
+## 9. 排错
 
 | 现象 | 处理 |
 | --- | --- |
