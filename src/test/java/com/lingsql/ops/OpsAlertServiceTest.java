@@ -170,7 +170,8 @@ class OpsAlertServiceTest {
                     "【昨日经营快报】10-24",
                     "销售额 3,037 元，订单 10 单",
                     customerDetails,
-                    List.of("webhook", "dingtalk", "wecom"));
+                    List.of("webhook", "dingtalk", "wecom"),
+                    "INFO");
 
             assertTrue(result.success());
             List<String> forbiddenFields = List.of("tenantId", "employeeId", "triggerSource", "pushChannels", "SELECT");
@@ -182,6 +183,14 @@ class OpsAlertServiceTest {
                     assertFalse(body.contains(forbidden), "客户推送不得包含内部字段: " + forbidden);
                 }
             }
+            // 客户可见级别（INFO）下，markdown 通道只渲染业务预览，工程字段不得出现在群消息正文里
+            for (MockWebhookServer target : List.of(dingTalk, weCom)) {
+                String body = target.firstBody();
+                assertFalse(body.contains("executeTime"), "群消息正文不得出现 executeTime");
+                assertFalse(body.contains("resultRows"), "群消息正文不得出现 resultRows");
+            }
+            // 通用 webhook 是给机器读的 JSON，必须保留完整 details
+            assertTrue(webhook.firstBody().contains("executeTime"), "webhook 需保留完整 details");
         }
     }
 

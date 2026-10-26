@@ -18,6 +18,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,6 +40,11 @@ public class OpsAlertService {
      * 默认消息级别。告警类消息沿用 WARN；日报等「正常产出」可显式传 INFO。
      */
     private static final String DEFAULT_ALERT_LEVEL = "WARN";
+
+    /**
+     * 客户可见级别（正常产出，如日报）。此级别在 markdown 通道只渲染业务预览。
+     */
+    private static final String CUSTOMER_FACING_LEVEL = "INFO";
 
     private final LingSqlProperties properties;
     private final ObjectMapper objectMapper;
@@ -300,8 +306,8 @@ public class OpsAlertService {
                                                       Map<String, Object> details,
                                                       String level) {
         return switch (channel) {
-            case "dingtalk" -> buildDingTalkPayload(title, message, details);
-            case "wecom" -> buildWeComPayload(title, message, details);
+            case "dingtalk" -> buildDingTalkPayload(title, message, details, level);
+            case "wecom" -> buildWeComPayload(title, message, details, level);
             default -> buildGenericPayload(title, message, details, level);
         };
     }
@@ -319,20 +325,21 @@ public class OpsAlertService {
         return payload;
     }
 
-    private Map<String, Object> buildDingTalkPayload(String title, String message, Map<String, Object> details) {
+    private Map<String, Object> buildDingTalkPayload(String title, String message, Map<String, Object> details, String level) {
         String resolvedTitle = StringUtils.hasText(title) ? title : "LingSQL 告警";
         String resolvedMessage = StringUtils.hasText(message) ? message : "系统告警";
         String timestamp = OffsetDateTime.now().toString();
-        String detailMarkdown = renderDetailMarkdown(details, "> - ");
+        String detailMarkdown = renderMarkdownDetails(details, "> - ", level);
+        String detailLabel = isCustomerFacingLevel(level) ? "结果预览" : "详情";
         String text = """
                 ### %s
                 
                 %s
                 
                 > 时间: %s
-                > 详情:
+                > %s:
                 %s
-                """.formatted(resolvedTitle, resolvedMessage, timestamp, detailMarkdown);
+                """.formatted(resolvedTitle, resolvedMessage, timestamp, detailLabel, detailMarkdown);
 
         Map<String, Object> markdown = new LinkedHashMap<>();
         markdown.put("title", resolvedTitle);
@@ -343,19 +350,20 @@ public class OpsAlertService {
         return payload;
     }
 
-    private Map<String, Object> buildWeComPayload(String title, String message, Map<String, Object> details) {
+    private Map<String, Object> buildWeComPayload(String title, String message, Map<String, Object> details, String level) {
         String resolvedTitle = StringUtils.hasText(title) ? title : "LingSQL 告警";
         String resolvedMessage = StringUtils.hasText(message) ? message : "系统告警";
         String timestamp = OffsetDateTime.now().toString();
-        String detailMarkdown = renderDetailMarkdown(details, "- ");
+        String detailMarkdown = renderMarkdownDetails(details, "- ", level);
+        String detailLabel = isCustomerFacingLevel(level) ? "结果预览" : "详情";
         String content = """
                 **%s**
                 %s
                 
                 > 时间: %s
-                > 详情:
+                > %s:
                 %s
-                """.formatted(resolvedTitle, resolvedMessage, timestamp, detailMarkdown);
+                """.formatted(resolvedTitle, resolvedMessage, timestamp, detailLabel, detailMarkdown);
 
         Map<String, Object> markdown = new LinkedHashMap<>();
         markdown.put("content", content);
@@ -363,6 +371,39 @@ public class OpsAlertService {
         payload.put("msgtype", "markdown");
         payload.put("markdown", markdown);
         return payload;
+    }
+
+    /**
+     * markdown 通道的详情块。
+     *
+     * <p>客户可见级别（日报，{@code INFO}）只渲染业务预览 {@code previewRows}，不渲染
+     * {@code executeTime}／{@code resultRows}——这两个字段是给机器读 JSON 用的，
+     * 渲染进群消息就变成工程噪音。告警级别（{@code WARN}）保留完整明细，运维排障需要。</p>
+     *
+     * @param details    扩展字段
+     * @param linePrefix 每行前缀
+     * @param level      消息级别
+     * @return markdown 片段
+     * @author 余炘洋
+     * @date 2026-10-26
+     */
+    private String renderMarkdownDetails(Map<String, Object> details, String linePrefix, String level) {
+        if (!isCustomerFacingLevel(level)) {
+            return renderDetailMarkdown(details, linePrefix);
+        }
+        Object preview = details == null ? null : details.get("previewRows");
+        if (!(preview instanceof Collection<?> rows) || rows.isEmpty()) {
+            return linePrefix + "无";
+        }
+        StringBuilder builder = new StringBuilder(linePrefix).append("结果预览:").append('\n');
+        for (Object row : rows) {
+            builder.append(linePrefix).append(row).append('\n');
+        }
+        return builder.toString().trim();
+    }
+
+    private boolean isCustomerFacingLevel(String level) {
+        return CUSTOMER_FACING_LEVEL.equalsIgnoreCase(level == null ? "" : level.trim());
     }
 
     private String renderDetailMarkdown(Map<String, Object> details, String linePrefix) {
