@@ -170,3 +170,13 @@ Write-Host "汇总：有数据 $($withData.Count) 问 / 明确拒答 $($refused.
 if ($nullRows.Count -gt 0) { Write-Host "注意：$((($nullRows | ForEach-Object { $_.Id }) -join '、')) 返回行数>0 但属拒答（聚合无匹配返回 NULL 行，正常）" }
 Write-Host "数据覆盖推断：9 月$september / 10 月$october"
 Write-Host "报告：$ReportPath"
+
+# 退出码：出现「失败」即非零，便于把它当门禁用；空结果与拒答都是合法结果，不判失败。
+if ($failed.Count -gt 0) {
+    Write-Host "存在 $($failed.Count) 个失败问题（非零退出）" -ForegroundColor Red
+    exit 1
+}
+if ($empty.Count -gt 0) {
+    Write-Host "注意：$($empty.Count) 个问题返回空结果——若按当前数据集不该为空，请检查演示数据是否过期" -ForegroundColor Yellow
+}
+exit 0
