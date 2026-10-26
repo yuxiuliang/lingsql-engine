@@ -121,6 +121,33 @@ catch {
     Report-Check '构建对齐' $false $_.Exception.Message
 }
 
+# 2.6 前端产物：index.html 能取到，且它引用的主 JS 也能取到。
+# 打包时漏掉 static/admin 时后端一切正常，但界面 404——这类事故后端检查看不出来。
+try {
+    $idx = Invoke-WebRequest -Uri "http://127.0.0.1:$AppPort/admin/index.html" -TimeoutSec 10 -SkipHttpErrorCheck
+    if ($idx.StatusCode -ne 200) {
+        Report-Check '前端产物' $false "admin/index.html HTTP $($idx.StatusCode)"
+    } else {
+        $idxBody = [System.Text.Encoding]::UTF8.GetString($idx.RawContentStream.ToArray())
+        $asset = [regex]::Match($idxBody, '(?:src|href)="(\./assets/[^"]+\.js)"').Groups[1].Value
+        if (-not $asset) {
+            Report-Check '前端产物' $false 'index.html 里没有引用 assets/*.js'
+        } else {
+            $rel = $asset -replace '^\./', ''
+            $a = Invoke-WebRequest -Uri "http://127.0.0.1:$AppPort/admin/$rel" -TimeoutSec 20 -SkipHttpErrorCheck
+            # 注意：本站是 SPA，未知路径会回退返回 index.html 且状态码仍是 200。
+            # 所以只判状态码会「假通过」——必须校验内容不是 HTML。
+            $aBody = [System.Text.Encoding]::UTF8.GetString($a.RawContentStream.ToArray())
+            $isHtml = $aBody.TrimStart().StartsWith('<!DOCTYPE html') -or $aBody.TrimStart().StartsWith('<html')
+            $ok = ($a.StatusCode -eq 200) -and (-not $isHtml) -and ($aBody.Length -gt 1000)
+            Report-Check '前端产物' $ok ("{0}=HTTP {1} {2} 字节{3}" -f $rel, $a.StatusCode, $aBody.Length, $(if ($isHtml) { '（回退到 HTML，说明资源缺失）' } else { '' }))
+        }
+    }
+}
+catch {
+    Report-Check '前端产物' $false $_.Exception.Message
+}
+
 # 3. 演示数据是否覆盖「昨天」
 $yesterday = (Get-Date).Date.AddDays(-1).ToString('yyyy-MM-dd')
 $maxOrderDate = Invoke-Sql -Database 'lingsql_demo_sales' -Sql 'SELECT MAX(order_date) FROM demo_sales_order;'
