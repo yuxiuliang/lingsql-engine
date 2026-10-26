@@ -65,21 +65,18 @@ public final class SchemaTableSelector {
         }
         // 相关度降序，相关度相同则保持原始顺序
         scored.sort((a, b) -> b[1] != a[1] ? Integer.compare(b[1], a[1]) : Integer.compare(a[0], b[0]));
-        boolean[] chosen = new boolean[tables.size()];
-        int picked = 0;
-        for (int[] item : scored) {
-            if (picked >= maxFull) {
-                break;
-            }
-            chosen[item[0]] = true;
-            picked++;
-        }
         List<TableInfo> full = new ArrayList<>();
         List<TableInfo> nameOnly = new ArrayList<>();
+        boolean[] chosen = new boolean[tables.size()];
+        for (int[] item : scored) {
+            if (full.size() < maxFull) {
+                chosen[item[0]] = true;
+                // 按相关度顺序输出：最相关的表排在提示词最前面，模型更容易选中
+                full.add(tables.get(item[0]));
+            }
+        }
         for (int i = 0; i < tables.size(); i++) {
-            if (chosen[i]) {
-                full.add(tables.get(i));
-            } else {
+            if (!chosen[i]) {
                 nameOnly.add(tables.get(i));
             }
         }

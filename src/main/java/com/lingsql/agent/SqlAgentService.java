@@ -148,6 +148,7 @@ public class SqlAgentService {
         // 既压缩提示词体量（100 张 × 25 字段约 116 KB），也减少无关表对生成 SQL 的干扰。
         SchemaTableSelector.Selection selection =
                 SchemaTableSelector.select(userInput, tables, SchemaTableSelector.DEFAULT_MAX_FULL_TABLES);
+        logSelection(tenantId, tables.size(), selection);
         String schemaInfo = metadataCacheService.getAiFriendlySchema(
                 tenantId, selection.fullTables(), selection.nameOnlyTables());
         String lexiconInfo = semanticLexicon.renderLexicon(tenantId);
@@ -253,5 +254,70 @@ public class SqlAgentService {
             return "";
         }
         return sql.replace("```sql", "").replace("```", "").trim();
+    }
+
+    /**
+     * 记录表结构预筛结果。
+     *
+     * <p>客户报「答错了」时，第一件要判断的事是**没给表**还是**给了表但模型写错**。
+     * 没有这行日志就无从判断，所以发生预筛时按 INFO 记录；未预筛（表少）时降为 DEBUG，避免刷屏。</p>
+     *
+     * @param tenantId  租户
+     * @param total     可选表总数
+     * @param selection 预筛结果
+     * @author 余炘洋
+     * @date 2026-10-26
+     */
+    private void logSelection(String tenantId, int total, SchemaTableSelector.Selection selection) {
+        int nameOnly = selection.nameOnlyTables().size();
+        if (nameOnly == 0) {
+            log.debug("表结构未预筛: tenantId={}, 表数={}", tenantId, total);
+            return;
+        }
+        StringBuilder names = new StringBuilder();
+        int shown = 0;
+        for (TableInfo table : selection.nameOnlyTables()) {
+            if (shown >= 10) {
+                names.append(" 等");
+                break;
+            }
+            if (shown > 0) {
+                names.append('、');
+            }
+            names.append(table.getTableName());
+            shown++;
+        }
+        StringBuilder head = new StringBuilder();
+        int headShown = 0;
+        for (TableInfo table : selection.fullTables()) {
+            if (headShown >= 5) {
+                head.append(" 等");
+                break;
+            }
+            if (headShown > 0) {
+                head.append('、');
+            }
+            head.append(table.getTableName());
+            headShown++;
+        }
+        log.info("表结构预筛: tenantId={}, 可选表={}, 展开字段={}, 仅列名={}, 展开前几张={}, 省略的表={}",
+                tenantId, total, selection.fullTables().size(), nameOnly, head, names);
+        if (log.isDebugEnabled()) {
+            StringBuilder full = new StringBuilder();
+            for (TableInfo table : selection.fullTables()) {
+                if (full.length() > 0) {
+                    full.append('、');
+                }
+                full.append(table.getTableName());
+            }
+            StringBuilder all = new StringBuilder();
+            for (TableInfo table : selection.nameOnlyTables()) {
+                if (all.length() > 0) {
+                    all.append('、');
+                }
+                all.append(table.getTableName());
+            }
+            log.debug("表结构预筛明细: tenantId={}, 展开={}, 仅列名={}", tenantId, full, all);
+        }
     }
 }

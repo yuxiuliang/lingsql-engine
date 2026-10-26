@@ -113,4 +113,29 @@ class SchemaTableSelectorQualityTest {
         assertEquals(30, selection.fullTables().size());
         assertEquals(30, selection.nameOnlyTables().size());
     }
+
+    /**
+     * 复刻现场：100 张 wide_NNN_records，注释全空，问题点名第 87 张。
+     * 若失败，说明打分逻辑本身没匹配上表名。
+     */
+    @Test
+    void shouldRankNamedTableFirstInWideFixture() {
+        List<TableInfo> tables = new ArrayList<>();
+        for (int i = 1; i <= 100; i++) {
+            TableInfo t = new TableInfo();
+            t.setTableName(String.format("wide_%03d_records", i));
+            t.setTableComment("");
+            TableInfo.ColumnInfo c = new TableInfo.ColumnInfo();
+            c.setColumnName("id");
+            c.setColumnComment("");
+            t.setColumns(List.of(c));
+            tables.add(t);
+        }
+
+        SchemaTableSelector.Selection selection =
+                SchemaTableSelector.select("wide_087_records 里有多少行？", tables, 30);
+
+        assertEquals("wide_087_records", selection.fullTables().get(0).getTableName(),
+                "点名的表必须排第一，实际=" + selection.fullTables().get(0).getTableName());
+    }
 }
