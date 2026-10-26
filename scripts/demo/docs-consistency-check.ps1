@@ -131,9 +131,21 @@ if (Test-Path $claimsDoc) {
         Check "夹具 $tenant" ("$actual" -eq "$expect") "期望 $expect 张表，实际 $actual"
     }
 
-    # 结论：演示租户语义字典可用（文档写 21 条，按 >=10 校验，避免新增术语时误报）
+    # 语义字典：条数与缓存字符数（文档写死了具体字符数，字典一扩容就会漂移）
     $lex = (Sql "SELECT COUNT(*) FROM t_lingsql_engine_semantic_lexicon WHERE tenant_id='demo_sales';").Trim()
-    Check '语义字典' ([int]$lex -ge 10) "count=$lex（文档写 21，按 >=10 校验）"
+    Check '语义字典条数' ([int]$lex -ge 10) "count=$lex（文档写 21，按 >=10 校验）"
+
+    $redisCli = Get-ChildItem 'D:\Software\Tools' -Recurse -File -Filter 'redis-cli.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    $claimsText = if (Test-Path $claimsDoc) { Get-Content $claimsDoc -Raw } else { '' }
+    $claimed = [regex]::Match($claimsText, '缓存值实测\s*\*\*([\d,]+)\s*字符\*\*').Groups[1].Value -replace ',', ''
+    if ($redisCli -and $claimed) {
+        $secrets = Get-Content (Join-Path $root '.local-private/demo/demo-secrets.json') -Raw | ConvertFrom-Json
+        $len = (& $redisCli.FullName -p 6380 -a $secrets.redis.password --no-auth-warning STRLEN 'lingsql:semantic:lexicon:demo_sales' 2>&1) -join ''
+        Check '语义字典缓存长度' ("$len".Trim() -eq $claimed) "文档=$claimed 实际=$($len.ToString().Trim())"
+    } else {
+        Write-Host ("[SKIP] {0,-34} {1}" -f '语义字典缓存长度', $(if (-not $redisCli) { '未找到 redis-cli' } else { '文档未写字符数' })) -ForegroundColor DarkGray
+        $script:checks++
+    }
 } else {
     Check '卖点核验表' $false '文档不存在'
 }
