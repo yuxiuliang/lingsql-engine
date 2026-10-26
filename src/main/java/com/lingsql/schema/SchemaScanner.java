@@ -204,7 +204,7 @@ public class SchemaScanner {
         }
     }
 
-    private Map<String, String> parseCommentLines(String text) {
+    static Map<String, String> parseCommentLines(String text) {
         Map<String, String> parsed = new HashMap<>();
         if (!StringUtils.hasText(text)) {
             return parsed;
