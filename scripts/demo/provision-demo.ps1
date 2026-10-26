@@ -14,7 +14,12 @@ param(
     [string]$ModelName = 'lingsql-demo-stub',
     [string]$ModelVersion = '2026-10-25',
     [string]$ModelBaseUrl = 'http://127.0.0.1:18082',
-    [string]$ModelApiKey = 'NO_AUTH'
+    [string]$ModelApiKey = 'NO_AUTH',
+    # 隔离模式与白名单：默认值对应演示库；指向其他库（如共享表做行级隔离验证）时必须一并替换，
+    # 否则 verifyAllowlistReadable 会因白名单里的表在新库中不存在而拒绝开户。
+    [string]$IsolationMode = 'PHYSICAL',
+    [string]$WhiteListTables = 'demo_customer,demo_product,demo_sales_order,demo_sales_order_item,demo_inventory_snapshot',
+    [string]$WhiteListColumns = 'customer_id,customer_name,customer_level,region_name,product_id,product_name,category_name,unit_price,unit_cost,order_id,order_no,order_date,order_status,sales_channel,item_id,quantity,sale_price,snapshot_date,warehouse_name,available_quantity,safety_quantity'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -86,10 +91,10 @@ if ($existing.Count -eq 0) {
             username         = $secrets.mysql.readerUser
             password         = $secrets.mysql.readerPassword
             driverClass      = 'com.mysql.cj.jdbc.Driver'
-            isolationMode    = 'PHYSICAL'
+            isolationMode    = $IsolationMode
             logicColumn      = 'tenant_id'
-            whiteListTables  = 'demo_customer,demo_product,demo_sales_order,demo_sales_order_item,demo_inventory_snapshot'
-            whiteListColumns = 'customer_id,customer_name,customer_level,region_name,product_id,product_name,category_name,unit_price,unit_cost,order_id,order_no,order_date,order_status,sales_channel,item_id,quantity,sale_price,snapshot_date,warehouse_name,available_quantity,safety_quantity'
+            whiteListTables  = $WhiteListTables
+            whiteListColumns = $WhiteListColumns
             sensitiveColumns = ''
         }
         adminAccount = @{
@@ -139,10 +144,10 @@ $updateBody = @{
     username         = $secrets.mysql.readerUser
     password         = $secrets.mysql.readerPassword
     driverClass      = 'com.mysql.cj.jdbc.Driver'
-    isolationMode    = 'PHYSICAL'
+    isolationMode    = $IsolationMode
     logicColumn      = 'tenant_id'
-    whiteListTables  = 'demo_customer,demo_product,demo_sales_order,demo_sales_order_item,demo_inventory_snapshot'
-    whiteListColumns = 'customer_id,customer_name,customer_level,region_name,product_id,product_name,category_name,unit_price,unit_cost,order_id,order_no,order_date,order_status,sales_channel,item_id,quantity,sale_price,snapshot_date,warehouse_name,available_quantity,safety_quantity'
+    whiteListTables  = $WhiteListTables
+    whiteListColumns = $WhiteListColumns
     sensitiveColumns = ''
     status           = 1
 }
