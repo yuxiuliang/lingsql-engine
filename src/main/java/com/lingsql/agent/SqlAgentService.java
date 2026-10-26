@@ -17,6 +17,7 @@ import com.lingsql.llm.ModelCallCommand;
 import com.lingsql.llm.ModelCallResult;
 import com.lingsql.schema.MetadataCacheService;
 import com.lingsql.schema.SchemaScanner;
+import com.lingsql.schema.SchemaTableSelector;
 import com.lingsql.schema.SemanticLexicon;
 import com.lingsql.schema.model.TableInfo;
 import lombok.RequiredArgsConstructor;
@@ -143,7 +144,12 @@ public class SqlAgentService {
             metadataCacheService.cacheSchema(tenantId, tables);
         }
 
-        String schemaInfo = metadataCacheService.getAiFriendlySchema(tenantId, tables);
+        // 表多时先按问题粗筛：只把最相关的若干张表展开字段，其余仅保留表名，
+        // 既压缩提示词体量（100 张 × 25 字段约 116 KB），也减少无关表对生成 SQL 的干扰。
+        SchemaTableSelector.Selection selection =
+                SchemaTableSelector.select(userInput, tables, SchemaTableSelector.DEFAULT_MAX_FULL_TABLES);
+        String schemaInfo = metadataCacheService.getAiFriendlySchema(
+                tenantId, selection.fullTables(), selection.nameOnlyTables());
         String lexiconInfo = semanticLexicon.renderLexicon(tenantId);
         lexiconInfo = "语义上下文版本：" + semanticContextVersionService.currentVersionId(tenantId) + "\n" + lexiconInfo;
         String joinInfo = semanticLexicon.renderJoinRules(tenantId);

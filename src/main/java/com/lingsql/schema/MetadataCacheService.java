@@ -57,10 +57,26 @@ public class MetadataCacheService {
      * @date 2026-01-22
      */
     public String getAiFriendlySchema(String tenantId, List<TableInfo> tables) {
-        if (tables == null || tables.isEmpty()) {
+        return getAiFriendlySchema(tenantId, tables, List.of());
+    }
+
+    /**
+     * 渲染表结构文本，支持把一部分表降级为「只列名」。
+     *
+     * @param tenantId       租户标识
+     * @param tables         需要展开字段的表
+     * @param nameOnlyTables 只保留表名的表（相关度较低或超出预算）
+     * @return 可读文本
+     * @author 余炘洋
+     * @date 2026-10-26
+     */
+    public String getAiFriendlySchema(String tenantId, List<TableInfo> tables, List<TableInfo> nameOnlyTables) {
+        if ((tables == null || tables.isEmpty()) && (nameOnlyTables == null || nameOnlyTables.isEmpty())) {
             return "当前租户暂无可用表结构。";
         }
-        List<TableInfo> mergedTables = metadataExtService.mergeComments(tenantId, tables);
+        List<TableInfo> mergedTables = tables == null || tables.isEmpty()
+                ? List.of()
+                : metadataExtService.mergeComments(tenantId, tables);
         StringBuilder sb = new StringBuilder();
         List<String> omittedTables = new ArrayList<>();
         for (TableInfo table : mergedTables) {
@@ -71,9 +87,16 @@ public class MetadataCacheService {
             }
             sb.append(block);
         }
+        if (nameOnlyTables != null) {
+            for (TableInfo table : nameOnlyTables) {
+                if (table != null && table.getTableName() != null) {
+                    omittedTables.add(table.getTableName());
+                }
+            }
+        }
         if (!omittedTables.isEmpty()) {
-            sb.append("（因篇幅限制，以下 ").append(omittedTables.size())
-                    .append(" 张表未展开字段，仅列名：")
+            sb.append("（以下 ").append(omittedTables.size())
+                    .append(" 张表未展开字段（相关度较低或超出篇幅），仅列名：")
                     .append(String.join("、", omittedTables))
                     .append("。若问题确实涉及这些表，请先说明表名，系统会再取用其字段。）\n");
         }

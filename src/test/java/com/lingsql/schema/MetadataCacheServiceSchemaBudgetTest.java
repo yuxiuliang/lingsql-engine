@@ -72,7 +72,7 @@ class MetadataCacheServiceSchemaBudgetTest {
 
         String schema = newService(tables).getAiFriendlySchema("T1", tables);
 
-        assertTrue(schema.contains("因篇幅限制"), "超过预算必须显式说明已省略");
+        assertTrue(schema.contains("未展开字段"), "超过预算必须显式说明已省略");
         assertTrue(schema.contains("仅列名"), "被省略的表应降级为表名列表");
         assertTrue(schema.contains("fact_299_records"), "省略提示里应能看到被省略的表名");
         assertTrue(schema.length() < 60_000,
