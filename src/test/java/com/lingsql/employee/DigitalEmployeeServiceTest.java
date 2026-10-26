@@ -70,7 +70,8 @@ class DigitalEmployeeServiceTest {
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
-                tenantRepository
+                tenantRepository,
+                Mockito.mock(DigitalEmployeeRunRecorder.class)
         );
         DigitalEmployeeCreateRequest request = new DigitalEmployeeCreateRequest();
         request.setTenantId("TENANT_A");
@@ -133,7 +134,8 @@ class DigitalEmployeeServiceTest {
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
-                tenantRepository
+                tenantRepository,
+                Mockito.mock(DigitalEmployeeRunRecorder.class)
         );
 
         DigitalEmployeeRunResult result = service.run(7L, new DigitalEmployeeRunRequest());
@@ -200,7 +202,8 @@ class DigitalEmployeeServiceTest {
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
-                tenantRepository
+                tenantRepository,
+                Mockito.mock(DigitalEmployeeRunRecorder.class)
         );
 
         DigitalEmployeeRunResult result = service.run(8L, new DigitalEmployeeRunRequest());
@@ -268,7 +271,8 @@ class DigitalEmployeeServiceTest {
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
-                tenantRepository
+                tenantRepository,
+                Mockito.mock(DigitalEmployeeRunRecorder.class)
         );
 
         DigitalEmployeeRunResult result = service.runScheduled(9L, java.time.LocalDateTime.of(2026, 4, 14, 9, 0, 0));
@@ -339,7 +343,8 @@ class DigitalEmployeeServiceTest {
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
-                tenantRepository
+                tenantRepository,
+                Mockito.mock(DigitalEmployeeRunRecorder.class)
         );
 
         DigitalEmployeeRunResult result = service.runScheduled(10L, java.time.LocalDateTime.of(2026, 4, 14, 8, 0, 0));
@@ -425,7 +430,8 @@ class DigitalEmployeeServiceTest {
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
-                tenantRepository
+                tenantRepository,
+                Mockito.mock(DigitalEmployeeRunRecorder.class)
         );
 
         service.runScheduled(11L, java.time.LocalDateTime.of(2026, 4, 15, 8, 0, 0));
@@ -467,7 +473,8 @@ class DigitalEmployeeServiceTest {
                 resultRefiner,
                 pageParamResolver,
                 opsAlertService,
-                tenantRepository
+                tenantRepository,
+                Mockito.mock(DigitalEmployeeRunRecorder.class)
         );
 
         PhysicalBillingException thrown = assertThrows(PhysicalBillingException.class,

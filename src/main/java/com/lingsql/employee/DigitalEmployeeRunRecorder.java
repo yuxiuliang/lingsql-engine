@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class DigitalEmployeeRunRecorder {
 
     private static final String TRIGGER_SOURCE_SCHEDULED = "SCHEDULED";
+    private static final String TRIGGER_SOURCE_MANUAL = "MANUAL";
     private static final int FAILURE_STATUS = 0;
     private static final int MAX_ERROR_LENGTH = 1000;
 
@@ -54,6 +55,27 @@ public class DigitalEmployeeRunRecorder {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Long recordScheduledFailure(Long employeeId, LocalDateTime expectedScheduleTime, String errorMessage) {
+        return record(employeeId, TRIGGER_SOURCE_SCHEDULED, expectedScheduleTime, errorMessage);
+    }
+
+    /**
+     * 记录一次手动执行失败。
+     *
+     * <p>手动执行不影响定时游标，因此不推进 {@code lastScheduleTime}——否则一次后台点错
+     * 就会把当天的定时任务“顶掉”。</p>
+     *
+     * @param employeeId   员工ID
+     * @param errorMessage 失败原因
+     * @return 新增运行日志ID；员工不存在时返回 null
+     * @author 余炘洋
+     * @date 2026-10-26
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Long recordManualFailure(Long employeeId, String errorMessage) {
+        return record(employeeId, TRIGGER_SOURCE_MANUAL, null, errorMessage);
+    }
+
+    private Long record(Long employeeId, String triggerSource, LocalDateTime expectedScheduleTime, String errorMessage) {
         if (employeeId == null) {
             return null;
         }
@@ -67,7 +89,7 @@ public class DigitalEmployeeRunRecorder {
         DigitalEmployeeRunLog runLog = new DigitalEmployeeRunLog();
         runLog.setEmployeeId(employeeId);
         runLog.setTenantId(employee.getTenantId());
-        runLog.setTriggerSource(TRIGGER_SOURCE_SCHEDULED);
+        runLog.setTriggerSource(triggerSource);
         runLog.setQuestion(employee.getDefaultQuestion());
         runLog.setSuccess(FAILURE_STATUS);
         runLog.setErrorMessage(safeMessage);
@@ -91,7 +113,7 @@ public class DigitalEmployeeRunRecorder {
 
     private String truncate(String message) {
         if (message == null) {
-            return "定时执行失败，未返回具体原因";
+            return "执行失败，未返回具体原因";
         }
         return message.length() <= MAX_ERROR_LENGTH ? message : message.substring(0, MAX_ERROR_LENGTH);
     }
