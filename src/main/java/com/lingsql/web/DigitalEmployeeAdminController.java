@@ -3,6 +3,7 @@ package com.lingsql.web;
 import com.lingsql.audit.service.AuditOperationExecutor;
 import com.lingsql.common.result.ApiResponse;
 import com.lingsql.common.result.PageResult;
+import com.lingsql.employee.DigitalEmployeeRunRecorder;
 import com.lingsql.employee.DigitalEmployeeService;
 import com.lingsql.employee.model.DigitalEmployeeCreateRequest;
 import com.lingsql.employee.model.DigitalEmployeeOverviewView;
@@ -17,6 +18,7 @@ import com.lingsql.rbac.security.RbacUserSession;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -41,10 +43,12 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/admin/digital-employees")
 @RequiredArgsConstructor
+@Slf4j
 public class DigitalEmployeeAdminController {
 
     private final DigitalEmployeeService digitalEmployeeService;
     private final AuditOperationExecutor auditOperationExecutor;
+    private final DigitalEmployeeRunRecorder runRecorder;
 
     /**
      * 查询数字员工列表。
@@ -181,13 +185,37 @@ public class DigitalEmployeeAdminController {
         if (!isSysAdmin()) {
             return ApiResponse.forbidden("无权限访问");
         }
-        return auditOperationExecutor.execute(
-                "DIGITAL_EMPLOYEE_RUN",
-                "DIGITAL_EMPLOYEE",
-                request,
-                http,
-                () -> digitalEmployeeService.run(id, request)
-        );
+        // 手动执行的失败往往发生在事务提交时（UnexpectedRollbackException），
+        // 那一刻已经跳出 service 方法体，只有在这层事务边界之外才能接住并留痕。
+        try {
+            return auditOperationExecutor.execute(
+                    "DIGITAL_EMPLOYEE_RUN",
+                    "DIGITAL_EMPLOYEE",
+                    request,
+                    http,
+                    () -> digitalEmployeeService.run(id, request)
+            );
+        } catch (RuntimeException ex) {
+            recordManualFailureQuietly(id, ex);
+            throw ex;
+        }
+    }
+
+    /**
+     * 记录手动执行失败，绝不让记账本身掩盖原始异常。
+     *
+     * @param employeeId 员工ID
+     * @param cause      原始异常
+     * @author 余炘洋
+     * @date 2026-10-26
+     */
+    private void recordManualFailureQuietly(Long employeeId, RuntimeException cause) {
+        try {
+            Long runLogId = runRecorder.recordManualFailure(employeeId, cause.getMessage());
+            log.info("手动执行失败已记账: employeeId={}, runLogId={}", employeeId, runLogId);
+        } catch (Exception recordEx) {
+            log.error("手动执行失败记账失败: employeeId={}", employeeId, recordEx);
+        }
     }
 
     /**

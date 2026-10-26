@@ -37,7 +37,6 @@ import com.lingsql.ops.model.AlertDispatchResult;
 import com.lingsql.tenant.entity.TenantInfo;
 import com.lingsql.tenant.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -70,7 +69,6 @@ import java.util.stream.Collectors;
  */
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class DigitalEmployeeService {
 
     private static final Integer ACTIVE_STATUS = 1;
@@ -120,7 +118,6 @@ public class DigitalEmployeeService {
     private final PageParamResolver pageParamResolver;
     private final OpsAlertService opsAlertService;
     private final TenantRepository tenantRepository;
-    private final DigitalEmployeeRunRecorder runRecorder;
 
     /**
      * 查询数字员工列表。
@@ -361,31 +358,9 @@ public class DigitalEmployeeService {
         if (!ACTIVE_STATUS.equals(employee.getStatus())) {
             throw new BizException(ErrorCode.INVALID_PARAM, "数字员工已停用，无法执行");
         }
-        try {
-            return withEmployeeTenant(employee, () -> runInternal(employee, request, null));
-        } catch (RuntimeException ex) {
-            // 手动执行失败同样要留痕：本方法的事务会被标记 rollback-only，
-            // 若不在这里用独立事务记账，后台点「立即运行」报错后既没有运行日志也没有错误记录。
-            recordFailureQuietly(employee, ex);
-            throw ex;
-        }
-    }
-
-    /**
-     * 记录手动执行失败，绝不让记账本身再次抛出。
-     *
-     * @param employee 员工
-     * @param cause    原始异常
-     * @author 余炘洋
-     * @date 2026-10-26
-     */
-    private void recordFailureQuietly(DigitalEmployee employee, RuntimeException cause) {
-        try {
-            Long runLogId = runRecorder.recordManualFailure(employee.getId(), cause.getMessage());
-            log.info("数字员工手动执行失败已记账: employeeId={}, runLogId={}", employee.getId(), runLogId);
-        } catch (Exception recordEx) {
-            log.error("数字员工手动执行失败记账失败: employeeId={}", employee.getId(), recordEx);
-        }
+        // 注意：手动执行失败往往在事务提交时才抛出（UnexpectedRollbackException），
+        // 本方法内部接不到，失败记账在 DigitalEmployeeAdminController 完成。
+        return withEmployeeTenant(employee, () -> runInternal(employee, request, null));
     }
 
     /**
