@@ -66,6 +66,10 @@ pwsh -File scripts/demo/start-demo-stack.ps1
 # 启动（已有 jar 时加 -SkipBuild 跳过构建；数据不想重建可加 -SkipDataInit）
 pwsh -File scripts/demo/start-demo-stack.ps1 -SkipBuild
 
+# 演示日前一天没刷新过数据时：加 -RefreshDemoData 把演示数据对齐到当天
+# （启动时会打印「演示数据最新日期」，若早于昨天会给出黄色警告）
+pwsh -File scripts/demo/start-demo-stack.ps1 -SkipBuild -SkipDataInit -RefreshDemoData
+
 # 跑 10 个演示问题，并生成一份证据报告
 pwsh -File scripts/demo/ask-demo-questions.ps1
 
