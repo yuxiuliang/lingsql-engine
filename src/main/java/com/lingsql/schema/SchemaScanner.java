@@ -60,6 +60,8 @@ public class SchemaScanner {
         try (Connection conn = dataSource.getConnection()) {
             DatabaseMetaData metaData = conn.getMetaData();
             String catalog = conn.getCatalog();
+            // 本次同步是否已放弃模型注释（首个失败后置位，避免逐字段重复失败）
+            boolean[] skipModelComment = {false};
 
             try (ResultSet tables = metaData.getTables(catalog, null, null, new String[]{"TABLE"})) {
                 while (tables.next()) {
@@ -75,7 +77,7 @@ public class SchemaScanner {
                     String tableComment = tables.getString("REMARKS");
                     tableInfo.setTableComment(resolveComment(tenantId, workflowRequestId, logicalCallSequence,
                             "table", tableName, tableComment,
-                            "请为数据库表 " + tableName + " 生成一句简短中文业务说明"));
+                            "请为数据库表 " + tableName + " 生成一句简短中文业务说明", skipModelComment));
 
                     Map<String, Boolean> primaryKeys = loadPrimaryKeys(metaData, catalog, tableName);
 
@@ -91,7 +93,7 @@ public class SchemaScanner {
                             String colPrompt = "请为字段 " + tableName + "." + columnName + " 生成简短中文含义";
                             col.setColumnComment(resolveComment(tenantId, workflowRequestId, logicalCallSequence,
                                     "column", tableName + ":" + columnName,
-                                    colComment, colPrompt));
+                                    colComment, colPrompt, skipModelComment));
                             col.setPrimaryKey(primaryKeys.getOrDefault(columnName.toLowerCase(), false));
                             columns.add(col);
                         }
@@ -153,7 +155,8 @@ public class SchemaScanner {
             String type,
             String name,
             String rawComment,
-            String prompt
+            String prompt,
+            boolean[] skipModelComment
     ) {
         if (StringUtils.hasText(rawComment)) {
             return rawComment;
@@ -162,6 +165,12 @@ public class SchemaScanner {
         String cached = cacheService.getCachedComment(cacheKey);
         if (StringUtils.hasText(cached)) {
             return cached;
+        }
+        // 注释生成是尽力而为的增强项：开户时模型授权往往尚未生效，
+        // 若逐字段都试一次，200 张表 × 8 字段就是 1600 次无效调用加 1600 条堆栈。
+        // 同一请求内首次失败后直接放弃，只留一条警告。
+        if (skipModelComment[0]) {
+            return "无描述";
         }
         try {
             String generated = modelGateway.chat(new ModelCallCommand(
@@ -180,7 +189,10 @@ public class SchemaScanner {
         } catch (PhysicalBillingException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("生成注释失败: {}", name, e);
+            // 一旦失败就放弃本次同步的模型注释，避免逐字段重试把日志淹没
+            skipModelComment[0] = true;
+            log.warn("生成注释失败，本次同步剩余字段跳过模型注释: tenantId={}, firstFailure={}, reason={}",
+                    tenantId, name, e.getMessage());
             return "无描述";
         }
     }
