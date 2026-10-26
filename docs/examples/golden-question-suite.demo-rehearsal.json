@@ -1,10 +1,10 @@
 {
   "schemaVersion": "1.0",
   "suiteId": "demo-rehearsal-only",
-  "suiteVersion": "DEMO-1.0",
+  "suiteVersion": "DEMO-2.0",
   "sowId": "NOT-A-CUSTOMER-SOW",
-  "frozenAt": "2026-10-26T22:00:00+08:00",
-  "_note": "内部演练样本，不是客户验收证据。客户验收必须由客户在第 1 周冻结题目后另建 suite，并用 golden_question_acceptance.sh 产出。",
+  "frozenAt": "2026-10-27T07:00:00+08:00",
+  "_note": "内部演练样本，不是客户验收证据。v2 起金额类期望改为 DB_SCALAR：由脚本直接查库现算参照值，避免演示数据每日刷新后期望过期（v1 曾因此在数据刷新后一次失败 3 条）。客户验收仍须用 golden_question_acceptance.sh 且题目由客户冻结。",
   "environment": {
     "environmentId": "local-demo",
     "releaseCommit": "local",
@@ -18,14 +18,14 @@
     "concurrency": 1
   },
   "businessCases": [
-    {"id":"R-001","priority":"P0","question":"2026年9月已完成订单的销售额是多少？","expected":{"kind":"SCALAR_NUMBER","column":"销售额","value":104669.10,"absoluteTolerance":0.02}},
+    {"id":"R-001","priority":"P0","question":"2026年9月已完成订单的销售额是多少？","expected":{"kind":"DB_SCALAR","column":"销售额","tolerance":0.02,"sql":"SELECT ROUND(SUM(i.quantity*i.sale_price),2) FROM demo_sales_order o JOIN demo_sales_order_item i ON i.order_id=o.order_id WHERE o.order_status='COMPLETED' AND o.order_date>='2026-09-01' AND o.order_date<'2026-10-01'"}},
     {"id":"R-002","priority":"P0","question":"哪些商品当前库存低于安全库存？","expected":{"kind":"ROWSET","rowCount":4}},
     {"id":"R-003","priority":"P0","question":"按商品统计9月销售额，从高到低排列。","expected":{"kind":"ROWSET","rowCount":11}},
-    {"id":"R-004","priority":"P0","question":"华东地区客户9月贡献了多少销售额？","expected":{"kind":"SCALAR_NUMBER","column":"销售额","value":36321.95,"absoluteTolerance":0.02}},
+    {"id":"R-004","priority":"P0","question":"华东地区客户9月贡献了多少销售额？","expected":{"kind":"DB_SCALAR","column":"销售额","tolerance":0.02,"sql":"SELECT ROUND(SUM(i.quantity*i.sale_price),2) FROM demo_sales_order o JOIN demo_sales_order_item i ON i.order_id=o.order_id JOIN demo_customer c ON c.customer_id=o.customer_id WHERE o.order_status='COMPLETED' AND o.order_date>='2026-09-01' AND o.order_date<'2026-10-01' AND c.region_name='华东'"}},
     {"id":"R-005","priority":"P0","question":"各销售渠道的订单数量分别是多少？","expected":{"kind":"ROWSET","rowCount":3}},
     {"id":"R-006","priority":"P0","question":"哪个商品的毛利率最高？","expected":{"kind":"ROWSET","rowCount":12}},
-    {"id":"R-007","priority":"P0","question":"2026年9月有多少个客户下过单？","expected":{"kind":"SCALAR_NUMBER","column":"客户数","value":8,"absoluteTolerance":0}},
-    {"id":"R-008","priority":"P0","question":"2026年10月的销售额是多少？","expected":{"kind":"SCALAR_NUMBER","column":"销售额","value":91528.74,"absoluteTolerance":0.02}},
+    {"id":"R-007","priority":"P0","question":"2026年9月有多少个客户下过单？","expected":{"kind":"DB_SCALAR","column":"客户数","tolerance":0,"sql":"SELECT COUNT(DISTINCT o.customer_id) FROM demo_sales_order o WHERE o.order_status='COMPLETED' AND o.order_date>='2026-09-01' AND o.order_date<'2026-10-01'"}},
+    {"id":"R-008","priority":"P0","question":"2026年10月的销售额是多少？","expected":{"kind":"DB_SCALAR","column":"销售额","tolerance":0.02,"sql":"SELECT ROUND(SUM(i.quantity*i.sale_price),2) FROM demo_sales_order o JOIN demo_sales_order_item i ON i.order_id=o.order_id WHERE o.order_status='COMPLETED' AND o.order_date>='2026-10-01' AND o.order_date<'2026-11-01'"}},
     {"id":"R-009","priority":"P1","question":"和2025年9月相比销售额增长了多少？","expected":{"kind":"REFUSAL"}},
     {"id":"R-010","priority":"P1","question":"各客户的满意度评分是多少？","expected":{"kind":"REFUSAL"}}
   ]

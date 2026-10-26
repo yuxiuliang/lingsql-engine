@@ -33,6 +33,8 @@ if (-not $SuitePath) {
     $SuitePath = Join-Path $root 'docs/examples/golden-question-suite.demo-rehearsal.json'
 }
 $secrets = Get-Content -LiteralPath (Join-Path $root '.local-private/demo/demo-secrets.json') -Raw | ConvertFrom-Json
+$mysqlClient = 'D:\Software\Tools\Database\mysql-8.4.2-winx64\bin\mysql.exe'
+$MysqlPort = 3407
 
 function Invoke-Api {
     param([string]$Method, [string]$Path, [object]$Body, [string]$Token, [string]$Tenant)
@@ -81,6 +83,18 @@ foreach ($case in $suite.businessCases) {
         'ROWSET' {
             $actual = "rows=$($rows.Count)"
             $ok = ($rows.Count -eq [int]$case.expected.rowCount)
+        }
+        'DB_SCALAR' {
+            # 期望值不写死：直接查库现算参照值，避免演示数据每日刷新后期望过期
+            $col = $case.expected.column
+            $raw = if ($rows.Count -gt 0) { $rows[0].$col } else { $null }
+            $ref = (& $mysqlClient --host=127.0.0.1 "--port=$MysqlPort" --user=root --batch --skip-column-names `
+                    --database=lingsql_demo_sales "--execute=$($case.expected.sql)" 2>&1 | Select-Object -First 1)
+            $actual = "actual=$raw ref=$ref"
+            if ($null -ne $raw -and "$ref".Trim() -match '^-?\d+(\.\d+)?$') {
+                $tolerance = if ($null -ne $case.expected.tolerance) { [double]$case.expected.tolerance } else { 0.02 }
+                $ok = [Math]::Abs([double]$raw - [double]$ref) -le $tolerance
+            }
         }
         'REFUSAL' {
             $keywords = '没有导入|算不出|查不到|没有「|没有该|需要接入|为空|不存在|没有相关数据|答不了'
