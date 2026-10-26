@@ -116,6 +116,29 @@ $staleReal = @($stale | Where-Object { $_.Line -notmatch '已废弃|不再覆盖
 Check '固定报告名引用' ($staleReal.Count -eq 0) $(if ($staleReal.Count -eq 0) { '无残留（说明性提及不算）' } else { "残留 $($staleReal.Count) 处" })
 
 Write-Host ''
+Write-Host '==== ⑥ 卖点表的关键结论 ====' -ForegroundColor Cyan
+$claimsDoc = Join-Path $docs '卖点核验表.md'
+if (Test-Path $claimsDoc) {
+    # 结论：账本全部 SETTLED、无 UNKNOWN 残留
+    $unknown = (Sql "SELECT COUNT(*) FROM t_lingsql_engine_billing_invocation WHERE state='UNKNOWN';").Trim()
+    $settled = (Sql "SELECT COUNT(*) FROM t_lingsql_engine_billing_invocation WHERE state='SETTLED';").Trim()
+    Check '账本无 UNKNOWN' ("$unknown" -eq '0') "UNKNOWN=$unknown SETTLED=$settled"
+
+    # 结论：规模夹具 60 / 100 / 200 张表
+    foreach ($pair in @(@('scale_a', 60), @('scale_c', 100), @('scale_b', 200))) {
+        $tenant = $pair[0]; $expect = $pair[1]
+        $actual = (Sql "SELECT IFNULL(schema_table_count,-1) FROM t_lingsql_engine_tenant_db_config WHERE tenant_id='$tenant';").Trim()
+        Check "夹具 $tenant" ("$actual" -eq "$expect") "期望 $expect 张表，实际 $actual"
+    }
+
+    # 结论：演示租户语义字典可用（文档写 21 条，按 >=10 校验，避免新增术语时误报）
+    $lex = (Sql "SELECT COUNT(*) FROM t_lingsql_engine_semantic_lexicon WHERE tenant_id='demo_sales';").Trim()
+    Check '语义字典' ([int]$lex -ge 10) "count=$lex（文档写 21，按 >=10 校验）"
+} else {
+    Check '卖点核验表' $false '文档不存在'
+}
+
+Write-Host ''
 if ($failures -eq 0) {
     Write-Host "全部一致（$checks 项）。" -ForegroundColor Green
     exit 0
