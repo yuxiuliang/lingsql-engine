@@ -195,6 +195,21 @@ LIMIT 100`,
       }
       return `昨日销售额 ${money(row['销售额'])}，订单 ${orders} 单，毛利 ${money(row['毛利'])}。`;
     }
+  },
+  // ISO1：行级隔离的常驻验证样本。共享表里同时存在 iso_a（350）与 iso_b（1000）的数据，
+  // 以 iso_a 身份提问时，SqlRewriter 必须把 o.tenant_id = 'iso_a' 注入进去——
+  // 结果里**只有 iso_a 一行**才算隔离生效；若出现 iso_b，就是隔离失效。
+  // 注意：这条规则不进入 10 问清单，也不在 UNANSWERABLE 内。
+  {
+    id: 'ISO1',
+    question: 'demo_shared_orders 表里各租户的订单金额分别是多少？',
+    sql: `SELECT o.tenant_id AS \`租户\`, COUNT(*) AS \`订单数\`, SUM(o.amount) AS \`金额\`
+FROM demo_shared_orders o
+GROUP BY o.tenant_id
+LIMIT 100`,
+    answer: (rows) => rows.length === 0
+      ? '没有查到任何订单。'
+      : `共 ${rows.length} 个租户：` + rows.map((row) => `${row['租户']} ${row['订单数']} 单 / ${money(row['金额'])}`).join('；') + '。'
   }
 ];
 

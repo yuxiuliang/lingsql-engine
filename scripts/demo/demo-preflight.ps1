@@ -142,6 +142,30 @@ if ($ready -and $secrets) {
     catch {
         Report-Check '问答链路' $false $_.Exception.Message
     }
+
+    # 租户隔离不变量：共享表里同时有 iso_a 与 iso_b 的数据，以 iso_a 身份提问必须只看得到自己。
+    # 这是最不能出错的一条，所以每次演示前都验。
+    try {
+        $isoLoginBody = @{ tenantId = 'iso_a'; username = 'iso_admin'; password = $secrets.app.demoAdminFinal } | ConvertTo-Json -Compress
+        $isoLogin = Invoke-WebRequest -Uri "http://127.0.0.1:$AppPort/api/v1/auth/login" -Method POST -TimeoutSec 30 -SkipHttpErrorCheck `
+            -ContentType 'application/json; charset=UTF-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($isoLoginBody))
+        $isoToken = ([System.Text.Encoding]::UTF8.GetString($isoLogin.RawContentStream.ToArray()) | ConvertFrom-Json).data.token
+        if (-not $isoToken) {
+            Report-Check '租户隔离（LOGICAL）' $false 'iso_a 登录失败'
+        } else {
+            $isoAskBody = @{ question = 'demo_shared_orders 表里各租户的订单金额分别是多少？' } | ConvertTo-Json -Compress
+            $isoAsk = Invoke-WebRequest -Uri "http://127.0.0.1:$AppPort/api/v1/chat/ask" -Method POST -TimeoutSec 90 -SkipHttpErrorCheck `
+                -Headers @{ Authorization = "Bearer $isoToken"; 'X-Tenant-Id' = 'iso_a' } `
+                -ContentType 'application/json; charset=UTF-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($isoAskBody))
+            $isoJson = [System.Text.Encoding]::UTF8.GetString($isoAsk.RawContentStream.ToArray())
+            $leaked = $isoJson -match 'iso_b'
+            $saw = $isoJson -match 'iso_a'
+            Report-Check '租户隔离（LOGICAL）' ((-not $leaked) -and $saw) $(if ($leaked) { '结果里出现 iso_b —— 隔离失效' } elseif ($saw) { '只看到 iso_a' } else { '结果里没有租户列' })
+        }
+    }
+    catch {
+        Report-Check '租户隔离（LOGICAL）' $false $_.Exception.Message
+    }
 }
 elseif (-not $secrets) {
     Report-Check '演示账号登录' $false '未找到 demo-secrets.json'
