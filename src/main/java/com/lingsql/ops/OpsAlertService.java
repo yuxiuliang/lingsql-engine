@@ -16,7 +16,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -312,7 +312,9 @@ public class OpsAlertService {
         payload.put("title", StringUtils.hasText(title) ? title : "LingSQL 告警");
         payload.put("message", StringUtils.hasText(message) ? message : "系统告警");
         payload.put("level", StringUtils.hasText(level) ? level : DEFAULT_ALERT_LEVEL);
-        payload.put("timestamp", Instant.now().toString());
+        // 用带偏移的本地时间（如 2026-10-26T20:52:02+08:00），不要退回 UTC：
+        // 同一 payload 里的 details.executeTime 是本地时间，混用会让客户看到差 8 小时的两个时间。
+        payload.put("timestamp", OffsetDateTime.now().toString());
         payload.put("details", details == null ? Collections.emptyMap() : details);
         return payload;
     }
@@ -320,7 +322,7 @@ public class OpsAlertService {
     private Map<String, Object> buildDingTalkPayload(String title, String message, Map<String, Object> details) {
         String resolvedTitle = StringUtils.hasText(title) ? title : "LingSQL 告警";
         String resolvedMessage = StringUtils.hasText(message) ? message : "系统告警";
-        String timestamp = Instant.now().toString();
+        String timestamp = OffsetDateTime.now().toString();
         String detailMarkdown = renderDetailMarkdown(details, "> - ");
         String text = """
                 ### %s
@@ -344,7 +346,7 @@ public class OpsAlertService {
     private Map<String, Object> buildWeComPayload(String title, String message, Map<String, Object> details) {
         String resolvedTitle = StringUtils.hasText(title) ? title : "LingSQL 告警";
         String resolvedMessage = StringUtils.hasText(message) ? message : "系统告警";
-        String timestamp = Instant.now().toString();
+        String timestamp = OffsetDateTime.now().toString();
         String detailMarkdown = renderDetailMarkdown(details, "- ");
         String content = """
                 **%s**
