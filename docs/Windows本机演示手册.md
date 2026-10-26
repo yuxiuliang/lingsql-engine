@@ -243,6 +243,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 | `scripts/demo/demo-preflight.ps1` | 演示前自检（端口／就绪／数据新鲜度／语义字典／cron／实问两题） |
 | `scripts/demo/docs-consistency-check.ps1` | 文档一致性检查（常量 vs 源码、租户／员工清单 vs 数据库、索引完整性） |
 | `scripts/demo/verify-all.ps1` | 一键总验：单测 + 自检 + 文档一致性 + 演练，输出总表 |
+| `scripts/demo/morning-check.ps1` | 每日巡检：今天跑没跑、推没推出去、数字对不对 |
 | `scripts/demo/install-redis-windows.ps1` | 便携版 Redis 下载解压 |
 | `scripts/demo/seed/generate-demo-data.mjs` | 确定性演示数据生成器 |
 | `scripts/demo/stub/ten-question-stub.mjs` | 确定性模型桩 |
@@ -281,9 +282,20 @@ WHERE create_time >= CURDATE() ORDER BY id;
 | `0` | 尝试了但失败，`push_delivery_detail` 里写明哪个通道挂了 |
 | `NULL` | **根本没尝试**——通常是没有配置任何通道（`系统告警总开关未启用`） |
 
+> **手工执行不会推送**（2026-10-27 实测：`MANUAL` 的 `push_delivery_status` 恒为 `NULL`，
+> `SCHEDULED` 才会出现 0 或 1）。所以演示时"我手动跑一次给你看"不会发到客户群里，
+> 客户问"手动跑了怎么没收到"，答案是这个，不是通道坏了。
+
 **③ 数字对不对（抽一条）**
 
 挑一条日报，用同一口径直接查库比对。不一致就问清楚口径，**不要自己改 SQL 去凑**。
+
+一条命令把三步都跑完：
+
+```powershell
+pwsh -File scripts/demo/morning-check.ps1            # 默认 demo_sales
+pwsh -File scripts/demo/morning-check.ps1 -TenantId <租户>
+```
 
 > 三条都过 → 当天不用管。任一条不对 → 把 run log 的 `id` 记下来，那是唯一能追溯的凭据。
 
