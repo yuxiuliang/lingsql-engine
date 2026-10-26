@@ -63,7 +63,13 @@ pwsh -File scripts/demo/start-demo-stack.ps1
 ## 4. 日常使用
 
 ```powershell
-# 演示当天第一件事：自检（11 项，10 秒内出结果，全 PASS 才开讲）
+# 演示当天第一件事：一键总验（单测 + 自检 + 文档一致性 + 演练，约 1 分钟）
+pwsh -File scripts/demo/verify-all.ps1
+
+# 只想快速看环境（跳过单测，约 10 秒）
+pwsh -File scripts/demo/verify-all.ps1 -SkipTests
+
+# 或者只跑自检这一项
 pwsh -File scripts/demo/demo-preflight.ps1
 
 # 启动（已有 jar 时加 -SkipBuild 跳过构建；数据不想重建可加 -SkipDataInit）
@@ -236,6 +242,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 | `scripts/demo/ask-demo-questions.ps1` | 10 问 + 证据报告 |
 | `scripts/demo/demo-preflight.ps1` | 演示前自检（端口／就绪／数据新鲜度／语义字典／cron／实问两题） |
 | `scripts/demo/docs-consistency-check.ps1` | 文档一致性检查（常量 vs 源码、租户／员工清单 vs 数据库、索引完整性） |
+| `scripts/demo/verify-all.ps1` | 一键总验：单测 + 自检 + 文档一致性 + 演练，输出总表 |
 | `scripts/demo/install-redis-windows.ps1` | 便携版 Redis 下载解压 |
 | `scripts/demo/seed/generate-demo-data.mjs` | 确定性演示数据生成器 |
 | `scripts/demo/stub/ten-question-stub.mjs` | 确定性模型桩 |
