@@ -14,6 +14,9 @@ param(
     [string]$MysqlHome = 'D:\Software\Tools\Database\mysql-8.4.2-winx64',
     [switch]$SkipBuild,
     [switch]$SkipDataInit,
+    # 演示数据是相对当天生成的，跨天不刷新就会让「昨日日报」变成空结果。
+    # 加此开关会在启动时执行 sql/demo_sales_inventory_refresh.sql，把数据对齐到当天。
+    [switch]$RefreshDemoData,
     # 需要演示「经营日报」推送时传入；不传则告警通道保持关闭，数字员工能执行但不会投递。
     [string]$AlertWebhookUrl = ''
 )
@@ -65,6 +68,29 @@ if ($SkipDataInit) {
 else {
     & (Join-Path $PSScriptRoot 'init-demo-databases.ps1') -MysqlBin $mysqlClient -Port $mysqlPort | Out-Null
     Write-Host '      完成'
+}
+
+# 数据新鲜度检查：经营日报取「昨天」，数据必须覆盖到昨天，否则演示时客户问「昨天卖了多少」
+# 会得到「昨天没有已完成订单」。这里的检查跑在启动阶段，避免到客户面前才发现。
+$salesDb = 'lingsql_demo_sales'
+$maxOrderDate = & $mysqlClient --host=127.0.0.1 "--port=$mysqlPort" --user=root --batch --skip-column-names --database=$salesDb --execute='SELECT MAX(order_date) FROM demo_sales_order;' 2>$null
+$maxOrderDate = ($maxOrderDate | Select-Object -First 1)
+if ($RefreshDemoData) {
+    Write-Host '      按 -RefreshDemoData 刷新演示数据（对齐到当天）'
+    $refreshSql = Join-Path $root 'sql/demo_sales_inventory_refresh.sql'
+    & cmd /c "`"$mysqlClient`" --host=127.0.0.1 --port=$mysqlPort --user=root --default-character-set=utf8mb4 --database=$salesDb < `"$refreshSql`"" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw '演示数据刷新失败' }
+    $maxOrderDate = & $mysqlClient --host=127.0.0.1 "--port=$mysqlPort" --user=root --batch --skip-column-names --database=$salesDb --execute='SELECT MAX(order_date) FROM demo_sales_order;' 2>$null
+    $maxOrderDate = ($maxOrderDate | Select-Object -First 1)
+}
+Write-Host "      演示数据最新日期：$maxOrderDate（今天 $(Get-Date -Format 'yyyy-MM-dd')）"
+if ($maxOrderDate) {
+    $latest = [datetime]::Parse($maxOrderDate)
+    $yesterday = (Get-Date).Date.AddDays(-1)
+    if ($latest -lt $yesterday) {
+        Write-Host '      [警告] 昨天没有订单数据：演示「昨日经营快报」会得到空结果。' -ForegroundColor Yellow
+        Write-Host '             修复：加 -RefreshDemoData 重新启动，或手工执行 sql/demo_sales_inventory_refresh.sql' -ForegroundColor Yellow
+    }
 }
 
 Write-Host "[3/6] Redis :$redisPort"
