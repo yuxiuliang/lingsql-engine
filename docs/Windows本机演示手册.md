@@ -63,6 +63,9 @@ pwsh -File scripts/demo/start-demo-stack.ps1
 ## 4. 日常使用
 
 ```powershell
+# 演示当天第一件事：自检（11 项，10 秒内出结果，全 PASS 才开讲）
+pwsh -File scripts/demo/demo-preflight.ps1
+
 # 启动（已有 jar 时加 -SkipBuild 跳过构建；数据不想重建可加 -SkipDataInit）
 pwsh -File scripts/demo/start-demo-stack.ps1 -SkipBuild
 
@@ -223,6 +226,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 | `scripts/demo/init-demo-databases.ps1` | 建库、迁移、演示数据、只读账号 |
 | `scripts/demo/provision-demo.ps1` | 开户与模型授权（可直接切真实模型） |
 | `scripts/demo/ask-demo-questions.ps1` | 10 问 + 证据报告 |
+| `scripts/demo/demo-preflight.ps1` | 演示前自检（端口／就绪／数据新鲜度／语义字典／cron／实问两题） |
 | `scripts/demo/install-redis-windows.ps1` | 便携版 Redis 下载解压 |
 | `scripts/demo/seed/generate-demo-data.mjs` | 确定性演示数据生成器 |
 | `scripts/demo/stub/ten-question-stub.mjs` | 确定性模型桩 |
