@@ -26,7 +26,8 @@ $ErrorActionPreference = 'Stop'
 $secrets = Get-DemoSecrets
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if ($ReportPath -eq '') {
-    $ReportPath = Join-Path $root '.local-private/demo/demo-10q-report.md'
+    # 报告名带租户与时间戳：此前是固定文件名，换个租户试跑会把演示报告覆盖掉。
+    $ReportPath = Join-Path $root ('.local-private/demo/demo-10q-{0}-{1}.md' -f $TenantId, (Get-Date -Format 'yyyyMMdd-HHmmss'))
 }
 
 $questions = @(
