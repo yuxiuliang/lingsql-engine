@@ -244,6 +244,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 | `scripts/demo/docs-consistency-check.ps1` | 文档一致性检查（常量 vs 源码、租户／员工清单 vs 数据库、索引完整性） |
 | `scripts/demo/verify-all.ps1` | 一键总验：单测 + 自检 + 文档一致性 + 演练，输出总表 |
 | `scripts/demo/morning-check.ps1` | 每日巡检：今天跑没跑、推没推出去、数字对不对 |
+| `scripts/demo/ui-routes-check.ps1` | 界面路由可用性：前端每条路由都要返回界面，不能是 JSON |
 | `scripts/demo/install-redis-windows.ps1` | 便携版 Redis 下载解压 |
 | `scripts/demo/seed/generate-demo-data.mjs` | 确定性演示数据生成器 |
 | `scripts/demo/stub/ten-question-stub.mjs` | 确定性模型桩 |

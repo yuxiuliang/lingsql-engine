@@ -60,6 +60,7 @@ try {
     Invoke-Step -Name '② 演示前自检' -Command 'pwsh -NoProfile -File scripts/demo/demo-preflight.ps1'
     Invoke-Step -Name '③ 文档一致性' -Command 'pwsh -NoProfile -File scripts/demo/docs-consistency-check.ps1'
     Invoke-Step -Name '④ 黄金问题演练' -Command 'pwsh -NoProfile -File scripts/demo/golden-question-rehearsal.ps1'
+    Invoke-Step -Name '⑤ 界面路由可用' -Command 'pwsh -NoProfile -File scripts/demo/ui-routes-check.ps1'
 }
 finally {
     Pop-Location
