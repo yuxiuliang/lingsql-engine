@@ -208,6 +208,18 @@ ORDER BY id DESC LIMIT 3;
 
 ---
 
+### 4.5 演示账号能看到哪些页面（权限决定，不是功能缺失）
+
+2026-10-27 首次用浏览器看界面时发现：`demo_admin` 登录后侧边栏**只有 3 项**
+（智能问答、问答历史、管理后台），仪表盘/数字员工/语义字典等页面都看不到。
+
+原因：权限 = **角色权限 ∩ 租户权限池**，两者默认都只预置了 13 条（问答 + 组织管理）。
+`provision-demo.ps1` 现在最后一步会调 `grant-demo-permissions.ps1` 把它们补齐到全部权限（幂等）。
+
+- 补完后重新登录：菜单 **25 个节点**（4 个顶级 + 管理后台下 21 个）；
+- 这是**演示环境的便利设置**，真实客户应按最小权限发放，不要照抄；
+- 改完权限必须**重新登录**——权限在登录时解析进令牌。
+
 ## 5. 换成真实模型（演示前必做，否则展示的是离线桩）
 
 离线桩只保证「链路通、形态对」，回答文本是模板拼装。对客户演示时应切换到真实模型：
@@ -246,6 +258,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 | `scripts/demo/morning-check.ps1` | 每日巡检：今天跑没跑、推没推出去、数字对不对 |
 | `scripts/demo/ui-routes-check.ps1` | 界面路由可用性：前端每条路由都要返回界面，不能是 JSON |
 | `scripts/demo/api-contract-check.ps1` | 前后端契约：前端引用的接口路径，后端是否都有映射 |
+| `scripts/demo/grant-demo-permissions.ps1` | 给演示租户补齐权限池与角色权限（否则菜单只有 3 项） |
 | `scripts/demo/install-redis-windows.ps1` | 便携版 Redis 下载解压 |
 | `scripts/demo/seed/generate-demo-data.mjs` | 确定性演示数据生成器 |
 | `scripts/demo/stub/ten-question-stub.mjs` | 确定性模型桩 |

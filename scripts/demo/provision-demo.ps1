@@ -190,6 +190,13 @@ Invoke-Api -Method PUT -Path "/api/v1/admin/tenant-model-routes/$TenantId" -Toke
 ) | Out-Null
 Write-Host '      OK'
 
+# 权限 = 角色权限 ∩ 租户权限池。两者默认只预置了少量条目，管理端菜单会大面积隐藏，
+# 演示时看不到仪表盘/数字员工/语义字典等页面。这里为演示租户补齐（幂等）。
+# 真实客户不应照抄，应按最小权限发放。
+Write-Host '[7/7] 补齐演示租户权限（否则管理端菜单只有 3 项）'
+& (Join-Path $PSScriptRoot 'grant-demo-permissions.ps1') -TenantId $TenantId | Out-Null
+Write-Host '      OK'
+
 Write-Host ''
 Write-Host '开户完成。演示租户登录信息（口令在 .local-private/demo/demo-secrets.json）：'
 Write-Host "  租户: $TenantId"
