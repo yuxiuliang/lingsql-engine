@@ -52,7 +52,18 @@ public class SecurityConfig {
             "/role",
             "/permission",
             "/audit",
-            "/sql-log"
+            "/sql-log",
+            // 2026-10-27 补齐：以下路由前端已实现但未放行，直接访问或刷新会返回 401 JSON，
+            // 表现为"点了能进、刷新就崩"。清单已与 web_src/src/router/index.ts 对齐。
+            "/approval",
+            "/chat-history",
+            "/chat/history",
+            "/history",
+            "/memory",
+            "/memory-admin",
+            "/menu",
+            "/organization",
+            "/plugin"
     };
 
     private final TokenAuthenticationFilter tokenAuthenticationFilter;

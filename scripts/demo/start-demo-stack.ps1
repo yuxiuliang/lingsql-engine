@@ -189,7 +189,7 @@ Write-Host ''
 Write-Host '演示栈已就绪：'
 Write-Host "  应用     http://127.0.0.1:$appPort"
 Write-Host "  健康检查 http://127.0.0.1:$appPort/actuator/health"
-Write-Host "  管理端   http://127.0.0.1:$appPort/admin"
+Write-Host "  管理端   http://127.0.0.1:$appPort/  （登录页 /login；/admin 也能进，会自动转发）"
 Write-Host "  模型桩   http://127.0.0.1:$stubPort（确定性离线桩，非真实模型）"
 Write-Host "  演示账号 demo_sales / demo_admin"
 Write-Host "  口令     $runtime/demo-secrets.json"
