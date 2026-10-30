@@ -63,6 +63,7 @@ try {
     Invoke-Step -Name '⑤ 界面路由可用' -Command 'pwsh -NoProfile -File scripts/demo/ui-routes-check.ps1'
     Invoke-Step -Name '⑥ 前后端契约' -Command 'pwsh -NoProfile -File scripts/demo/api-contract-check.ps1'
     Invoke-Step -Name '⑦ 审计留痕' -Command 'pwsh -NoProfile -File scripts/demo/audit-trail-check.ps1'
+    Invoke-Step -Name '⑧ 计费与调用一致' -Command 'pwsh -NoProfile -File scripts/demo/billing-call-consistency-check.ps1'
 }
 finally {
     Pop-Location
