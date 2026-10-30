@@ -537,6 +537,31 @@ public class SqlRewriter {
          */
         @Override
         public void visit(Column column) {
+            detect(column);
+            super.visit(column);
+        }
+
+        /**
+         * 访问列节点（带上下文）——**实际会被调用的是这个重载**。
+         *
+         * <p>2026-10-31 修复：与 {@code ColumnCollector} 同一个坑——JSqlParser 5.x 的
+         * {@code Column.accept(visitor)} 走的是 {@code visit(Column, S)}，
+         * 只重写 1 参数版本会让敏感字段脱敏（替换为 NULL）永远不生效。</p>
+         *
+         * @param column  列
+         * @param context 上下文
+         * @param <S>     上下文类型
+         * @return 父类返回的构建器
+         * @author 余炘洋
+         * @date 2026-10-31
+         */
+        @Override
+        public <S> StringBuilder visit(Column column, S context) {
+            detect(column);
+            return super.visit(column, context);
+        }
+
+        private void detect(Column column) {
             if (column.getColumnName() != null) {
                 String columnName = column.getColumnName().toLowerCase();
                 String tableName = column.getTable() != null ? column.getTable().getName() : null;
@@ -544,10 +569,8 @@ public class SqlRewriter {
                 if (sensitiveColumns.contains(columnName) || (qualified != null && sensitiveColumns.contains(qualified))) {
                     found = true;
                     matchedColumn = column.getColumnName();
-                    return;
                 }
             }
-            super.visit(column);
         }
 
         /**
