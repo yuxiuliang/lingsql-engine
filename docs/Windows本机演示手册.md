@@ -416,3 +416,16 @@ POST /api/v1/admin/config/model/1/probe     # 探测，成功会清除熔断
 
 > 验证方法：`preflight` 的「租户隔离（LOGICAL）」应为
 > `只看到 iso_a`；若出现 `iso_b`，说明改写器没有注入 `tenant_id` 条件。
+### 10.1 `scale_a/b/c` 规模夹具（未自动化）
+
+文档一致性会校验三个租户的 `schema_table_count` 分别为 60 / 100 / 200。
+它们只存在于已交付的环境里，**没有夹具脚本**。补法：
+
+1. 建三个库（例如 `lingsql_scale_60` / `lingsql_scale_100` / `lingsql_scale_200`），
+   每个库生成对应数量的表（表名随意，需被 schema 扫描统计到）；
+2. 用管理端 API 各建一个租户（`scale_a`→60、`scale_c`→100、`scale_b`→200，
+   **注意 c 是 100、b 是 200**，历史命名与数量不是顺序对应）；
+3. 各自同步 Schema（`POST /api/v1/admin/sync-schema/{tenantId}`），
+   使 `t_lingsql_engine_tenant_db_config.schema_table_count` 落库。
+
+验证：`pwsh -File scripts/demo/fixtures-check.ps1` 的「规模夹具」三项应全绿。
