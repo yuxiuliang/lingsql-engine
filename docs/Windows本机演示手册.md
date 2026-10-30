@@ -259,6 +259,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 | `scripts/demo/ui-routes-check.ps1` | 界面路由可用性：前端每条路由都要返回界面，不能是 JSON |
 | `scripts/demo/api-contract-check.ps1` | 前后端契约：前端引用的接口路径，后端是否都有映射 |
 | `scripts/demo/grant-demo-permissions.ps1` | 给演示租户补齐权限池与角色权限（否则菜单只有 3 项） |
+| `scripts/demo/fill-sales-package.ps1` | 签约当天用：一次填全清单里的 5 类占位值（双方名称/统一社会信用代码、审批记录号），生成到 `.local-private/commercial/out/<时间戳>/` 并立刻校验；传占位值或非 18 位信用代码会被直接拒绝 |
 | `scripts/demo/run-sales-package-validator.ps1` | 在 Windows 上跑「可签约销售包」校验器（`bash` 包壳跑不了时用它；jar 在 `.local-private/commercial/target/`）。**jar 可从源码重建**：`cd .local-private/commercial; mvn -B -o -DskipTests package`，2026-10-30 实测离线 6.1 秒，重建前后对同一模板的拒答完全一致 |
 | `scripts/demo/install-redis-windows.ps1` | 便携版 Redis 下载解压 |
 | `scripts/demo/restart-demo-app.ps1` | 只重启应用（不动 MySQL/Redis/桩），等 readiness 后返回；**必须放后台作业跑**，否则工具会一直等 java 子进程 |
