@@ -101,9 +101,20 @@ Write-Host "      演示数据最新日期：$maxOrderDate（今天 $(Get-Date -
 if ($maxOrderDate) {
     $latest = [datetime]::Parse($maxOrderDate)
     $yesterday = (Get-Date).Date.AddDays(-1)
+    if ($latest -lt $yesterday -and -not $RefreshDemoData) {
+        # 全新环境生成的历史数据只到"上个月末"，演示「昨天卖了多少」会空。
+        # 以前只打印警告、指望人记得加 -RefreshDemoData——2026-10-31 实测新机器就是这么漏的。
+        # 改成自动补一次（该 SQL 只补缺失日期），再复查。
+        Write-Host "      演示数据落后（最新 $maxOrderDate，需要 $($yesterday.ToString('yyyy-MM-dd'))），自动刷新一次" -ForegroundColor Yellow
+        $autoRefreshSql = Join-Path $root 'sql/demo_sales_inventory_refresh.sql'
+        & cmd /c "`"$mysqlClient`" --host=127.0.0.1 --port=$mysqlPort --user=root --default-character-set=utf8mb4 --database=$salesDb < `"$autoRefreshSql`"" | Out-Null
+        $maxOrderDate = (& $mysqlClient --host=127.0.0.1 "--port=$mysqlPort" --user=root --batch --skip-column-names --database=$salesDb --execute='SELECT MAX(order_date) FROM demo_sales_order;' 2>$null | Select-Object -First 1)
+        Write-Host "      刷新后最新日期：$maxOrderDate"
+        if ($maxOrderDate) { $latest = [datetime]::Parse($maxOrderDate) }
+    }
     if ($latest -lt $yesterday) {
-        Write-Host '      [警告] 昨天没有订单数据：演示「昨日经营快报」会得到空结果。' -ForegroundColor Yellow
-        Write-Host '             修复：加 -RefreshDemoData 重新启动，或手工执行 sql/demo_sales_inventory_refresh.sql' -ForegroundColor Yellow
+        Write-Host '      [警告] 昨天仍然没有订单数据：演示「昨日经营快报」会得到空结果。' -ForegroundColor Yellow
+        Write-Host '             修复：手工执行 sql/demo_sales_inventory_refresh.sql，或检查生成器 sql/demo_sales_inventory.sql' -ForegroundColor Yellow
     }
 }
 
