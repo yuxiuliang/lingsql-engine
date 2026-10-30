@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -101,5 +102,48 @@ class PhysicalBillingResolutionImplTest {
         verify(tenantRepository).increaseBalance(eq("demo_sales"), amount.capture(), any(), any());
         assertEquals(6223L, amount.getValue(), "应退回预留金额，且只退一次");
         verify(ledgerRepository).appendCancel(any(), any());
+    }
+
+    // ===== 输入校验：钱不能凭一份不完整的证据动 =====
+    // 这些拒绝路径此前没有任何测试（2026-10-31 审计发现），而它们挡的正是"裁决参数不完整"。
+
+    @Test
+    void shouldRejectEvidenceHashThatIsNotSha256() {
+        PhysicalBillingResolutionCommand bad = new PhysicalBillingResolutionCommand(
+                INVOCATION_ID, "tester", "not-a-sha256", "NO-REPLY",
+                PhysicalBillingResolutionType.CONFIRMED_NOT_BILLED, null);
+
+        assertThrows(BillingInvocationConflictException.class, () -> impl.resolve(bad),
+                "证据哈希不是 64 位十六进制时必须拒绝，不得据此动账");
+    }
+
+    @Test
+    void shouldRejectConfirmedUsageWithoutActualTokens() {
+        PhysicalBillingResolutionCommand bad = new PhysicalBillingResolutionCommand(
+                INVOCATION_ID, "tester", EVIDENCE_HASH, "NO-REPLY",
+                PhysicalBillingResolutionType.CONFIRMED_USAGE, null);
+
+        assertThrows(BillingInvocationConflictException.class, () -> impl.resolve(bad),
+                "确认用量却没有任何 Token 数，只能拒绝");
+    }
+
+    @Test
+    void shouldRejectConfirmedUsageExceedingReservedCap() {
+        PhysicalBillingResolutionCommand bad = new PhysicalBillingResolutionCommand(
+                INVOCATION_ID, "tester", EVIDENCE_HASH, "NO-REPLY",
+                PhysicalBillingResolutionType.CONFIRMED_USAGE, 6224);
+
+        assertThrows(BillingInvocationConflictException.class, () -> impl.resolve(bad),
+                "实际 Token 超过预留上限时必须拒绝结算——否则会超扣客户");
+    }
+
+    @Test
+    void shouldRejectNotBilledCarryingActualTokens() {
+        PhysicalBillingResolutionCommand bad = new PhysicalBillingResolutionCommand(
+                INVOCATION_ID, "tester", EVIDENCE_HASH, "NO-REPLY",
+                PhysicalBillingResolutionType.CONFIRMED_NOT_BILLED, 100);
+
+        assertThrows(BillingInvocationConflictException.class, () -> impl.resolve(bad),
+                "确认未计费却带 Token 数，语义矛盾，必须拒绝");
     }
 }
