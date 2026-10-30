@@ -261,6 +261,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 | `scripts/demo/grant-demo-permissions.ps1` | 给演示租户补齐权限池与角色权限（否则菜单只有 3 项） |
 | `scripts/demo/run-sales-package-validator.ps1` | 在 Windows 上跑「可签约销售包」校验器（`bash` 包壳跑不了时用它；jar 在 `.local-private/commercial/target/`）。**jar 可从源码重建**：`cd .local-private/commercial; mvn -B -o -DskipTests package`，2026-10-30 实测离线 6.1 秒，重建前后对同一模板的拒答完全一致 |
 | `scripts/demo/install-redis-windows.ps1` | 便携版 Redis 下载解压 |
+| `scripts/demo/checks-self-test.ps1` | 检查脚本自检：临时注入可控故障，证明「审计留痕」「计费一致」这两条检查**真的会红**，跑完自动清理探针 |
 | `scripts/demo/billing-call-consistency-check.ps1` | 计费与调用一致性：成功的提问必须付了架构师+分析师两次钱，失败的至少一次，且不留非终态 |
 | `scripts/demo/audit-trail-check.ps1` | 审计留痕检查：每条提问都必须有 request_id/问题/租户/用户，成功的必须有实际执行的 SQL、失败的必须有原因 |
 | `scripts/demo/suite-freshness-check.ps1` | 校验 40 题黄金问题 Suite 的期望值是否还对得上当前数据（`-Refresh` 按当前数据重算，改前自动备份）。**演示数据一刷新，Suite 就过期**，拿过期 Suite 做复测会把"量具坏了"看成"产品坏了" |
