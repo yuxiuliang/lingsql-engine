@@ -21,6 +21,7 @@ import com.lingsql.rbac.repository.RbacRolePermissionRepository;
 import com.lingsql.rbac.repository.RbacRoleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
@@ -83,6 +84,7 @@ public class RoleAdminService {
      * @author 余炘洋
      * @date 2026-01-26
      */
+    @Transactional
     public RoleView createRole(RoleCreateRequest request, String tenantId, boolean sysAdmin) {
         if (request == null) {
             throw new BizException(ErrorCode.INVALID_PARAM, "请求不能为空");
@@ -127,6 +129,7 @@ public class RoleAdminService {
      * @author 余炘洋
      * @date 2026-01-26
      */
+    @Transactional
     public RoleView updateRole(Long roleId, RoleUpdateRequest request, String tenantId, boolean sysAdmin) {
         if (roleId == null) {
             throw new BizException(ErrorCode.INVALID_PARAM, "角色ID不能为空");
