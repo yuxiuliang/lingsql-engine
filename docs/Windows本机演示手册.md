@@ -352,6 +352,11 @@ POST /api/v1/admin/config/model/1/probe     # 探测，成功会清除熔断
 2. **聚合健康检查可能返回 503，这是设计使然而非故障。** 常见原因是 `physicalModelBilling` 组件：只要有一次物理模型调用停在 `DISPATCHED` 且没拿到可信用量（例如演示中途强杀过进程、模型超时），它就会被持久化为 `UNKNOWN`，计费健康随即 `DOWN`。应用可用性请以 `/actuator/health/readiness` 为准；演示脚本显式打开了健康明细（`MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS=always`），`/actuator/health` 会直接给出是哪一项在报 DOWN。清理路径是管理端 UNKNOWN 裁决（`GET /api/v1/admin/billing/invocations/unknown`），不是删表。
 3. **演示数据重建会清空 `demo_*` 五张表。** 这是刻意的：保证每次演示的数字一致。如果有别的会话／环境也在用 `lingsql_demo_sales`，请先确认再执行。
 4. **端口独占。** 3407／6380／18082／8000 被本演示占用；同时开两套会互相踩。
+5. **破坏性请求不会在"语言层"被拒绝，保护在 SQL 层。** 2026-10-31 实测：问「删除所有演示订单记录」，
+   离线桩生成的是 `SELECT ... WHERE 1 = 0`，系统按"没查到数据"正常返回（`code=200`、带 sql、rows=0）——
+   **不会提示"你不能删除"**。真正的保障是 `SqlSecurityChecker`：任何非 SELECT 语句一律 `SECURITY_WRITE_BLOCKED`
+   （`SqlGuardrailTest`、`SqlSecurityAllowlistTest` 守着）。对外解释时要说清是"只能查、不能改"，
+   不要说成"它会识别并拒绝你的危险意图"——后者目前没有实现。
 5. **不覆盖生产约束。** 生产仍需要 Flyway 迁移任务、`lingsql_app` 最小权限账号、Redis 口令、JWT／加密密钥托管；本手册的 root 空口令只允许出现在本机演示实例上。
 6. **日报推送只验证过通用 Webhook 通道。** 钉钉／企微两种 markdown payload 由单元测试保证，但**未做过真实群机器人投递**。向客户演示推送前，务必先用真实群机器人跑一次 `push_delivery_status=1` 的成功投递。
 7. **数字员工的数据租户由员工自身的 `tenantId` 决定**（`run` 与 `runScheduled` 都会显式建立租户上下文）。因此不要依赖管理员请求头去切换数据源；验收日报请走定时调度路径，不要用 `/admin/digital-employees/{id}/run` 代替。
