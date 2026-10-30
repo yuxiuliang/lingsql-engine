@@ -81,18 +81,12 @@ foreach ($t in $dbTenantSet) {
 
 Write-Host ''
 Write-Host '==== ③ 数字员工清单 ====' -ForegroundColor Cyan
-$empRows = Sql "SELECT CONCAT(id,':',IFNULL(schedule_cron,'NULL'),':',schedule_enabled) FROM t_lingsql_engine_digital_employee ORDER BY id;"
-$empIds = @($empRows | ForEach-Object { ("$_".Trim() -split ':')[0] } | Where-Object { $_ -match '^\d+$' })
-$docEmpIds = [regex]::Matches($numbersText, '^\|\s*(\d+)\s*\|', 'Multiline') | ForEach-Object { $_.Groups[1].Value }
-$docEmpRange = [regex]::Matches($numbersText, '^\|\s*(\d+)[–-](\d+)\s*\|', 'Multiline')
-$covered = New-Object System.Collections.Generic.HashSet[string]
-foreach ($id in $docEmpIds) { [void]$covered.Add($id) }
-foreach ($m in $docEmpRange) {
-    $from = [int]$m.Groups[1].Value; $to = [int]$m.Groups[2].Value
-    for ($i = $from; $i -le $to; $i++) { [void]$covered.Add("$i") }
-}
-$missing = @($empIds | Where-Object { -not $covered.Contains($_) })
-Check '员工清单覆盖' ($missing.Count -eq 0) $(if ($missing.Count -eq 0) { "共 $($empIds.Count) 个，全部登记" } else { "未登记: $($missing -join ',')" })
+$empRows = Sql "SELECT CONCAT(id,':',employee_name) FROM t_lingsql_engine_digital_employee WHERE is_deleted=0 ORDER BY id;"
+# 2026-10-31 改为**按名字**比对：员工 id 会随环境重建而变（本轮重建后 3–6 变成 17–19），
+# 按 id 校验会让文档每次重建后都"未登记"。名字才是稳定标识。
+$empNames = @($empRows | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+:' } | ForEach-Object { ($_ -split ':', 2)[1] })
+$missing = @($empNames | Where-Object { $numbersText -notmatch [regex]::Escape($_) })
+Check '员工清单覆盖（按名称）' ($missing.Count -eq 0) $(if ($missing.Count -eq 0) { "共 $($empNames.Count) 个，全部登记" } else { "未登记: $($missing -join '、')" })
 
 Write-Host ''
 Write-Host '==== ④ 索引完整性 ====' -ForegroundColor Cyan

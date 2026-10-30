@@ -66,7 +66,7 @@ function Invoke-Api {
     return $parsed
 }
 
-Write-Host '[1/6] 管理端登录'
+Write-Host '[1/9] 管理端登录'
 $login = Invoke-Api -Method POST -Path '/api/v1/auth/login' -TenantHeader '' -Body @{
     tenantId = $adminTenantId
     username = $adminUsername
@@ -76,7 +76,7 @@ $controlToken = $login.data.token
 if (-not $controlToken) { throw '管理员登录未返回 Token' }
 Write-Host '      OK'
 
-Write-Host '[2/6] 读取租户列表'
+Write-Host '[2/9] 读取租户列表'
 $tenantList = Invoke-Api -Method GET -Path '/api/v1/admin/tenants' -Token $controlToken
 $existing = @($tenantList.data | Where-Object { $_.tenantId -eq $TenantId })
 $demoToken = $null
@@ -106,7 +106,7 @@ if ($existing.Count -eq 0) {
     $created = Invoke-Api -Method POST -Path '/api/v1/admin/tenants' -Token $controlToken -Body $createBody
     Write-Host "      OK 租户已创建: $TenantId"
 
-    Write-Host '[3/6] 演示管理员首次登录并强制改密'
+    Write-Host '[3/9] 演示管理员首次登录并强制改密'
     $firstLogin = Invoke-Api -Method POST -Path '/api/v1/auth/login' -TenantHeader '' -Body @{
         tenantId = $TenantId
         username = $DemoAdminUsername
@@ -133,7 +133,7 @@ else {
     $demoToken = $loginDemo.data.token
 }
 
-Write-Host '[4/6] 收敛数据源配置并同步 Schema'
+Write-Host '[4/9] 收敛数据源配置并同步 Schema'
 $configList = Invoke-Api -Method GET -Path '/api/v1/admin/config/tenant' -Token $controlToken
 $configs = @($configList.data | Where-Object { $_.tenantId -eq $TenantId })
 if ($configs.Count -ne 1) { throw "演示租户应恰有一个数据源配置，实际 $($configs.Count)" }
@@ -157,7 +157,7 @@ Write-Host "      连接验证 OK: $($probe.data)"
 Invoke-Api -Method POST -Path "/api/v1/admin/sync-schema/$TenantId" -Token $controlToken -Body @{} | Out-Null
 Write-Host '      Schema 同步 OK'
 
-Write-Host '[5/6] 准备并验证模型'
+Write-Host '[5/9] 准备并验证模型'
 $modelList = Invoke-Api -Method GET -Path '/api/v1/admin/config/model' -Token $controlToken
 $model = @($modelList.data | Where-Object { $_.providerName -eq $ModelProvider -and $_.modelName -eq $ModelName }) | Select-Object -First 1
 $modelBody = @{
@@ -184,7 +184,7 @@ if ($probeResult.data.status -ne 'HEALTHY') { throw "模型探测未通过: $($p
 Invoke-Api -Method POST -Path "/api/v1/admin/model/enable/$modelId" -Token $controlToken -Body @{} | Out-Null
 Write-Host "      OK 模型 $modelId 已探测 HEALTHY 并启用"
 
-Write-Host '[6/6] 授权演示租户使用该模型'
+Write-Host '[6/9] 授权演示租户使用该模型'
 Invoke-Api -Method PUT -Path "/api/v1/admin/tenant-model-routes/$TenantId" -Token $controlToken -Body @(
     @{ modelConfigId = $modelId; priority = 1; weight = 100 }
 ) | Out-Null
@@ -193,7 +193,7 @@ Write-Host '      OK'
 # 权限 = 角色权限 ∩ 租户权限池。两者默认只预置了少量条目，管理端菜单会大面积隐藏，
 # 演示时看不到仪表盘/数字员工/语义字典等页面。这里为演示租户补齐（幂等）。
 # 真实客户不应照抄，应按最小权限发放。
-Write-Host '[7/7] 补齐演示租户权限（否则管理端菜单只有 3 项）'
+Write-Host '[7/9] 补齐演示租户权限（否则管理端菜单只有 3 项）'
 & (Join-Path $PSScriptRoot 'grant-demo-permissions.ps1') -TenantId $TenantId | Out-Null
 Write-Host '      OK'
 
@@ -203,7 +203,7 @@ Write-Host '      OK'
 # 一旦耗尽，提问会返回 403「今日调用次数已达上限」，看起来像权限问题。
 # 2026-10-31 实测：一天下来演示租户累计 500 条执行日志，把默认额度打满。
 # 这里写入一个策略版本覆盖等级限额（幂等：按 version_code 判断）。
-Write-Host '[8/8] 放宽演示环境的每日调用上限（默认约 100 次/天，演示不够用）'
+Write-Host '[8/9] 放宽演示环境的每日调用上限（默认约 100 次/天，演示不够用）'
 $policyJson = '{"FREE":{"dailyCallLimit":5000,"dailyTokenLimit":0},"BASIC":{"dailyCallLimit":5000,"dailyTokenLimit":0},"PRO":{"dailyCallLimit":5000,"dailyTokenLimit":0}}'
 $mysqlExe = $null
 foreach ($candidate in @(
@@ -222,6 +222,25 @@ if ("$existsPolicy".Trim() -eq '0') {
     & $mysqlExe @ctlArgs "--execute=INSERT INTO t_lingsql_engine_billing_policy_version (version_code, status, effective_time, model_unit_cost, service_level_limit, tenant_type_weight, default_unit_cost, default_daily_limit, default_daily_token_limit, default_tenant_weight, description, create_time, update_time) VALUES ('DEMO_DAY1', 1, NOW(), '{}', '$policyJson', '{}', 1, 5000, 0, 1, '演示环境放宽每日调用上限', NOW(), NOW());" 2>&1 | Out-Null
 }
 Write-Host '      OK'
+
+# 演示夹具：3 个"并行验证"日报员工。
+# 没有它们，preflight 的「日报 cron」检查会红、日报演示也跑不起来；
+# 此前它们是手工创建的，全新环境因此缺失（2026-10-31 实测）。
+# 夹具 SQL 幂等：按 (tenant_id, employee_name) 判断，已存在则跳过。
+Write-Host '[9/9] 补齐演示夹具：3 个日报员工'
+# 本脚本没有 $root 变量，用 PSScriptRoot 往上退两级拿仓库根
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$fixtureSql = Join-Path $repoRoot 'sql/demo_fixtures_daily_report.sql'
+if (-not (Test-Path -LiteralPath $fixtureSql)) {
+    Write-Host '      [警告] 未找到 sql/demo_fixtures_daily_report.sql，跳过' -ForegroundColor Yellow
+}
+else {
+    # 用 cmd 重定向喂脚本：mysql 的 source 只在交互模式可靠
+    & cmd /c "`"$mysqlExe`" --host=127.0.0.1 --port=3407 --user=$($secrets.mysql.appUser) --password=$($secrets.mysql.appPassword) --default-character-set=utf8mb4 --database=lingsql_demo_control < `"$fixtureSql`"" | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Host '      [警告] 夹具 SQL 应用失败，请手工执行' -ForegroundColor Yellow }
+    $fixtureCount = (& $mysqlExe @ctlArgs --batch --skip-column-names "--execute=SELECT COUNT(*) FROM t_lingsql_engine_digital_employee WHERE tenant_id='$TenantId' AND employee_name LIKE '并行验证%' AND is_deleted=0;" 2>$null | Select-Object -First 1)
+    Write-Host "      日报员工数量：$fixtureCount（期望 >= 3）"
+}
 
 Write-Host ''
 Write-Host '开户完成。演示租户登录信息（口令在 .local-private/demo/demo-secrets.json）：'
