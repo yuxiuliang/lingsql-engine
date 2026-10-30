@@ -259,6 +259,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 | `scripts/demo/ui-routes-check.ps1` | 界面路由可用性：前端每条路由都要返回界面，不能是 JSON |
 | `scripts/demo/api-contract-check.ps1` | 前后端契约：前端引用的接口路径，后端是否都有映射 |
 | `scripts/demo/grant-demo-permissions.ps1` | 给演示租户补齐权限池与角色权限（否则菜单只有 3 项） |
+| `scripts/demo/run-sales-package-validator.ps1` | 在 Windows 上跑「可签约销售包」校验器（`bash` 包壳跑不了时用它；jar 在 `.local-private/commercial/target/`） |
 | `scripts/demo/install-redis-windows.ps1` | 便携版 Redis 下载解压 |
 | `scripts/demo/seed/generate-demo-data.mjs` | 确定性演示数据生成器 |
 | `scripts/demo/stub/ten-question-stub.mjs` | 确定性模型桩 |
