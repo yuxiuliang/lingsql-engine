@@ -254,7 +254,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 | `scripts/demo/ask-demo-questions.ps1` | 10 问 + 证据报告 |
 | `scripts/demo/demo-preflight.ps1` | 演示前自检（端口／就绪／数据新鲜度／语义字典／cron／实问两题） |
 | `scripts/demo/docs-consistency-check.ps1` | 文档一致性检查（常量 vs 源码、租户／员工清单 vs 数据库、索引完整性） |
-| `scripts/demo/verify-all.ps1` | 一键总验：单测 + 自检 + 文档一致性 + 演练，输出总表 |
+| `scripts/demo/verify-all.ps1` | 一键总验六步：单测 → 演示前自检 → 文档一致性 → 黄金问题演练 → 界面路由 → 前后端契约，输出总表。**演示前跑 `-SkipTests` 版（实测 14.8 秒），全绿再开讲** |
 | `scripts/demo/morning-check.ps1` | 每日巡检：今天跑没跑、推没推出去、数字对不对 |
 | `scripts/demo/ui-routes-check.ps1` | 界面路由可用性：前端每条路由都要返回界面，不能是 JSON |
 | `scripts/demo/api-contract-check.ps1` | 前后端契约：前端引用的接口路径，后端是否都有映射 |
