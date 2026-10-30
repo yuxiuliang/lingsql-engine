@@ -63,10 +63,10 @@ pwsh -File scripts/demo/start-demo-stack.ps1
 ## 4. 日常使用
 
 ```powershell
-# 演示当天第一件事：一键总验（单测 + 自检 + 文档一致性 + 演练，约 1 分钟）
+# 演示当天第一件事：一键总验（八步：单测 + 自检 + 文档一致性 + 演练 + 界面路由 + 前后端契约 + 审计留痕 + 计费一致）
 pwsh -File scripts/demo/verify-all.ps1
 
-# 只想快速看环境（跳过单测，约 10 秒）
+# 只想快速看环境（跳过单测，实测 18 秒左右）
 pwsh -File scripts/demo/verify-all.ps1 -SkipTests
 
 # 或者只跑自检这一项
@@ -254,7 +254,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 | `scripts/demo/ask-demo-questions.ps1` | 10 问 + 证据报告 |
 | `scripts/demo/demo-preflight.ps1` | 演示前自检（端口／就绪／数据新鲜度／语义字典／cron／实问两题） |
 | `scripts/demo/docs-consistency-check.ps1` | 文档一致性检查 21 项（常量 vs 源码、租户／员工清单 vs 数据库、索引完整性、**markdown 结构：表格是否被空行截断、章节编号是否重复**） |
-| `scripts/demo/verify-all.ps1` | 一键总验六步：单测 → 演示前自检 → 文档一致性 → 黄金问题演练 → 界面路由 → 前后端契约，输出总表。**演示前跑 `-SkipTests` 版（实测 14.8 秒），全绿再开讲** |
+| `scripts/demo/verify-all.ps1` | 一键总验八步：单测 → 演示前自检 → 文档一致性 → 黄金问题演练 → 界面路由 → 前后端契约 → 审计留痕 → 计费与调用一致，输出总表。**演示前跑 `-SkipTests` 版（实测 14.8 秒），全绿再开讲** |
 | `scripts/demo/morning-check.ps1` | 每日巡检：今天跑没跑、推没推出去、数字对不对 |
 | `scripts/demo/ui-routes-check.ps1` | 界面路由可用性：前端每条路由都要返回界面，不能是 JSON |
 | `scripts/demo/api-contract-check.ps1` | 前后端契约：前端引用的接口路径，后端是否都有映射 |

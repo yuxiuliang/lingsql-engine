@@ -150,6 +150,16 @@ if (Test-Path $claimsDoc) {
     Check '卖点核验表' $false '文档不存在'
 }
 
+# ④.5 步数一致：verify-all 的实际步骤数必须与手册写的一致
+$verifyScript = Join-Path $root 'scripts/demo/verify-all.ps1'
+$manual = Join-Path $root 'docs/Windows本机演示手册.md'
+if ((Test-Path $verifyScript) -and (Test-Path $manual)) {
+    $stepCount = (Select-String -Path $verifyScript -Pattern 'Invoke-Step -Name').Count
+    $cn = @{ 4 = '四'; 5 = '五'; 6 = '六'; 7 = '七'; 8 = '八'; 9 = '九'; 10 = '十' }[$stepCount]
+    $claimed = if ($cn) { [bool](Select-String -Path $manual -Pattern "一键总验${cn}步" -Quiet) } else { $false }
+    Check '总验步数一致' $claimed "脚本=$stepCount 步（$cn），手册=$([bool]$claimed)"
+}
+
 # ⑤ 结构校验：表格被空行截断 / 章节编号重复
 #    起因（第 112 轮）：往《验证证据汇总》插一整节时插进了表格中间，导致后面三行脱离表格；
 #    同一份文件里还出现了两个「## 六、」。这两类问题没有测试会红，只会误导读的人。
