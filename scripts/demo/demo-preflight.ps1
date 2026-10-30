@@ -176,6 +176,18 @@ if ($ready -and $secrets) {
             -ContentType 'application/json; charset=UTF-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($loginBody))
         $loginJson = [System.Text.Encoding]::UTF8.GetString($login.RawContentStream.ToArray()) | ConvertFrom-Json
         $token = $loginJson.data.token
+
+        # 登录被限流时，后续所有需要令牌的检查都会以"错的原因"失败（例如菜单读到残缺权限，
+        # 报成"菜单只有 1 项"）。这里先把病因说清楚，别再让人去查权限。
+        if ($login.StatusCode -eq 429) {
+            $retryAfter = $login.Headers['Retry-After']
+            $wait = if ($retryAfter) { "最多还需 $retryAfter 秒（配置上限，实际可能更短）" } else { '约 10 分钟后自动解封' }
+            Report-Check '演示账号登录' $false "被登录限流（HTTP 429），$wait；或删 Redis 键 lingsql:ratelimit:login:block:<ip> 立即解封"
+            Write-Host ''
+            Write-Host '  后续检查已跳过：现在的失败都是限流导致的假象，不是功能问题。' -ForegroundColor Yellow
+            exit 1
+        }
+
         Report-Check '演示账号登录' ([bool]$token) "code=$($loginJson.code)"
 
         if ($token) {
