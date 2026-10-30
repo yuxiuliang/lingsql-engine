@@ -2,6 +2,9 @@ package com.lingsql.organization.repository;
 
 import com.lingsql.organization.entity.UserOrgMembership;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
@@ -50,7 +53,9 @@ public interface UserOrgMembershipRepository extends JpaRepository<UserOrgMember
      * @author 余炘洋
      * @date 2026-04-11
      */
-    void deleteByUserId(Long userId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from UserOrgMembership e where e.userId = :userId")
+    void deleteByUserId(@Param("userId") Long userId);
 
     /**
      * 判断组织节点是否已关联用户。

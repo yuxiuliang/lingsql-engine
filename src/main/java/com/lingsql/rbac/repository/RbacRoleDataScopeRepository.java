@@ -2,6 +2,7 @@ package com.lingsql.rbac.repository;
 
 import com.lingsql.rbac.entity.RbacRoleDataScope;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -33,5 +34,7 @@ public interface RbacRoleDataScopeRepository extends JpaRepository<RbacRoleDataS
      * @author 余炘洋
      * @date 2026-04-11
      */
-    void deleteByRoleId(Long roleId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from RbacRoleDataScope e where e.roleId = :roleId")
+    void deleteByRoleId(@Param("roleId") Long roleId);
 }

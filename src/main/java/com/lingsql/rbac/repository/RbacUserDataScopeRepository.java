@@ -2,6 +2,9 @@ package com.lingsql.rbac.repository;
 
 import com.lingsql.rbac.entity.RbacUserDataScope;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
@@ -30,5 +33,7 @@ public interface RbacUserDataScopeRepository extends JpaRepository<RbacUserDataS
      * @author 余炘洋
      * @date 2026-04-11
      */
-    void deleteByUserId(Long userId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from RbacUserDataScope e where e.userId = :userId")
+    void deleteByUserId(@Param("userId") Long userId);
 }

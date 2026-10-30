@@ -2,6 +2,7 @@ package com.lingsql.rbac.repository;
 
 import com.lingsql.rbac.entity.RbacRolePermission;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -33,7 +34,9 @@ public interface RbacRolePermissionRepository extends JpaRepository<RbacRolePerm
      * @author 余炘洋
      * @date 2026-01-26
      */
-    void deleteByRoleId(Long roleId);
+    @Modifying(flushAutomatically = true)
+    @Query("delete from RbacRolePermission e where e.roleId = :roleId")
+    void deleteByRoleId(@Param("roleId") Long roleId);
 
     /**
      * 按角色ID列表查询角色权限关系。
