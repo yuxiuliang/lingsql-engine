@@ -151,6 +151,11 @@ if (-not (Test-DemoPort -Port $appPort)) {
     $env:LINGSQL_REDIS_PORT = "$redisPort"
     $env:LINGSQL_REDIS_PASSWORD = $secrets.redis.password
     $env:LINGSQL_JWT_SECRET = $secrets.app.jwtSecret
+    # 演示环境放宽登录限流：默认 20 次/分钟 触发后封禁 10 分钟（Retry-After: 600）。
+    # 本机的自检 / 演练 / 巡检 / 检查脚本自检会在短时间内多次登录，必然踩线——
+    # 2026-10-31 实测把 demo_admin 登录锁死 10 分钟，preflight 直接误报"菜单只有 1 项"。
+    # 生产不要照抄这个值。
+    $env:LINGSQL_RATE_LIMIT_LOGIN_MAX_REQUESTS = '300'
     $env:LINGSQL_DATA_ENCRYPTION_KEY = $secrets.app.dataEncryptionKey
     $env:LINGSQL_ADMIN_ENABLED = 'true'
     $env:LINGSQL_ADMIN_TENANT_ID = 'sys_tenant'
