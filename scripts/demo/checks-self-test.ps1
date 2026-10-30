@@ -127,6 +127,46 @@ finally {
     Set-Content -LiteralPath $manualFile -Value $manualBackup -Encoding utf8 -NoNewline
 }
 
+# ⑥ 构建对齐：把 jar 的修改时间改到进程启动之后 → 期望 preflight 报"构建对齐"失败
+$jar = Get-ChildItem (Join-Path $root 'target') -Filter 'lingsql-engine-*.jar' -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notmatch 'original' } | Select-Object -First 1
+if ($jar) {
+    $jarMtime = $jar.LastWriteTime
+    try {
+        Assert-Green '构建对齐（正常）' 'scripts/demo/demo-preflight.ps1'
+        (Get-Item $jar.FullName).LastWriteTime = (Get-Date).AddMinutes(5)
+        Assert-Red '构建对齐（时间戳被改）' 'scripts/demo/demo-preflight.ps1'
+    }
+    finally {
+        (Get-Item $jar.FullName).LastWriteTime = $jarMtime
+    }
+    Write-Host '[INFO] jar 时间戳已还原' -ForegroundColor DarkGray
+}
+
+# ⑦ 文档结构：临时放一份"表格被空行截断 + 章节编号重复"的文档 → 期望文档一致性检查失败
+$probeDoc = Join-Path $root '.local-private/commercial/docs/zz-selftest-structure.md'
+$probeLines = @(
+    '# 自检探针',
+    '',
+    '## 一、第一节',
+    '',
+    '| 列1 | 列2 |',
+    '| --- | --- |',
+    '| a | b |',
+    '',
+    '| c | d |',
+    '',
+    '## 一、重复的编号'
+)
+try {
+    Set-Content -LiteralPath $probeDoc -Value $probeLines -Encoding utf8
+    Assert-Red '文档结构（注入故障）' 'scripts/demo/docs-consistency-check.ps1'
+}
+finally {
+    Remove-Item -LiteralPath $probeDoc -Force -ErrorAction SilentlyContinue
+}
+Assert-Green '文档结构（清理后）' 'scripts/demo/docs-consistency-check.ps1'
+
 # 清理后确认恢复正常，并核对被改过的文件已按原样还原（哈希一致）
 Assert-Green '界面路由（清理后）' 'scripts/demo/ui-routes-check.ps1'
 Assert-Green '前后端契约（清理后）' 'scripts/demo/api-contract-check.ps1'
