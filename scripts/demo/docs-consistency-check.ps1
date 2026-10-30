@@ -150,6 +150,33 @@ if (Test-Path $claimsDoc) {
     Check '卖点核验表' $false '文档不存在'
 }
 
+# ⑤ 结构校验：表格被空行截断 / 章节编号重复
+#    起因（第 112 轮）：往《验证证据汇总》插一整节时插进了表格中间，导致后面三行脱离表格；
+#    同一份文件里还出现了两个「## 六、」。这两类问题没有测试会红，只会误导读的人。
+$structureIssues = @()
+foreach ($doc in (Get-ChildItem $docs -File -Filter '*.md')) {
+    $lines = Get-Content $doc.FullName
+
+    # 5.1 表格截断：表格行之后空行，再出现非表头/非分隔行的表格行
+    for ($i = 2; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\s*\|' -and $lines[$i - 1].Trim() -eq '' -and $lines[$i - 2] -match '^\s*\|') {
+            if ($lines[$i] -notmatch '^\s*\|\s*-{2,}') {
+                $structureIssues += "$($doc.Name):$($i + 1) 表格被空行截断"
+            }
+        }
+    }
+
+    # 5.2 章节编号重复（## 一、 / ## 六、 …）
+    $nums = @()
+    foreach ($line in $lines) {
+        if ($line -match '^##\s*([一二三四五六七八九十]+)、') { $nums += $Matches[1] }
+    }
+    $dup = $nums | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name }
+    if ($dup) { $structureIssues += "$($doc.Name) 章节编号重复：$($dup -join '、')" }
+}
+
+Check '文档结构（表格/编号）' ($structureIssues.Count -eq 0) $(if ($structureIssues.Count -eq 0) { "$((Get-ChildItem $docs -File -Filter '*.md').Count) 份文档无截断表格、无重复编号" } else { ($structureIssues | Select-Object -First 3) -join '；' })
+
 Write-Host ''
 if ($failures -eq 0) {
     Write-Host "全部一致（$checks 项）。" -ForegroundColor Green
