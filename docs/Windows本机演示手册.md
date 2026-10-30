@@ -58,6 +58,10 @@ pwsh -File scripts/demo/start-demo-stack.ps1
 
 口令与端口在首次运行时随机生成并写入 `.local-private/demo/demo-secrets.json`（该目录已被 `.gitignore` 排除，**不要提交**）。
 
+> **冷启动实测（2026-10-31）**：四个端口全部停掉后，`start-demo-stack.ps1 -SkipBuild -SkipDataInit`
+> 到 `readiness=200` 用时 **21.3 秒**；紧接着跑 `verify-all.ps1 -SkipTests` 九步全过再花 **22.1 秒**。
+> 即：**从全停到"可以演示"，约 43 秒**（jar 已存在、MySQL 数据目录已初始化）。
+
 ---
 
 ## 4. 日常使用
@@ -386,5 +390,6 @@ POST /api/v1/admin/config/model/1/probe     # 探测，成功会清除熔断
 | 提问返回 200 但一行都没有 | **先看是不是模型熔断**（`is_active=0`）：熔断期间问什么都返回空，看起来像"查不到数据"。`preflight` 现在会直接报「模型熔断中（is_active=0，原因=…）」并跳过实问；恢复用 `POST /api/v1/admin/config/model/1/probe` 或等冷却 |
 | `scripts/ops/*.sh` 验收脚本在本机跑不了 | 它们需要 **bash + jq + curl**。本机 `bash.exe` 是 WSL 存根且**未安装发行版**，`jq` 也没有（2026-10-30 实测）——这是环境限制，不是脚本坏了。要么装 WSL 发行版 + jq，要么到 Linux 服务器上跑。**本机能跑的只有** `scripts/demo/verify-all.ps1` 那一套，它**不能**替代 40 题正式验收 |
 | 销售包校验器报"缺少法务/财务/数据保护审核"或某个文档路径 | 这是**签约前的业务前置条件**，不是工具缺陷。`fill-sales-package.ps1` 只能填空，不能替你完成审核。按顺序会依次卡在：① 清单里不能残留占位值；② `approvals` 三项审核声明 + `approvalRecordId`（**校验器无法核实真伪，只在审核确实完成后才可置 true**）；③ 清单引用的文档文件必须真实存在（报价单、SOW、合同、数据安全附件等）；④ `signatures` 客户/服务方签署与签署时间；⑤ 付款/阶段金额必须自洽（诊断费 2,980、试点启动款与尾款各占剩余 50%、到账不超过应付）。建议用 `-LegalApproved -FinanceApproved -DataProtectionApproved` **逐项打开**，看它把拦截点推到哪一步，就知道还差什么 |
+| 执行了"停止演示栈"但 MySQL 还在跑 | `stop-demo-stack.ps1` **只按 PID 文件停止自己拉起的进程**（安全设计：不影响系统 MySQL）。若某个进程是更早的会话拉起的、PID 文件已丢失，它就会成为孤儿。2026-10-31 实测：停止后 3407 仍监听。启动脚本现在会提示「已在运行（非本栈托管），跳过启动 —— 注意 stop-demo-stack.ps1 不会停止它」；要彻底清干净，用 `mysqladmin --port=3407 --user=root shutdown` 正常关闭 |
 | 想彻底重来 | `pwsh -File scripts/demo/stop-demo-stack.ps1`，删除 `.local-private/demo/mysql-data` 与 `demo-secrets.json`，再执行第 3 节 |
 | 端口被占用 | `Get-NetTCPConnection -LocalPort 3407` 查占用进程；确认不是系统的 3306/6379 |

@@ -27,6 +27,20 @@ $ErrorActionPreference = 'Stop'
 
 $root = Get-DemoRoot
 $runtime = Get-DemoRuntimeDirectory
+
+# 端口已被占用时，提示"这个进程不是本次托管的，stop 不会停它"。
+# 2026-10-31 踩过：MySQL 由更早的会话拉起、PID 文件已被清理，
+# stop-demo-stack 只按 PID 文件停进程，于是 MySQL 成了孤儿——"停止"看起来成功，实际没停。
+function Write-SkipNotice {
+    param([string]$Name, [int]$Port)
+    $pidFile = Join-Path $runtime "pids/$Name.pid"
+    if (Test-Path -LiteralPath $pidFile) {
+        Write-Host "      已在运行（由本栈托管），跳过启动"
+    }
+    else {
+        Write-Host "      已在运行（非本栈托管），跳过启动 —— 注意 stop-demo-stack.ps1 不会停止它" -ForegroundColor Yellow
+    }
+}
 $secrets = Get-DemoSecrets
 $mysqlServer = Join-Path $MysqlHome 'bin/mysqld.exe'
 $mysqlClient = Join-Path $MysqlHome 'bin/mysql.exe'
@@ -44,7 +58,7 @@ Write-Host '== LingSQL 本机演示栈 =='
 
 Write-Host "[1/6] MySQL :$mysqlPort"
 if (Test-DemoPort -Port $mysqlPort) {
-    Write-Host '      已在运行，跳过启动'
+    Write-SkipNotice -Name 'mysql' -Port $mysqlPort
 }
 else {
     if (-not (Test-Path -LiteralPath $mysqlServer)) { throw "找不到 mysqld：$mysqlServer" }
@@ -95,7 +109,7 @@ if ($maxOrderDate) {
 
 Write-Host "[3/6] Redis :$redisPort"
 if (Test-DemoPort -Port $redisPort) {
-    Write-Host '      已在运行，跳过启动'
+    Write-SkipNotice -Name 'redis' -Port $redisPort
 }
 else {
     if (-not (Test-Path -LiteralPath $redisServer)) {
@@ -115,7 +129,7 @@ else {
 
 Write-Host "[4/6] 模型桩 :$stubPort"
 if (Test-DemoPort -Port $stubPort) {
-    Write-Host '      已在运行，跳过启动'
+    Write-SkipNotice -Name 'stub' -Port $stubPort
 }
 else {
     $env:STUB_PORT = "$stubPort"
@@ -183,7 +197,7 @@ if (-not (Test-DemoPort -Port $appPort)) {
     Write-Host '      已启动并通过健康检查'
 }
 else {
-    Write-Host '      已在运行，跳过启动'
+    Write-SkipNotice -Name 'app' -Port $appPort
 }
 
 Write-Host '[6/6] 开户（租户 / 数据源 / 模型 / 授权）'
