@@ -115,6 +115,28 @@ if (Step '数字员工-创建' $empCreated "id=$($empCreated.data.id)") {
     [void](Step '数字员工-删除' $empDeleted)
 }
 
+# ④ 用户：创建 → 更新（保留原角色，正是 2026-10-31 修过的路径） → 停用
+#    注意：用户接口没有 DELETE（见第 134 轮 405 语义），所以最后一步用"停用"收尾，
+#    停用后该账号无法登录，测试数据留在库里但不可用。
+$userName = "smoke_user_$stamp"
+$userCreated = Api -Method POST -Path '/api/v1/admin/users' -Token $admin -Body @{
+    tenantId = $TenantId; username = $userName; password = "Smoke${stamp}Ab1"
+    nickname = "冒烟用户 $stamp"; status = 1; roleIds = @(2)
+}
+if (Step '用户-创建' $userCreated "id=$($userCreated.data.id)") {
+    $userId = $userCreated.data.id
+    $userUpdated = Api -Method PUT -Path "/api/v1/admin/users/$userId" -Token $admin -Body @{
+        tenantId = $TenantId; username = $userName; nickname = "冒烟用户 $stamp 改名"
+        status = 1; roleIds = @(2)
+    }
+    [void](Step '用户-更新（保留原角色）' $userUpdated)
+    $userDisabled = Api -Method PUT -Path "/api/v1/admin/users/$userId" -Token $admin -Body @{
+        tenantId = $TenantId; username = $userName; nickname = "冒烟用户 $stamp 已停用"
+        status = 0; roleIds = @(2)
+    }
+    [void](Step '用户-停用' $userDisabled)
+}
+
 Write-Host ''
 if ($failures -eq 0) {
     Write-Host '管理端增删改冒烟通过。' -ForegroundColor Green

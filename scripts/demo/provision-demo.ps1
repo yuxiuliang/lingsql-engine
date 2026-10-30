@@ -197,6 +197,32 @@ Write-Host '[7/7] 补齐演示租户权限（否则管理端菜单只有 3 项�
 & (Join-Path $PSScriptRoot 'grant-demo-permissions.ps1') -TenantId $TenantId | Out-Null
 Write-Host '      OK'
 
+# 演示环境放宽"每日调用次数"上限。
+# 默认策略来自 BillingPolicy 内置的等级表（FREE 等级约 100 次/天），
+# 计数口径是当日 sql_execute_log 行数——自检、演练、反复提问很快会把它耗光，
+# 一旦耗尽，提问会返回 403「今日调用次数已达上限」，看起来像权限问题。
+# 2026-10-31 实测：一天下来演示租户累计 500 条执行日志，把默认额度打满。
+# 这里写入一个策略版本覆盖等级限额（幂等：按 version_code 判断）。
+Write-Host '[8/8] 放宽演示环境的每日调用上限（默认约 100 次/天，演示不够用）'
+$policyJson = '{"FREE":{"dailyCallLimit":5000,"dailyTokenLimit":0},"BASIC":{"dailyCallLimit":5000,"dailyTokenLimit":0},"PRO":{"dailyCallLimit":5000,"dailyTokenLimit":0}}'
+$mysqlExe = $null
+foreach ($candidate in @(
+        (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) '.local-private/demo/mysql/bin/mysql.exe'),
+        'D:\Software\Tools\Database\mysql-8.4.2-winx64\bin\mysql.exe'
+    )) {
+    if (Test-Path $candidate) { $mysqlExe = $candidate; break }
+}
+if (-not $mysqlExe) {
+    $found = Get-Command mysql.exe -ErrorAction SilentlyContinue
+    if ($found) { $mysqlExe = $found.Source }
+}
+$ctlArgs = @('--host=127.0.0.1', '--port=3407', "--user=$($secrets.mysql.appUser)", "--password=$($secrets.mysql.appPassword)", '--database=lingsql_demo_control')
+$existsPolicy = & $mysqlExe @ctlArgs --batch --skip-column-names "--execute=SELECT COUNT(*) FROM t_lingsql_engine_billing_policy_version WHERE version_code='DEMO_DAY1';" 2>&1
+if ("$existsPolicy".Trim() -eq '0') {
+    & $mysqlExe @ctlArgs "--execute=INSERT INTO t_lingsql_engine_billing_policy_version (version_code, status, effective_time, model_unit_cost, service_level_limit, tenant_type_weight, default_unit_cost, default_daily_limit, default_daily_token_limit, default_tenant_weight, description, create_time, update_time) VALUES ('DEMO_DAY1', 1, NOW(), '{}', '$policyJson', '{}', 1, 5000, 0, 1, '演示环境放宽每日调用上限', NOW(), NOW());" 2>&1 | Out-Null
+}
+Write-Host '      OK'
+
 Write-Host ''
 Write-Host '开户完成。演示租户登录信息（口令在 .local-private/demo/demo-secrets.json）：'
 Write-Host "  租户: $TenantId"
