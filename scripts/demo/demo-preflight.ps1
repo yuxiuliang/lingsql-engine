@@ -191,6 +191,29 @@ if ($ready -and $secrets) {
         Report-Check '演示账号登录' ([bool]$token) "code=$($loginJson.code)"
 
         if ($token) {
+            # 模型熔断时提问会返回 code=200 但 rows=0——界面上看着像"没数据"，
+            # 实问检查也只会报 rows=0，容易被当成数据或 SQL 问题（2026-10-27 实际踩过一次）。
+            # 先看熔断状态，把病因说清楚。
+            $fusedReason = $null
+            try {
+                $modelRows = & $mysqlClient --host=127.0.0.1 "--port=$MysqlPort" --user=root --batch --skip-column-names `
+                    --database=lingsql_demo_control "--execute=SELECT is_active, IFNULL(fuse_reason,'-') FROM t_lingsql_engine_ai_model_config WHERE id=1;" 2>&1
+                $modelLine = @($modelRows | Where-Object { "$_".Trim() -match '\S' })[0]
+                if ($modelLine) {
+                    $parts = "$modelLine".Split("`t")
+                    if ($parts.Count -ge 1 -and "$($parts[0])".Trim() -eq '0') {
+                        $fusedReason = if ($parts.Count -ge 2) { "$($parts[1])".Trim() } else { '未记录原因' }
+                    }
+                }
+            }
+            catch { }
+
+            if ($fusedReason) {
+                Report-Check '模型状态' $false "模型熔断中（is_active=0，原因=$fusedReason）——提问会返回 200 但 0 行，看起来像'查不到数据'。等自动恢复，或 POST /api/v1/admin/config/model/1/probe"
+                Write-Host ''
+                Write-Host '  已跳过实问检查：这时问什么都会返回空，不是数据问题。' -ForegroundColor Yellow
+            }
+            else {
             foreach ($question in @('2026年9月已完成订单的销售额是多少？', '哪些商品当前库存低于安全库存？')) {
                 $body = @{ question = $question } | ConvertTo-Json -Compress
                 $ask = Invoke-WebRequest -Uri "http://127.0.0.1:$AppPort/api/v1/chat/ask" -Method POST -TimeoutSec 90 -SkipHttpErrorCheck `
@@ -200,6 +223,7 @@ if ($ready -and $secrets) {
                 $rows = @($askJson.data.data).Count
                 $label = if ($question.Length -gt 12) { $question.Substring(0, 12) + '…' } else { $question }
                 Report-Check "实问：$label" (($askJson.code -eq 200) -and ($rows -gt 0)) "code=$($askJson.code) rows=$rows"
+            }
             }
         }
     }
