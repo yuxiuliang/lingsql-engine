@@ -364,6 +364,7 @@ POST /api/v1/admin/config/model/1/probe     # 探测，成功会清除熔断
 | 提问返回「当前租户没有已启用且验证健康的授权模型」 | 重跑 `provision-demo.ps1`（它会重新 probe + enable） |
 | 应用返回 401／会话立即失效 | 检查 Redis 是否在 6380 上运行且口令与 `demo-secrets.json` 一致 |
 | `/actuator/health` 返回 503 但应用能用 | `physicalModelBilling` 有 `UNKNOWN` 记录时聚合健康会 DOWN。**以 `/actuator/health/readiness` 为准**；清理走管理端 UNKNOWN 裁决，不要删表 |
+| **四个端口突然全掉** | 极可能是**终止了后台的启动任务**。`start-demo-stack.ps1` 把 MySQL／Redis／桩／应用都挂在自己的进程树下，在 Windows 上终止该任务会**连带杀掉全部子进程**（2026-10-30 实测踩过一次）。要停栈请用 `stop-demo-stack.ps1`，不要杀启动脚本 |
 | 数字员工执行返回 500「模型已返回但资金结算失败」 | 该缺陷已修：`transitionToDispatched` 必须带 `flushAutomatically` + `clearAutomatically`，否则结算会读到仍是 `RESERVED` 的旧实体。若复现说明修复被回退 |
 | 日报定时执行 `success=1` 但没收到推送 | 依次查：员工 `pushEnabled=1` 且 `pushChannels` 非空 → 应用启动时设了 `LINGSQL_ALERT_WEBHOOK_URL` → `t_lingsql_engine_digital_employee_run_log` 的 `push_delivery_detail` 里各通道结果 |
 | 想彻底重来 | `pwsh -File scripts/demo/stop-demo-stack.ps1`，删除 `.local-private/demo/mysql-data` 与 `demo-secrets.json`，再执行第 3 节 |
