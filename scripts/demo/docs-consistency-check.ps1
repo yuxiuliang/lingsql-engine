@@ -127,7 +127,11 @@ if (Test-Path $claimsDoc) {
     # 结论：规模夹具 60 / 100 / 200 张表
     foreach ($pair in @(@('scale_a', 60), @('scale_c', 100), @('scale_b', 200))) {
         $tenant = $pair[0]; $expect = $pair[1]
-        $actual = (Sql "SELECT IFNULL(schema_table_count,-1) FROM t_lingsql_engine_tenant_db_config WHERE tenant_id='$tenant';").Trim()
+        # 新环境里这些夹具租户可能根本不存在——查询会没有返回行，
+        # 直接 .Trim() 会对 $null 调方法把整个脚本搞崩（2026-10-31 实测）。
+        $row = @(Sql "SELECT IFNULL(schema_table_count,-1) FROM t_lingsql_engine_tenant_db_config WHERE tenant_id='$tenant';") |
+            Where-Object { "$_".Trim() -ne '' } | Select-Object -First 1
+        $actual = if ($row) { "$row".Trim() } else { '(缺少该租户)' }
         Check "夹具 $tenant" ("$actual" -eq "$expect") "期望 $expect 张表，实际 $actual"
     }
 
