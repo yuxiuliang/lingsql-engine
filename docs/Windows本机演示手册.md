@@ -395,3 +395,23 @@ POST /api/v1/admin/config/model/1/probe     # 探测，成功会清除熔断
 | 在**全新机器**上从零跑 | 手册第 3 节列的步骤本身是对的（Redis 要先跑 `install-redis-windows.ps1`，缺了会在 `[3/6]` 明确报错）。但 2026-10-31 实测：**从零初始化的环境只能跑通 6/9 项总验**——缺 3 类演示夹具（`iso_a` 租户、`scale_a/b/c` 夹具租户、以及"近 30 天"数据以外的时间窗）。**已补齐 2 类**：数据新鲜度（启动时自动刷新，见上一行）与 3 个"并行验证"日报员工（`sql/demo_fixtures_daily_report.sql`，开户脚本 `[9/9]` 应用）。仍缺 `iso_a` 与 `scale_a/b/c`，它们目前只在已交付的环境里手工存在 |
 | 想彻底重来 | `pwsh -File scripts/demo/stop-demo-stack.ps1`，删除 `.local-private/demo/mysql-data` 与 `demo-secrets.json`，再执行第 3 节 |
 | 端口被占用 | `Get-NetTCPConnection -LocalPort 3407` 查占用进程；确认不是系统的 3306/6379 |
+---
+
+## 10. 在全新环境补齐 `iso_a` 夹具（未自动化，手工步骤）
+
+`iso_a` 是多租户**逻辑隔离**演示的第二个租户。它由三部分组成，目前只有第 1 步做成了 SQL 夹具，
+其余仍是手工步骤——**新机器上不做这一步，`preflight` 的「租户隔离（LOGICAL）」会红**。
+
+1. **共享库表（已自动化）**：执行 `sql/demo_fixtures_shared_orders.sql`
+   （建库 `lingsql_iso_test` + 表 `demo_shared_orders` + 4 行数据；幂等）。
+2. **给只读账号授权**：`GRANT SELECT ON lingsql_iso_test.* TO '<readerUser>'@'%';`
+   （`readerUser` 见 `demo-secrets.json`，与 `demo_sales` 用的同一个只读账号）。
+3. **创建租户**：`POST /api/v1/admin/tenants`，`dataSource` 填
+   `jdbcUrl` 指向 `lingsql_iso_test`、`isolationMode=LOGICAL`、`logicColumn=tenant_id`、
+   `whiteListTables=demo_shared_orders`、白名单列留空；`adminAccount.username=iso_admin`。
+4. **口令对齐**：`preflight` 用**与 `demo_admin` 相同的口令**登录 `iso_admin`。
+   若创建时被强制改密，用 `PUT /api/v1/auth/password` 改成该口令。
+5. **模型授权**：`PUT /api/v1/admin/tenant-model-routes/iso_a`，指向与 `demo_sales` 相同的模型。
+
+> 验证方法：`preflight` 的「租户隔离（LOGICAL）」应为
+> `只看到 iso_a`；若出现 `iso_b`，说明改写器没有注入 `tenant_id` 条件。
