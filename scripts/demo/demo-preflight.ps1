@@ -218,6 +218,28 @@ if ($ready -and $secrets) {
     catch {
         Report-Check '租户隔离（LOGICAL）' $false $_.Exception.Message
     }
+
+    # 演示账号的菜单可见性：权限 = 角色权限 ∩ 租户权限池，两者缺一菜单就会被过滤掉。
+    # 2026-10-27 实际只有 3 项（智能问答/问答历史/管理后台），仪表盘等都看不到。
+    try {
+        $menuResp = Invoke-WebRequest -Uri "http://127.0.0.1:$AppPort/api/v1/auth/menus" -TimeoutSec 30 -SkipHttpErrorCheck `
+            -Headers @{ Authorization = "Bearer $token"; 'X-Tenant-Id' = 'demo_sales' }
+        $menuJson = [System.Text.Encoding]::UTF8.GetString($menuResp.RawContentStream.ToArray()) | ConvertFrom-Json
+        $nodes = 0
+        $walk = {
+            param($items)
+            foreach ($it in @($items)) {
+                $script:nodes++
+                if ($it.children) { & $walk $it.children }
+            }
+        }
+        $script:nodes = 0
+        & $walk @($menuJson.data)
+        Report-Check '演示账号菜单' ($script:nodes -ge 20) ("菜单节点=$($script:nodes)（应 ≥20；少了查 grant-demo-permissions.ps1）")
+    }
+    catch {
+        Report-Check '演示账号菜单' $false $_.Exception.Message
+    }
 }
 elseif (-not $secrets) {
     Report-Check '演示账号登录' $false '未找到 demo-secrets.json'
