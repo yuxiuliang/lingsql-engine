@@ -43,6 +43,11 @@ param(
     [Parameter(Mandatory = $true)][string]$VendorName,
     [Parameter(Mandatory = $true)][string]$VendorUscc,
     [Parameter(Mandatory = $true)][string]$ApprovalRef,
+    # 审核状态：默认全部关闭。校验器只能校验"你是否声明"，无法核实真伪，
+    # 所以必须由人显式打开——没做完审核就不要打开。
+    [switch]$LegalApproved,
+    [switch]$FinanceApproved,
+    [switch]$DataProtectionApproved,
     [string]$ReleaseCommit = ('0' * 40),
     [string]$SuiteSha256 = ('0' * 64),
     [string]$EvidenceSha256 = ('0' * 64),
@@ -94,6 +99,10 @@ $text = $text.Replace('请替换为服务方统一社会信用代码', $VendorUs
 $text = $text.Replace('请替换为客户签约全称', $CustomerName)
 $text = $text.Replace('请替换为客户统一社会信用代码', $CustomerUscc)
 $text = $text.Replace('请替换为内部审批记录号', $ApprovalRef)
+# 审核状态只在显式要求时打开；JSON 里这三项默认 false
+if ($LegalApproved) { $text = $text.Replace('"legalApproved": false', '"legalApproved": true') }
+if ($FinanceApproved) { $text = $text.Replace('"financeApproved": false', '"financeApproved": true') }
+if ($DataProtectionApproved) { $text = $text.Replace('"dataProtectionApproved": false', '"dataProtectionApproved": true') }
 $text = $text.Replace('0000000000000000000000000000000000000000', $ReleaseCommit)
 Set-Content -LiteralPath $manifestPath -Value $text -Encoding utf8 -NoNewline
 
@@ -105,6 +114,15 @@ if ($leftover.Count -gt 0) {
 }
 
 Write-Host "已生成清单：$manifestPath" -ForegroundColor Cyan
+# 把"声明了什么"打在屏幕上，避免清单里写着 true 而没人记得是谁开的
+$declared = @()
+if ($LegalApproved) { $declared += '法务审核=已通过' } else { $declared += '法务审核=未声明' }
+if ($FinanceApproved) { $declared += '财务审核=已通过' } else { $declared += '财务审核=未声明' }
+if ($DataProtectionApproved) { $declared += '数据保护审核=已通过' } else { $declared += '数据保护审核=未声明' }
+Write-Host ("审核声明：{0}" -f ($declared -join '；')) -ForegroundColor DarkGray
+if ($LegalApproved -or $FinanceApproved -or $DataProtectionApproved) {
+    Write-Host '提醒：这些是**事实声明**，校验器无法核实。只有在相应审核确实完成后才应打开。' -ForegroundColor Yellow
+}
 
 # 立刻校验（复用既有包装脚本，保持参数语义一致）
 & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'run-sales-package-validator.ps1') `

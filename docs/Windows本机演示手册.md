@@ -385,5 +385,6 @@ POST /api/v1/admin/config/model/1/probe     # 探测，成功会清除熔断
 | 提问返回 403「今日调用次数已达上限」 | **这是每日调用额度，不是权限问题**。限额来自计费策略的等级表（默认约 100 次/天），计数口径是**当日 `sql_execute_log` 行数**——自检、演练、反复提问都会消耗它。演示环境已在开户脚本 `[8/8]` 写入策略版本 `DEMO_DAY1`（5000 次/天）；若被改回默认，会看到这个 403。也可临时插入同名策略行覆盖 `service_level_limit`（**策略实时生效，不需要重启**，2026-10-31 实测）。`preflight` 的实问失败时会直接打印服务端的 `message`，先看它再猜原因 |
 | 提问返回 200 但一行都没有 | **先看是不是模型熔断**（`is_active=0`）：熔断期间问什么都返回空，看起来像"查不到数据"。`preflight` 现在会直接报「模型熔断中（is_active=0，原因=…）」并跳过实问；恢复用 `POST /api/v1/admin/config/model/1/probe` 或等冷却 |
 | `scripts/ops/*.sh` 验收脚本在本机跑不了 | 它们需要 **bash + jq + curl**。本机 `bash.exe` 是 WSL 存根且**未安装发行版**，`jq` 也没有（2026-10-30 实测）——这是环境限制，不是脚本坏了。要么装 WSL 发行版 + jq，要么到 Linux 服务器上跑。**本机能跑的只有** `scripts/demo/verify-all.ps1` 那一套，它**不能**替代 40 题正式验收 |
+| 销售包校验器报"缺少法务/财务/数据保护审核"或某个文档路径 | 这是**签约前的业务前置条件**，不是工具缺陷。`fill-sales-package.ps1` 只能填空，不能替你完成审核。按顺序会依次卡在：① 清单里不能残留占位值；② `approvals` 三项审核声明 + `approvalRecordId`（**校验器无法核实真伪，只在审核确实完成后才可置 true**）；③ 清单引用的文档文件必须真实存在（报价单、SOW、合同、数据安全附件等）；④ `signatures` 客户/服务方签署与签署时间；⑤ 付款/阶段金额必须自洽（诊断费 2,980、试点启动款与尾款各占剩余 50%、到账不超过应付）。建议用 `-LegalApproved -FinanceApproved -DataProtectionApproved` **逐项打开**，看它把拦截点推到哪一步，就知道还差什么 |
 | 想彻底重来 | `pwsh -File scripts/demo/stop-demo-stack.ps1`，删除 `.local-private/demo/mysql-data` 与 `demo-secrets.json`，再执行第 3 节 |
 | 端口被占用 | `Get-NetTCPConnection -LocalPort 3407` 查占用进程；确认不是系统的 3306/6379 |
