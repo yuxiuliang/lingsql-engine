@@ -71,8 +71,14 @@ Write-Host ''
 Write-Host "管理端增删改冒烟（租户 $TenantId，标记 SMOKE$stamp）" -ForegroundColor Cyan
 Write-Host ''
 
-# ① 角色：创建 → 更新（权限原样） → 无删除接口则跳过
+# ① 角色：创建 → 更新（权限原样） → 无删除接口，清理放到 finally 里用 SQL 兜底
 $roleCode = "SMOKE_ROLE_$stamp"
+$roleId = $null
+$typeId = $null
+$empId = $null
+# 整段包在 try/finally 里：任一步失败也要把测试数据清掉，
+# 否则会留下一个"无删除接口"的角色，只能人工清库（2026-10-31 实际踩过）。
+try {
 $created = Api -Method POST -Path '/api/v1/admin/roles' -Token $admin -Body @{
     tenantId = $TenantId; roleCode = $roleCode; roleName = "冒烟角色 $stamp"; status = 1; permIds = @()
 }
@@ -153,6 +159,50 @@ finally {
             } | Out-Null
         }
         catch { }
+    }
+}
+}
+finally {
+    # 统一收尾：凡是创建成功的都尝试清掉，失败也不影响退出码（清理失败会打印提示）
+    $cleanupFailed = @()
+
+    if ($typeId) {
+        try { Api -Method DELETE -Path "/api/v1/admin/org/types/$typeId" -Token $admin | Out-Null }
+        catch { $cleanupFailed += "组织类型 id=$typeId" }
+    }
+    if ($empId) {
+        try { Api -Method DELETE -Path "/api/v1/admin/digital-employees/$empId" -Token $admin | Out-Null }
+        catch { $cleanupFailed += "数字员工 id=$empId" }
+    }
+
+    # 角色没有删除接口，只能按编码清库（注意顺序：先子表后主表）
+    if ($roleCode) {
+        $mysqlExe = $null
+        foreach ($candidate in @(
+                (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) '.local-private/demo/mysql/bin/mysql.exe'),
+                'D:\Software\Tools\Database\mysql-8.4.2-winx64\bin\mysql.exe'
+            )) {
+            if (Test-Path $candidate) { $mysqlExe = $candidate; break }
+        }
+        if ($mysqlExe) {
+            $ctl = @('--host=127.0.0.1', '--port=3407', "--user=$($secrets.mysql.appUser)", "--password=$($secrets.mysql.appPassword)", '--database=lingsql_demo_control')
+            try {
+                & $mysqlExe @ctl "--execute=DELETE rp FROM t_lingsql_engine_role_permission rp JOIN t_lingsql_engine_role r ON rp.role_id=r.id WHERE r.role_code='$roleCode';" 2>&1 | Out-Null
+                & $mysqlExe @ctl "--execute=DELETE rd FROM t_lingsql_engine_role_data_scope rd JOIN t_lingsql_engine_role r ON rd.role_id=r.id WHERE r.role_code='$roleCode';" 2>&1 | Out-Null
+                & $mysqlExe @ctl "--execute=DELETE FROM t_lingsql_engine_role WHERE role_code='$roleCode';" 2>&1 | Out-Null
+            }
+            catch { $cleanupFailed += "角色 $roleCode" }
+        }
+        else { $cleanupFailed += "角色 $roleCode（找不到 mysql 客户端）" }
+    }
+
+    if ($cleanupFailed.Count -gt 0) {
+        Write-Host ("[WARN] 以下测试数据未能清理，请手工处理：{0}" -f ($cleanupFailed -join '、')) -ForegroundColor Yellow
+    }
+    else {
+        # 说清楚"按产品语义"还剩什么：员工是软删除（行保留）、用户是停用（无删除接口）。
+        # 不做硬删——那会绕过产品自己的删除语义，也可能删掉未来要在演示里展示的历史记录。
+        Write-Host ("[INFO] 清理完成。按产品语义仍会保留：数字员工 {0}（软删 is_deleted=1）、用户 {1}（已停用）" -f $empCode, $userName) -ForegroundColor DarkGray
     }
 }
 
