@@ -89,9 +89,61 @@ finally {
 Assert-Green '审计留痕（清理后）' 'scripts/demo/audit-trail-check.ps1'
 Assert-Green '计费一致（清理后）' 'scripts/demo/billing-call-consistency-check.ps1'
 
+# ③ 界面路由可用：往前端路由里塞一条后端没放行的路径 → 期望 ui-routes-check 失败
+$routerFile = Join-Path $root 'web_src/src/router/index.ts'
+$routerBackup = Get-Content -LiteralPath $routerFile -Raw
+$routerHash = (Get-FileHash $routerFile -Algorithm SHA256).Hash
+try {
+    Assert-Green '界面路由（正常）' 'scripts/demo/ui-routes-check.ps1'
+    $probeRoute = $routerBackup -replace "(path: '/login',)", "path: '/zz-selftest-route',`n  },`n  {`n    `$1"
+    Set-Content -LiteralPath $routerFile -Value $probeRoute -Encoding utf8 -NoNewline
+    Assert-Red '界面路由（注入故障）' 'scripts/demo/ui-routes-check.ps1'
+}
+finally {
+    Set-Content -LiteralPath $routerFile -Value $routerBackup -Encoding utf8 -NoNewline
+}
+
+# ④ 前后端契约：新增一个引用不存在接口的前端文件 → 期望 api-contract-check 失败
+$probeTs = Join-Path $root 'web_src/src/__selftest.ts'
+try {
+    Assert-Green '前后端契约（正常）' 'scripts/demo/api-contract-check.ps1'
+    Set-Content -LiteralPath $probeTs -Value "export const url = '/api/v1/admin/zz-selftest-not-exists'" -Encoding utf8
+    Assert-Red '前后端契约（注入故障）' 'scripts/demo/api-contract-check.ps1'
+}
+finally {
+    Remove-Item -LiteralPath $probeTs -Force -ErrorAction SilentlyContinue
+}
+
+# ⑤ 文档步数：把手册里的"八步"改成"七步" → 期望文档一致性检查失败
+$manualFile = Join-Path $root 'docs/Windows本机演示手册.md'
+$manualBackup = Get-Content -LiteralPath $manualFile -Raw
+$manualHash = (Get-FileHash $manualFile -Algorithm SHA256).Hash
+try {
+    Assert-Green '文档一致性（正常）' 'scripts/demo/docs-consistency-check.ps1'
+    Set-Content -LiteralPath $manualFile -Value ($manualBackup.Replace('一键总验八步', '一键总验七步')) -Encoding utf8 -NoNewline
+    Assert-Red '文档一致性（注入故障）' 'scripts/demo/docs-consistency-check.ps1'
+}
+finally {
+    Set-Content -LiteralPath $manualFile -Value $manualBackup -Encoding utf8 -NoNewline
+}
+
+# 清理后确认恢复正常，并核对被改过的文件已按原样还原（哈希一致）
+Assert-Green '界面路由（清理后）' 'scripts/demo/ui-routes-check.ps1'
+Assert-Green '前后端契约（清理后）' 'scripts/demo/api-contract-check.ps1'
+Assert-Green '文档一致性（清理后）' 'scripts/demo/docs-consistency-check.ps1'
+
+$routerHashAfter = (Get-FileHash $routerFile -Algorithm SHA256).Hash
+$manualHashAfter = (Get-FileHash $manualFile -Algorithm SHA256).Hash
+if ($routerHashAfter -eq $routerHash) { Write-Host '[PASS] 路由文件已原样还原' -ForegroundColor Green }
+else { $failures++; Write-Host '[FAIL] 路由文件哈希与改动前不一致！' -ForegroundColor Red }
+if ($manualHashAfter -eq $manualHash) { Write-Host '[PASS] 手册文件已原样还原' -ForegroundColor Green }
+else { $failures++; Write-Host '[FAIL] 手册文件哈希与改动前不一致！' -ForegroundColor Red }
+if (-not (Test-Path -LiteralPath $probeTs)) { Write-Host '[PASS] 探针文件已删除' -ForegroundColor Green }
+else { $failures++; Write-Host '[FAIL] 探针文件仍存在！' -ForegroundColor Red }
+
 Write-Host ''
 if ($failures -eq 0) {
-    Write-Host '全部通过：这两条检查确实会红，且不会留下脏数据。' -ForegroundColor Green
+    Write-Host '全部通过：这些检查确实会红，且跑完不留痕迹。' -ForegroundColor Green
     exit 0
 }
 Write-Host "$failures 项不符合预期。" -ForegroundColor Red
