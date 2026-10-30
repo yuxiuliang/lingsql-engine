@@ -222,7 +222,15 @@ if ($ready -and $secrets) {
                 $askJson = [System.Text.Encoding]::UTF8.GetString($ask.RawContentStream.ToArray()) | ConvertFrom-Json
                 $rows = @($askJson.data.data).Count
                 $label = if ($question.Length -gt 12) { $question.Substring(0, 12) + '…' } else { $question }
-                Report-Check "实问：$label" (($askJson.code -eq 200) -and ($rows -gt 0)) "code=$($askJson.code) rows=$rows"
+                # 失败时把服务端的话原样带出来。只报 code 会让人去猜原因——
+                # 2026-10-31 就因为只看到 code=403，先后误判成"权限丢了""模型熔断"，
+                # 实际是每日调用额度耗尽（message 里写得清清楚楚）。
+                $detail = if ($askJson.code -eq 200) {
+                    "code=$($askJson.code) rows=$rows"
+                } else {
+                    "code=$($askJson.code) rows=$rows message=$($askJson.message)"
+                }
+                Report-Check "实问：$label" (($askJson.code -eq 200) -and ($rows -gt 0)) $detail
             }
             }
         }
