@@ -76,7 +76,18 @@ WHERE q.create_time >= NOW() - INTERVAL $Hours HOUR AND q.success = 0
       WHERE b.workflow_request_id = q.request_id
   );
 "@
-Check '失败的也有调用记录' ("$failNoCall".Trim() -eq '0') "失败却没有任何调用记录的=$($failNoCall.ToString().Trim())"
+# ③ 失败但没有任何调用：这**不一定是问题**——模型在派发前就不可用（如熔断、未配置路由）时，
+#    请求根本不会产生物理调用，也就不该有账务记录。这里只做信息统计，不做失败判定。
+#    （2026-10-31 修正：第一版把它当硬失败，结果把"派发前失败"误报成漏记，属判据过严。）
+$failNoCall = Sql @"
+SELECT COUNT(*) FROM t_lingsql_engine_sql_execute_log q
+WHERE q.create_time >= NOW() - INTERVAL $Hours HOUR AND q.success = 0
+  AND NOT EXISTS (
+      SELECT 1 FROM t_lingsql_engine_billing_invocation b
+      WHERE b.workflow_request_id = q.request_id
+  );
+"@
+Write-Host ("       参考：失败且无任何调用的 {0} 条（派发前失败，不产生费用，属正常）" -f "$failNoCall".Trim()) -ForegroundColor DarkGray
 
 # ④ 不允许残留非终态
 $pending = Sql "SELECT COUNT(*) FROM t_lingsql_engine_billing_invocation WHERE state IN ('RESERVED','DISPATCHED');"
