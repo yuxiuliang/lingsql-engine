@@ -29,13 +29,23 @@ if (-not (Test-Path $router)) {
     exit 1
 }
 
-$routes = Select-String -Path $router -Pattern "path:\s*'([^']+)'" -AllMatches |
+$allRoutes = Select-String -Path $router -Pattern "path:\s*'([^']+)'" -AllMatches |
     ForEach-Object { $_.Matches } | ForEach-Object { $_.Groups[1].Value } |
     Where-Object { $_ -notmatch 'pathMatch' } |
     Sort-Object -Unique
 
+# 带参数的路由（如 /chat/:id）不能直接请求：字面量请求会被后端当成未知路径拦掉，
+# 而服务端的 SPA 放行清单是**精确匹配**，本来也不支持这类路由。
+# 直接跳过并明说，避免将来出现时变成一条永远红的假失败。
+$paramRoutes = @($allRoutes | Where-Object { $_ -match ':' })
+$routes = @($allRoutes | Where-Object { $_ -notmatch ':' })
+
 Write-Host ''
-Write-Host "从 $RouterFile 解析到 $($routes.Count) 条路由" -ForegroundColor Cyan
+Write-Host "从 $RouterFile 解析到 $($allRoutes.Count) 条路由（其中 $($paramRoutes.Count) 条带参数）" -ForegroundColor Cyan
+if ($paramRoutes.Count -gt 0) {
+    Write-Host ("  已跳过带参数路由：{0}" -f ($paramRoutes -join ', ')) -ForegroundColor Yellow
+    Write-Host '  提示：后端 SPA 放行清单是精确匹配，带参数的路由目前不会被放行——新增这类页面需要同步扩展服务端策略。' -ForegroundColor Yellow
+}
 Write-Host ''
 
 $failures = 0
