@@ -53,4 +53,25 @@ class GlobalExceptionHandlerTest {
         assertEquals(401, response.getCode());
         assertEquals("账号、密码或租户信息错误", response.getMessage());
     }
+
+    /**
+     * 对没有对应映射的方法（例如 DELETE 用户）必须报 405，而不是"系统异常"。
+     *
+     * <p>2026-10-31 线上实测：`DELETE /api/v1/admin/users/9` 返回 code=500「系统异常，请稍后再试」，
+     * 让人以为是服务端坏了，实际只是没实现该接口。</p>
+     *
+     * @author 余炘洋
+     * @date 2026-10-31
+     */
+    @Test
+    void requestMethodNotSupportedShouldReturnMethodNotSupportedResponse() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        ApiResponse<Void> response = handler.handleRequestMethodNotSupported(
+                new org.springframework.web.HttpRequestMethodNotSupportedException("DELETE")
+        );
+
+        assertEquals(405, response.getCode());
+        assertEquals("请求方法不支持：DELETE", response.getMessage());
+    }
 }
