@@ -150,6 +150,13 @@ if (Test-Path $claimsDoc) {
     Check '卖点核验表' $false '文档不存在'
 }
 
+# ④.2 销售口径不许写死测试数：数字会随每次改动变，写死必然过期
+#     （2026-10-31 发现该表写着"当前 567 项"，实际已是 585 项，且文档自己就写着"会变的数字不要写死"）
+if ($numbersText) {
+    $hardcoded = $numbersText -match '测试数量\s+当前\s+\d+\s*项'
+    Check '测试数不写死' (-not $hardcoded) $(if ($hardcoded) { '关键数字口径.md 又写了"当前 N 项"' } else { '未写死' })
+}
+
 # ④.5 步数一致：verify-all 的实际步骤数必须与手册写的一致
 $verifyScript = Join-Path $root 'scripts/demo/verify-all.ps1'
 $manual = Join-Path $root 'docs/Windows本机演示手册.md'
