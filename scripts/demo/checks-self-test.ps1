@@ -28,6 +28,7 @@ $ErrorActionPreference = 'Stop'
 $mysql = 'D:\Software\Tools\Database\mysql-8.4.2-winx64\bin\mysql.exe'
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $failures = 0
+$assertions = 0
 
 function Sql {
     param([string]$Statement)
@@ -43,6 +44,7 @@ function Run-Check {
 
 function Assert-Green {
     param([string]$Name, [string]$Script)
+    $script:assertions++
     $r = Run-Check $Script
     if ($r.Code -eq 0) { Write-Host ("[PASS] {0,-34} 正常状态下通过" -f $Name) -ForegroundColor Green }
     else { $script:failures++; Write-Host ("[FAIL] {0,-34} 正常状态却失败了" -f $Name) -ForegroundColor Red; Write-Host $r.Output -ForegroundColor DarkGray }
@@ -50,6 +52,7 @@ function Assert-Green {
 
 function Assert-Red {
     param([string]$Name, [string]$Script)
+    $script:assertions++
     $r = Run-Check $Script
     if ($r.Code -ne 0) { Write-Host ("[PASS] {0,-34} 注入故障后确实报错" -f $Name) -ForegroundColor Green }
     else { $script:failures++; Write-Host ("[FAIL] {0,-34} 注入故障后仍然通过——这条检查是恒真的" -f $Name) -ForegroundColor Red }
@@ -127,6 +130,36 @@ finally {
     Set-Content -LiteralPath $manualFile -Value $manualBackup -Encoding utf8 -NoNewline
 }
 
+# ⑤.5 日报 cron：把其中一条的 cron 改掉 → 期望 preflight 报"日报 cron"失败
+#      （演示员工本来都是停用状态，改 cron 不会真的触发执行）
+$cronBackup = @(Sql "SELECT id, schedule_cron FROM t_lingsql_engine_digital_employee WHERE tenant_id='demo_sales' AND is_deleted=0 AND employee_name LIKE '并行验证%';")
+try {
+    Assert-Green '日报 cron（正常）' 'scripts/demo/demo-preflight.ps1'
+    Sql "UPDATE t_lingsql_engine_digital_employee SET schedule_cron='0 30 8 * * ?' WHERE tenant_id='demo_sales' AND is_deleted=0 AND employee_name LIKE '并行验证%' LIMIT 1;" | Out-Null
+    Assert-Red '日报 cron（改掉一条）' 'scripts/demo/demo-preflight.ps1'
+}
+finally {
+    Sql "UPDATE t_lingsql_engine_digital_employee SET schedule_cron='0 0 8 * * ?' WHERE tenant_id='demo_sales' AND is_deleted=0 AND employee_name LIKE '并行验证%';" | Out-Null
+}
+Assert-Green '日报 cron（还原后）' 'scripts/demo/demo-preflight.ps1'
+
+# ⑤.8 租户隔离：把 iso_a 的隔离模式临时改成 PHYSICAL → 期望 preflight 的隔离检查失败
+#      （PHYSICAL 不再注入 tenant_id 条件，共享表里 iso_b 的数据会露出来）
+$isoMode = (Sql "SELECT isolation_mode FROM t_lingsql_engine_tenant_db_config WHERE tenant_id='iso_a';").Trim()
+if ($isoMode -eq 'LOGICAL') {
+    try {
+        Sql "UPDATE t_lingsql_engine_tenant_db_config SET isolation_mode='PHYSICAL' WHERE tenant_id='iso_a';" | Out-Null
+        Assert-Red '租户隔离（改成 PHYSICAL）' 'scripts/demo/demo-preflight.ps1'
+    }
+    finally {
+        Sql "UPDATE t_lingsql_engine_tenant_db_config SET isolation_mode='LOGICAL' WHERE tenant_id='iso_a';" | Out-Null
+    }
+    Assert-Green '租户隔离（还原 LOGICAL）' 'scripts/demo/demo-preflight.ps1'
+}
+else {
+    Write-Host "[SKIP] 租户隔离：iso_a 当前不是 LOGICAL（$isoMode），跳过" -ForegroundColor DarkGray
+}
+
 # ⑥ 构建对齐：把 jar 的修改时间改到进程启动之后 → 期望 preflight 报"构建对齐"失败
 $jar = Get-ChildItem (Join-Path $root 'target') -Filter 'lingsql-engine-*.jar' -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -notmatch 'original' } | Select-Object -First 1
@@ -181,9 +214,17 @@ else { $failures++; Write-Host '[FAIL] 手册文件哈希与改动前不一致�
 if (-not (Test-Path -LiteralPath $probeTs)) { Write-Host '[PASS] 探针文件已删除' -ForegroundColor Green }
 else { $failures++; Write-Host '[FAIL] 探针文件仍存在！' -ForegroundColor Red }
 
+# 护栏：用例被静默跳过时（条件不满足、代码被拼行破坏等），断言数会变少，
+# 而"没有失败"看起来仍像成功——2026-10-31 实际踩过一次，整个「构建对齐」块被跳过。
+$expectedAssertions = 24
+if ($assertions -lt $expectedAssertions) {
+    $failures++
+    Write-Host ("[FAIL] 用例数不足：只跑了 {0} 项断言，预期至少 {1} 项——有用例被静默跳过" -f $assertions, $expectedAssertions) -ForegroundColor Red
+}
+
 Write-Host ''
 if ($failures -eq 0) {
-    Write-Host '全部通过：这些检查确实会红，且跑完不留痕迹。' -ForegroundColor Green
+    Write-Host ("全部通过（{0} 项断言）：这些检查确实会红，且跑完不留痕迹。" -f $assertions) -ForegroundColor Green
     exit 0
 }
 Write-Host "$failures 项不符合预期。" -ForegroundColor Red
