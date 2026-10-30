@@ -261,6 +261,7 @@ pwsh -File scripts/demo/provision-demo.ps1 `
 | `scripts/demo/grant-demo-permissions.ps1` | 给演示租户补齐权限池与角色权限（否则菜单只有 3 项） |
 | `scripts/demo/run-sales-package-validator.ps1` | 在 Windows 上跑「可签约销售包」校验器（`bash` 包壳跑不了时用它；jar 在 `.local-private/commercial/target/`）。**jar 可从源码重建**：`cd .local-private/commercial; mvn -B -o -DskipTests package`，2026-10-30 实测离线 6.1 秒，重建前后对同一模板的拒答完全一致 |
 | `scripts/demo/install-redis-windows.ps1` | 便携版 Redis 下载解压 |
+| `scripts/demo/restart-demo-app.ps1` | 只重启应用（不动 MySQL/Redis/桩），等 readiness 后返回；**必须放后台作业跑**，否则工具会一直等 java 子进程 |
 | `scripts/demo/checks-self-test.ps1` | 检查脚本自检：临时注入可控故障，证明「审计留痕」「计费一致」「界面路由」「前后端契约」「文档步数」「文档结构」「构建对齐」「日报 cron」「租户隔离」**九条检查真的会红**；跑完自动还原（含 jar 时间戳与文件哈希校验）、清理探针 |
 | `scripts/demo/billing-call-consistency-check.ps1` | 计费与调用一致性：成功的提问必须付了架构师+分析师两次钱，失败的至少一次，且不留非终态 |
 | `scripts/demo/audit-trail-check.ps1` | 审计留痕检查：每条提问都必须有 request_id/问题/租户/用户，成功的必须有实际执行的 SQL、失败的必须有原因 |
@@ -375,7 +376,7 @@ POST /api/v1/admin/config/model/1/probe     # 探测，成功会清除熔断
 | 应用返回 401／会话立即失效 | 检查 Redis 是否在 6380 上运行且口令与 `demo-secrets.json` 一致 |
 | `/actuator/health` 返回 503 但应用能用 | `physicalModelBilling` 有 `UNKNOWN` 记录时聚合健康会 DOWN。**以 `/actuator/health/readiness` 为准**；清理走管理端 UNKNOWN 裁决，不要删表 |
 | **四个端口突然全掉** | 极可能是**终止了后台的启动任务**。`start-demo-stack.ps1` 把 MySQL／Redis／桩／应用都挂在自己的进程树下，在 Windows 上终止该任务会**连带杀掉全部子进程**（2026-10-30 实测踩过一次）。要停栈请用 `stop-demo-stack.ps1`，不要杀启动脚本 |
-| 启动脚本打印完「演示栈已就绪」后进程不退出 | **已知现象，不是故障**。脚本用 `Start-Process -RedirectStandardOutput/Error` 启动四个子进程，重定向管道由子进程持有，父进程退出时会等管道清理，于是挂住。2026-10-30 试过在脚本末尾加 `[Environment]::Exit(0)`，**实测无效**（进程仍存活 10 分钟以上），已撤销。判断栈是否就绪请看 `readiness`，不要看脚本有没有退出；**更不要杀这个进程**（会连带杀掉整栈） |
+| 启动脚本打印完「演示栈已就绪」后进程不退出 | **已知现象，不是故障，而且不是脚本的错**。脚本会正常执行到结束；是**调用它的命令行工具在等整棵进程树**——java/MySQL/Redis/桩都是长驻子进程，所以从工具视角看"一直没返回"。2026-10-30 试过在脚本末尾加 `[Environment]::Exit(0)`，**实测无效**，已撤销（当时对原因判断有误，2026-10-31 才定位清楚）。判断栈是否就绪请看 `readiness`；**不要杀这个进程**（会连带杀掉整栈）。只重启应用用 `scripts/demo/restart-demo-app.ps1`，同样要放在后台作业里跑 |
 | 数字员工执行返回 500「模型已返回但资金结算失败」 | 该缺陷已修：`transitionToDispatched` 必须带 `flushAutomatically` + `clearAutomatically`，否则结算会读到仍是 `RESERVED` 的旧实体。若复现说明修复被回退 |
 | 日报定时执行 `success=1` 但没收到推送 | 依次查：员工 `pushEnabled=1` 且 `pushChannels` 非空 → 应用启动时设了 `LINGSQL_ALERT_WEBHOOK_URL` → `t_lingsql_engine_digital_employee_run_log` 的 `push_delivery_detail` 里各通道结果 |
 | 登录突然返回 429「请求过于频繁」 | 登录限流默认 **20 次/分钟，触发后封 10 分钟**（响应头 `Retry-After: 600`）。本机的自检、演练、巡检、检查脚本自检会在几分钟内登录很多次，很容易踩线——2026-10-31 实测把 `demo_admin` 锁死 10 分钟，preflight 因此误报"菜单只有 1 项"。**演示用的启动脚本已把 `LINGSQL_RATE_LIMIT_LOGIN_MAX_REQUESTS` 放宽到 300**；真被锁了，删 Redis 键 `lingsql:ratelimit:login:block:<ip>` 可立即解封。生产不要照抄放宽值。**自检已能识别**：被限流时 preflight 会直接报"被登录限流（HTTP 429）"并跳过后续检查，不再把限流误报成"菜单只有 1 项" |
