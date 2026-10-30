@@ -116,25 +116,44 @@ if (Step '数字员工-创建' $empCreated "id=$($empCreated.data.id)") {
 }
 
 # ④ 用户：创建 → 更新（保留原角色，正是 2026-10-31 修过的路径） → 停用
-#    注意：用户接口没有 DELETE（见第 134 轮 405 语义），所以最后一步用"停用"收尾，
-#    停用后该账号无法登录，测试数据留在库里但不可用。
+#    注意两点：
+#    1) 用户接口没有 DELETE（见 405 语义那条提交），所以用"停用"收尾；
+#    2) 口令必须随机——早期版本用了可预测的 "Smoke<时间>Ab1"，一旦中途失败，
+#       库里会留下一个**启用状态且口令可知**的账号。2026-10-31 扫描发现后改为随机口令。
+#    整个用户段落放在 try/finally 里：无论成败，最后都尝试停用，避免留下可用账号。
 $userName = "smoke_user_$stamp"
-$userCreated = Api -Method POST -Path '/api/v1/admin/users' -Token $admin -Body @{
-    tenantId = $TenantId; username = $userName; password = "Smoke${stamp}Ab1"
-    nickname = "冒烟用户 $stamp"; status = 1; roleIds = @(2)
+$userPassword = [Guid]::NewGuid().ToString('N').Substring(0, 20) + 'A1'
+$userId = $null
+try {
+    $userCreated = Api -Method POST -Path '/api/v1/admin/users' -Token $admin -Body @{
+        tenantId = $TenantId; username = $userName; password = $userPassword
+        nickname = "冒烟用户 $stamp"; status = 1; roleIds = @(2)
+    }
+    if (Step '用户-创建' $userCreated "id=$($userCreated.data.id)") {
+        $userId = $userCreated.data.id
+        $userUpdated = Api -Method PUT -Path "/api/v1/admin/users/$userId" -Token $admin -Body @{
+            tenantId = $TenantId; username = $userName; nickname = "冒烟用户 $stamp 改名"
+            status = 1; roleIds = @(2)
+        }
+        [void](Step '用户-更新（保留原角色）' $userUpdated)
+        $userDisabled = Api -Method PUT -Path "/api/v1/admin/users/$userId" -Token $admin -Body @{
+            tenantId = $TenantId; username = $userName; nickname = "冒烟用户 $stamp 已停用"
+            status = 0; roleIds = @(2)
+        }
+        [void](Step '用户-停用' $userDisabled)
+    }
 }
-if (Step '用户-创建' $userCreated "id=$($userCreated.data.id)") {
-    $userId = $userCreated.data.id
-    $userUpdated = Api -Method PUT -Path "/api/v1/admin/users/$userId" -Token $admin -Body @{
-        tenantId = $TenantId; username = $userName; nickname = "冒烟用户 $stamp 改名"
-        status = 1; roleIds = @(2)
+finally {
+    # 兜底：即使前面某步抛错或断言失败，也把这个账号停掉
+    if ($userId) {
+        try {
+            Api -Method PUT -Path "/api/v1/admin/users/$userId" -Token $admin -Body @{
+                tenantId = $TenantId; username = $userName; nickname = "冒烟用户 $stamp 已停用"
+                status = 0; roleIds = @(2)
+            } | Out-Null
+        }
+        catch { }
     }
-    [void](Step '用户-更新（保留原角色）' $userUpdated)
-    $userDisabled = Api -Method PUT -Path "/api/v1/admin/users/$userId" -Token $admin -Body @{
-        tenantId = $TenantId; username = $userName; nickname = "冒烟用户 $stamp 已停用"
-        status = 0; roleIds = @(2)
-    }
-    [void](Step '用户-停用' $userDisabled)
 }
 
 Write-Host ''
