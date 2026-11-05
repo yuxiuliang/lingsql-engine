@@ -15,6 +15,7 @@ import {
 } from '@/api/chat';
 import {fetchChatRuntimeConfig} from '@/api/config';
 import {useChatStore} from '@/store/chat';
+import {toCustomerFacingError} from '@/utils/customer-facing-error';
 import ResultInsightPanel from '@/views/chat/ResultInsightPanel.vue';
 
 /**
@@ -438,7 +439,7 @@ const loadHistory = async () => {
       keyword: historyKeyword.value.trim()
     });
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载历史记录失败');
+    ElMessage.error(toCustomerFacingError(error instanceof Error ? error.message : '加载历史记录失败'));
   }
 };
 
@@ -483,7 +484,7 @@ const loadHistoryDetail = async (item: ChatHistoryItem) => {
     await scrollToBottom();
   } catch (error) {
     if (requestSeq === historyRequestSeq.value) {
-      ElMessage.error(error instanceof Error ? error.message : '加载历史详情失败');
+      ElMessage.error(toCustomerFacingError(error instanceof Error ? error.message : '加载历史详情失败'));
     }
   } finally {
     if (requestSeq === historyRequestSeq.value) {
@@ -531,7 +532,10 @@ const handleSend = async () => {
     messages.value.push(assistantMessage);
     currentConversationId.value = result.conversationId || currentConversationId.value;
     activeConversationId.value = currentConversationId.value;
-    if (shouldShowTrace(assistantMessage.trace)) {
+    // 只在发生自愈重试时自动展开执行轨迹——那才是用户真正需要知道的异常。
+    // 正常首轮完成时保持折叠，把答案、结果概览和图表留在首屏；
+    // 轨迹仍可随时通过「查看执行轨迹」按钮展开。
+    if (hasSelfHealing(assistantMessage.trace)) {
       expandTrace(assistantMessage.id);
     }
     await loadHistory();
@@ -540,7 +544,7 @@ const handleSend = async () => {
     messages.value.push({
       id: nextMessageId(),
       role: 'assistant',
-      content: `调用失败：${message}`
+      content: `调用失败：${toCustomerFacingError(message)}`
     });
   } finally {
     loading.value = false;
@@ -572,7 +576,7 @@ const handleRename = async (item: ChatHistoryItem) => {
     ElMessage.success('历史记录已更新');
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error(error instanceof Error ? error.message : '更新失败');
+      ElMessage.error(toCustomerFacingError(error instanceof Error ? error.message : '更新失败'));
     }
   }
 };
@@ -599,7 +603,7 @@ const handleDelete = async (item: ChatHistoryItem) => {
     ElMessage.success('历史记录已删除');
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error(error instanceof Error ? error.message : '删除失败');
+      ElMessage.error(toCustomerFacingError(error instanceof Error ? error.message : '删除失败'));
     }
   }
 };

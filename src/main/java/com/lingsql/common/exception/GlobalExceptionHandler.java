@@ -15,6 +15,7 @@ import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -206,6 +207,26 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleNoResourceFoundException(NoResourceFoundException ex) {
         log.debug("资源不存在: {}", ex.getMessage());
         return attachRequestId(ApiResponse.fail(ErrorCode.NOT_FOUND, "资源不存在"));
+    }
+
+    /**
+     * 处理请求方法不支持（例如对没有 DELETE 映射的接口发 DELETE）。
+     *
+     * <p>2026-10-31 修复：这类异常原先落到兜底分支，被统一包成「系统异常，请稍后再试」(500)，
+     * 看起来像服务端故障，实际只是方法没实现。现在明确返回 405 并带上方法名。</p>
+     *
+     * @param ex 异常
+     * @return 统一响应
+     * @author 余炘洋
+     * @date 2026-10-31
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ApiResponse<Void> handleRequestMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        log.warn("请求方法不支持: {}", ex.getMessage());
+        return attachRequestId(ApiResponse.fail(
+                ErrorCode.METHOD_NOT_SUPPORTED,
+                "请求方法不支持：" + ex.getMethod()
+        ));
     }
 
     /**

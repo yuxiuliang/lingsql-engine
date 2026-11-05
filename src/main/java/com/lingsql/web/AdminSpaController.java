@@ -36,6 +36,7 @@ public class AdminSpaController {
     @GetMapping({
             "/",
             "/login",
+            "/password-change",
             "/layout",
             "/chat",
             "/history",
@@ -56,7 +57,17 @@ public class AdminSpaController {
             "/role",
             "/permission",
             "/audit",
-            "/sql-log"
+            "/sql-log",
+            // 2026-10-27 补齐：以下路由前端已实现，但此前既不在本清单、也不在
+            // SecurityConfig.ADMIN_SPA_ROUTES，直接访问或刷新会返回 JSON（404/401），
+            // 表现为"从菜单点进去正常，一刷新就成一段 JSON"。
+            // 两份清单从此必须完全一致，由 AdminSpaRouteConsistencyTest 守住。
+            "/approval",
+            "/memory",
+            "/memory-admin",
+            "/menu",
+            "/organization",
+            "/plugin"
     })
     public String forwardAdminSpaRoutes() {
         return FORWARD_ADMIN_INDEX;

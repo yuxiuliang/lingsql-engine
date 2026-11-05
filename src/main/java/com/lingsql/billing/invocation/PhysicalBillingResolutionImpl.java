@@ -122,8 +122,14 @@ public class PhysicalBillingResolutionImpl implements IPhysicalBillingResolution
                                                         ValidatedCommand command,
                                                         LocalDateTime now) {
         long refundAmount = invocation.getReservedAmount();
-        refund(invocation, refundAmount, now);
-        ledgerRepository.appendCancel(invocation, now);
+        // 调用失败进入 UNKNOWN 时已经退过一次款（账本行 seq=2）。此处若再退一次：
+        //   ① 客户被退两次钱（资金正确性问题）；
+        //   ② 账本唯一键 (tenant_id, request_id, event_seq, model_name) 冲突，裁决必然失败。
+        // 因此已有退款行时只收口状态，不再动钱、不再写账本。
+        if (!ledgerRepository.hasRefundEvent(invocation.getInvocationId())) {
+            refund(invocation, refundAmount, now);
+            ledgerRepository.appendCancel(invocation, now);
+        }
         invocation.setActualTokens(null);
         invocation.setActualAmount(0L);
         invocation.setRefundAmount(refundAmount);

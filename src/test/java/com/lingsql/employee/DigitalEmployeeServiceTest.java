@@ -326,7 +326,7 @@ class DigitalEmployeeServiceTest {
             return log;
         });
         when(employeeRepository.save(any(DigitalEmployee.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(opsAlertService.sendAlertToChannelsWithResult(anyString(), anyString(), anyMap(), anyList()))
+        when(opsAlertService.sendAlertToChannelsWithResult(anyString(), anyString(), anyMap(), anyList(), anyString()))
                 .thenReturn(AlertDispatchResult.completed(true, List.of(
                         AlertDispatchChannelResult.success("dingtalk", 200),
                         AlertDispatchChannelResult.success("wecom", 200)
@@ -350,7 +350,7 @@ class DigitalEmployeeServiceTest {
         ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<List<String>> channelsCaptor = ArgumentCaptor.forClass(List.class);
-        Mockito.verify(opsAlertService).sendAlertToChannelsWithResult(titleCaptor.capture(), messageCaptor.capture(), detailsCaptor.capture(), channelsCaptor.capture());
+        Mockito.verify(opsAlertService).sendAlertToChannelsWithResult(titleCaptor.capture(), messageCaptor.capture(), detailsCaptor.capture(), channelsCaptor.capture(), eq("INFO"));
         assertTrue(titleCaptor.getValue().contains("[经营日报] 日报推送助手 完成"));
         assertTrue(messageCaptor.getValue().contains("问题 统计昨日销售额"));
         assertEquals(List.of("dingtalk", "wecom"), channelsCaptor.getValue());
@@ -359,7 +359,12 @@ class DigitalEmployeeServiceTest {
         assertNotNull(previewRows);
         assertEquals(2, previewRows.size());
         assertTrue(previewRows.get(0).contains("region=华东"));
-        assertEquals(List.of("dingtalk", "wecom"), detailsCaptor.getValue().get("pushChannels"));
+        assertEquals(2, ((Number) detailsCaptor.getValue().get("resultRows")).intValue());
+        assertFalse(detailsCaptor.getValue().containsKey("tenantId"), "客户可见推送不得携带租户标识");
+        assertFalse(detailsCaptor.getValue().containsKey("employeeId"), "客户可见推送不得携带内部任务标识");
+        assertFalse(detailsCaptor.getValue().containsKey("pushChannels"), "客户可见推送不得携带通道配置");
+        assertFalse(detailsCaptor.getValue().containsKey("triggerSource"), "客户可见推送不得携带触发来源");
+        assertFalse(detailsCaptor.getValue().containsKey("sql"), "客户可见推送不得携带生成 SQL");
         ArgumentCaptor<DigitalEmployeeRunLog> runLogCaptor = ArgumentCaptor.forClass(DigitalEmployeeRunLog.class);
         Mockito.verify(runLogRepository).save(runLogCaptor.capture());
         assertEquals(1, runLogCaptor.getValue().getPushDeliveryStatus());
@@ -408,7 +413,7 @@ class DigitalEmployeeServiceTest {
             return log;
         });
         when(employeeRepository.save(any(DigitalEmployee.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(opsAlertService.sendAlertToChannelsWithResult(anyString(), anyString(), anyMap(), anyList()))
+        when(opsAlertService.sendAlertToChannelsWithResult(anyString(), anyString(), anyMap(), anyList(), anyString()))
                 .thenReturn(AlertDispatchResult.completed(true, List.of(
                         AlertDispatchChannelResult.success("webhook", 200)
                 )));
@@ -426,7 +431,7 @@ class DigitalEmployeeServiceTest {
         service.runScheduled(11L, java.time.LocalDateTime.of(2026, 4, 15, 8, 0, 0));
 
         ArgumentCaptor<List<String>> channelsCaptor = ArgumentCaptor.forClass(List.class);
-        Mockito.verify(opsAlertService).sendAlertToChannelsWithResult(anyString(), anyString(), anyMap(), channelsCaptor.capture());
+        Mockito.verify(opsAlertService).sendAlertToChannelsWithResult(anyString(), anyString(), anyMap(), channelsCaptor.capture(), eq("INFO"));
         assertEquals(List.of("webhook"), channelsCaptor.getValue());
     }
 

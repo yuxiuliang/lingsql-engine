@@ -1,5 +1,10 @@
 -- LingSQL 销售库存付费试点演示数据
 -- 仅包含虚构企业、客户、商品与订单，不得替换为真实客户敏感数据。
+--
+-- ⚠️ 本文件的订单日期是**冻结**的（2026-08-01～08-14），用于回归与可重复演示。
+--    「昨日经营快报」「环比下滑」「滞销 90 天」等按当前日期取数的场景，在本种子上
+--    会返回空结果。演示日报类场景前请先执行 sql/demo_sales_inventory_refresh.sql，
+--    它把 100 天交易数据对齐到执行当天，且幂等、确定性。
 
 CREATE TABLE IF NOT EXISTS demo_customer (
   customer_id BIGINT PRIMARY KEY,

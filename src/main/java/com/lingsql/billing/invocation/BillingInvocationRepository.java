@@ -49,7 +49,16 @@ public interface BillingInvocationRepository extends JpaRepository<BillingInvoca
     @Query("SELECT i FROM BillingInvocationEntity i WHERE i.invocationId = :invocationId")
     Optional<BillingInvocationEntity> findByInvocationIdForUpdate(@Param("invocationId") String invocationId);
 
-    @Modifying
+    /**
+     * 将物理调用从预留状态推进到已派发。
+     *
+     * <p>{@code clearAutomatically} 与 {@code flushAutomatically} 不可省略：本方法按 JPQL 批量更新，
+     * 不会自动刷新持久化上下文。数字员工执行链（{@code DigitalEmployeeService#run} 带 {@code @Transactional}）
+     * 会把预留、派发与结算放在同一个持久化上下文里，若此处不清缓存，随后的结算会读到仍是
+     * {@code RESERVED} 的旧实体，抛出"期望 DISPATCHED，实际 RESERVED"，进而导致
+     * "模型已返回但资金结算失败，结果不会交付"。</p>
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             UPDATE BillingInvocationEntity i
                SET i.state = :nextState,

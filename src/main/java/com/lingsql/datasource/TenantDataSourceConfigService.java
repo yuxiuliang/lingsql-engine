@@ -39,7 +39,16 @@ import java.util.regex.Pattern;
 public class TenantDataSourceConfigService {
 
     private static final int CONNECTION_TIMEOUT_SECONDS = 8;
-    private static final int MAX_ALLOWLIST_TABLES = 100;
+
+    /**
+     * 单租户白名单表数上限。
+     *
+     * <p>原为 100：当时表结构是逐表逐字段全量拼进系统提示词的，100 张宽表约 116 KB／3.3 万 token，
+     * 再往上会让单次提问吃满上下文。现已加入两层保护——按问题预筛只展开最相关的 30 张表，
+     * 以及 48000 字符的正文上限——提示词体量与总表数解耦，因此放宽到 300，
+     * 让库更大的客户能开户而不是第一句话就被拒。</p>
+     */
+    private static final int MAX_ALLOWLIST_TABLES = 300;
     private static final Set<String> READ_ONLY_PRIVILEGES = Set.of("USAGE", "SELECT", "SHOW VIEW");
     private static final Pattern MYSQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_$]{0,63}");
 
@@ -222,7 +231,8 @@ public class TenantDataSourceConfigService {
                 .distinct()
                 .toList();
         if (tables.isEmpty() || tables.size() > MAX_ALLOWLIST_TABLES) {
-            throw new BizException(ErrorCode.CONFIG_INVALID, "表白名单数量必须在 1 到 100 之间");
+            throw new BizException(ErrorCode.CONFIG_INVALID,
+                    "表白名单数量必须在 1 到 " + MAX_ALLOWLIST_TABLES + " 之间");
         }
         for (String table : tables) {
             if (!MYSQL_IDENTIFIER.matcher(table).matches()) {

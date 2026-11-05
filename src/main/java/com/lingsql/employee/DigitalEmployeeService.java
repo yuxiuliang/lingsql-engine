@@ -14,6 +14,8 @@ import com.lingsql.common.pagination.PageParam;
 import com.lingsql.common.pagination.PageParamResolver;
 import com.lingsql.common.result.PageResult;
 import com.lingsql.common.trace.RequestTraceContext;
+import com.lingsql.context.SessionInfo;
+import com.lingsql.context.TenantContext;
 import com.lingsql.employee.entity.DigitalEmployee;
 import com.lingsql.employee.entity.DigitalEmployeeRunLog;
 import com.lingsql.employee.model.DigitalEmployeeCreateRequest;
@@ -56,6 +58,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -82,6 +85,10 @@ public class DigitalEmployeeService {
     private static final String ALERT_RULE_EMPTY_RESULT = "EMPTY_RESULT";
     private static final String ALERT_RULE_RESULT_ROWS_GT = "RESULT_ROWS_GT";
     private static final String ALERT_RULE_RESULT_ROWS_LT = "RESULT_ROWS_LT";
+    /**
+     * 日报推送使用的消息级别：日报是正常产出，不应按告警级投递。
+     */
+    private static final String PUSH_LEVEL_INFO = "INFO";
     private static final int DEFAULT_PUSH_MAX_ROWS = 3;
     private static final int MAX_PUSH_MAX_ROWS = 10;
     private static final int MAX_PUSH_TITLE_TEMPLATE_LENGTH = 255;
@@ -351,7 +358,9 @@ public class DigitalEmployeeService {
         if (!ACTIVE_STATUS.equals(employee.getStatus())) {
             throw new BizException(ErrorCode.INVALID_PARAM, "数字员工已停用，无法执行");
         }
-        return runInternal(employee, request, null);
+        // 注意：手动执行失败往往在事务提交时才抛出（UnexpectedRollbackException），
+        // 本方法内部接不到，失败记账在 DigitalEmployeeAdminController 完成。
+        return withEmployeeTenant(employee, () -> runInternal(employee, request, null));
     }
 
     /**
@@ -369,7 +378,44 @@ public class DigitalEmployeeService {
         if (!ACTIVE_STATUS.equals(employee.getStatus()) || !ACTIVE_STATUS.equals(employee.getScheduleEnabled())) {
             throw new BizException(ErrorCode.INVALID_PARAM, "数字员工未开启定时执行");
         }
-        return runInternal(employee, null, expectedScheduleTime);
+        return withEmployeeTenant(employee, () -> runInternal(employee, null, expectedScheduleTime));
+    }
+
+    /**
+     * 在员工所属租户的上下文中执行，结束后精确还原调用方原有上下文。
+     *
+     * <p>{@code DynamicDataSource} 通过 {@link TenantContext} 选择租户数据源：HTTP 请求由过滤器写入上下文，
+     * 而定时调度线程没有任何请求上下文。若此处不显式建立租户上下文，查询会回落到默认数据源（控制库），
+     * 表现为 {@code StatementCallback; bad SQL grammar}（底层实为表不存在）。手工调用
+     * {@code /admin/digital-employees/\{id\}/run} 时上下文是管理员租户，同样会让执行落到错误的库。</p>
+     *
+     * <p>调度线程会被复用，必须在 {@code finally} 中还原，避免租户上下文泄漏到下一个任务。</p>
+     *
+     * @param employee 数字员工
+     * @param action   在租户上下文中执行的逻辑
+     * @param <T>      返回类型
+     * @return 执行结果
+     * @author 余炘洋
+     * @date 2026-10-25
+     */
+    private <T> T withEmployeeTenant(DigitalEmployee employee, Supplier<T> action) {
+        SessionInfo previousSession = TenantContext.getSessionInfo();
+        String previousConversationId = TenantContext.getConversationId();
+        TenantContext.setTenantId(employee.getTenantId());
+        try {
+            return action.get();
+        }
+        finally {
+            if (previousSession == null) {
+                TenantContext.clear();
+            }
+            else {
+                TenantContext.setSessionInfo(previousSession);
+            }
+            if (StringUtils.hasText(previousConversationId)) {
+                TenantContext.setConversationId(previousConversationId);
+            }
+        }
     }
 
     /**
@@ -780,11 +826,14 @@ public class DigitalEmployeeService {
         Map<String, String> templateValues = buildPushTemplateValues(employee, runLog, executionResult, question, answer);
         String title = renderPushTemplate(employee.getPushTitleTemplate(), DEFAULT_PUSH_TITLE_TEMPLATE, templateValues);
         String message = renderPushTemplate(employee.getPushMessageTemplate(), DEFAULT_PUSH_MESSAGE_TEMPLATE, templateValues);
+        // 日报属于「正常产出」而非告警：能走到这里说明运行成功（失败已在守卫处返回），
+        // 因此固定用 INFO，避免客户侧按 level 着色时把每天的正常日报显示成告警。
         return opsAlertService.sendAlertToChannelsWithResult(
                 title,
                 message,
-                buildPushDetails(employee, runLog, executionResult, question, answer),
-                resolveEffectivePushChannels(employee)
+                buildPushDetails(employee, runLog, executionResult),
+                resolveEffectivePushChannels(employee),
+                PUSH_LEVEL_INFO
         );
     }
 
@@ -823,23 +872,20 @@ public class DigitalEmployeeService {
         );
     }
 
+    /**
+     * 构造面向客户群的推送详情块。
+     *
+     * <p>该详情块会被 {@code OpsAlertService} 原样渲染进钉钉/企微 markdown 正文并直接送达客户群，
+     * 因此只允许包含客户可见的事实：执行时间、结果行数和结果预览。租户标识、内部任务标识、
+     * 触发来源、通道配置和生成 SQL 一律不得进入，避免向客户泄露内部配置与库表结构。
+     * 内部运维告警请使用 {@link #buildAlertDetails}。</p>
+     */
     private Map<String, Object> buildPushDetails(DigitalEmployee employee,
                                                  DigitalEmployeeRunLog runLog,
-                                                 SqlExecutionResult executionResult,
-                                                 String question,
-                                                 String answer) {
+                                                 SqlExecutionResult executionResult) {
         Map<String, Object> details = new LinkedHashMap<>();
-        details.put("tenantId", employee.getTenantId());
-        details.put("employeeId", employee.getId());
-        details.put("employeeName", employee.getEmployeeName());
-        details.put("scenario", defaultText(employee.getScenario()));
-        details.put("question", defaultText(question));
-        details.put("triggerSource", defaultText(runLog.getTriggerSource()));
-        details.put("pushChannels", resolveEffectivePushChannels(employee));
-        details.put("resultRows", resolveResultRows(executionResult));
         details.put("executeTime", runLog.getCreateTime());
-        details.put("answer", abbreviate(answer, 300));
-        details.put("sql", abbreviate(executionResult.getSql(), 300));
+        details.put("resultRows", resolveResultRows(executionResult));
         List<String> preview = renderPreviewRows(executionResult.getData(), resolveSafePushMaxRows(employee.getPushMaxRows()));
         details.put("previewRows", preview.isEmpty() ? List.of("无") : preview);
         return details;

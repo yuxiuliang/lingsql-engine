@@ -422,6 +422,15 @@ public class SqlSecurityChecker {
         Set<String> whiteColumns = parseCsv(config.getWhiteListColumns());
         Set<String> sensitiveColumns = parseCsv(config.getSensitiveColumns());
 
+        // 查询别名不是字段：ORDER BY / GROUP BY 里引用的 销售额、订单数 之类是 SELECT 的别名，
+        // 不能拿去和白名单比对，否则带 ORDER BY 别名的正常查询会被误拦（2026-10-31 实测拦掉 3/10 题）。
+        Set<String> aliases = new HashSet<>();
+        for (SelectItem<?> item : plainSelect.getSelectItems()) {
+            if (item.getAlias() != null && StringUtils.hasText(item.getAlias().getName())) {
+                aliases.add(normalizeIdentifier(item.getAlias().getName()));
+            }
+        }
+
         ColumnCollector collector = new ColumnCollector();
         for (SelectItem<?> item : plainSelect.getSelectItems()) {
             Expression expression = item.getExpression();
@@ -457,10 +466,20 @@ public class SqlSecurityChecker {
             });
         }
 
+        // 隔离字段由改写器注入（LOGICAL 模式下的 tenant_id），不是用户选的字段，
+        // 不参与字段白名单与敏感字段校验；否则任何配了白名单的逻辑隔离租户都会被自己注入的条件拦住。
+        String logicColumn = config.isLogicalIsolation() ? config.resolveLogicColumn() : null;
+
         for (String column : collector.getColumns()) {
             String simpleColumn = column.contains(".")
                     ? column.substring(column.lastIndexOf('.') + 1)
                     : column;
+            if (StringUtils.hasText(logicColumn) && logicColumn.equalsIgnoreCase(simpleColumn)) {
+                continue;
+            }
+            if (aliases.contains(simpleColumn)) {
+                continue;
+            }
             if (!whiteColumns.isEmpty()
                     && !whiteColumns.contains(column)
                     && !whiteColumns.contains(simpleColumn)) {
@@ -726,13 +745,44 @@ public class SqlSecurityChecker {
          */
         @Override
         public void visit(Column column) {
+            collect(column);
+            super.visit(column);
+        }
+
+        /**
+         * 访问列节点（带上下文）——**实际会被调用的是这个重载**。
+         *
+         * <p>2026-10-31 修复：JSqlParser 5.x 的 {@code Column.accept(visitor)} 最终走
+         * {@code visit(Column, S)}，只重写 {@code visit(Column)} 收不到任何字段，
+         * 导致字段白名单与敏感字段拦截形同虚设（只有 {@code SELECT *} 那条分支有效）。</p>
+         *
+         * @param column  列
+         * @param context 上下文
+         * @param <S>     上下文类型
+         * @return 父类返回的构建器
+         * @author 余炘洋
+         * @date 2026-10-31
+         */
+        @Override
+        public <S> StringBuilder visit(Column column, S context) {
+            collect(column);
+            return super.visit(column, context);
+        }
+
+        private void collect(Column column) {
             if (column.getColumnName() != null) {
-                columns.add(column.getColumnName().toLowerCase());
+                // 去掉反引号/双引号/方括号再比较：JSqlParser 会把 `合计` 连引号一起给出，
+                // 不规范化就会和别名、白名单永远对不上（2026-10-31 实测）。
+                String plain = strip(column.getColumnName());
+                columns.add(plain);
                 if (column.getTable() != null && StringUtils.hasText(column.getTable().getName())) {
-                    columns.add((column.getTable().getName() + "." + column.getColumnName()).toLowerCase());
+                    columns.add(strip(column.getTable().getName()) + "." + plain);
                 }
             }
-            super.visit(column);
+        }
+
+        private String strip(String raw) {
+            return raw.replace("`", "").replace("\"", "").replace("[", "").replace("]", "").trim().toLowerCase();
         }
 
         /**

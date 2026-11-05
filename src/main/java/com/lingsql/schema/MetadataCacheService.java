@@ -14,6 +14,7 @@ import org.springframework.util.DigestUtils;
 import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -37,6 +38,16 @@ public class MetadataCacheService {
     private static final String COMMENT_CACHE_PREFIX = "lingsql:comment:";
 
     /**
+     * 表结构正文的字符上限（约 1.4 万 token）。
+     *
+     * <p>客户库有几百张表时，逐表逐字段全量拼进系统提示词会线性膨胀（实测 60 张表 600 字段
+     * 约 16.7 KB，外推到 300 张表约 83.5 KB／2.4 万 token），既挤占上下文窗口，也让每次提问
+     * 的成本随表数上涨。超出预算的表降级为「只列名并显式说明已省略」，
+     * 让模型知道信息不完整，而不是对着残缺结构硬猜。</p>
+     */
+    private static final int MAX_SCHEMA_CHARS = 48_000;
+
+    /**
      * 将 TableInfo 转换为 AI 易读的文本格式（DDL 简化版）。
      *
      * @param tenantId 租户标识
@@ -46,24 +57,73 @@ public class MetadataCacheService {
      * @date 2026-01-22
      */
     public String getAiFriendlySchema(String tenantId, List<TableInfo> tables) {
-        if (tables == null || tables.isEmpty()) {
+        return getAiFriendlySchema(tenantId, tables, List.of());
+    }
+
+    /**
+     * 渲染表结构文本，支持把一部分表降级为「只列名」。
+     *
+     * @param tenantId       租户标识
+     * @param tables         需要展开字段的表
+     * @param nameOnlyTables 只保留表名的表（相关度较低或超出预算）
+     * @return 可读文本
+     * @author 余炘洋
+     * @date 2026-10-26
+     */
+    public String getAiFriendlySchema(String tenantId, List<TableInfo> tables, List<TableInfo> nameOnlyTables) {
+        if ((tables == null || tables.isEmpty()) && (nameOnlyTables == null || nameOnlyTables.isEmpty())) {
             return "当前租户暂无可用表结构。";
         }
-        List<TableInfo> mergedTables = metadataExtService.mergeComments(tenantId, tables);
+        List<TableInfo> mergedTables = tables == null || tables.isEmpty()
+                ? List.of()
+                : metadataExtService.mergeComments(tenantId, tables);
         StringBuilder sb = new StringBuilder();
+        List<String> omittedTables = new ArrayList<>();
         for (TableInfo table : mergedTables) {
-            sb.append("Table: ").append(table.getTableName())
-                    .append(" (").append(normalizeComment(table.getTableComment())).append(")\n");
-            sb.append("Columns:\n");
-            for (TableInfo.ColumnInfo col : table.getColumns()) {
-                sb.append("  - ").append(col.getColumnName())
-                        .append(" (").append(col.getDataType()).append(")")
-                        .append(": ").append(normalizeComment(col.getColumnComment()))
-                        .append(col.isPrimaryKey() ? " [Primary Key]" : "")
-                        .append("\n");
+            String block = renderTable(table);
+            if (sb.length() + block.length() > MAX_SCHEMA_CHARS) {
+                omittedTables.add(table.getTableName());
+                continue;
             }
-            sb.append("\n");
+            sb.append(block);
         }
+        if (nameOnlyTables != null) {
+            for (TableInfo table : nameOnlyTables) {
+                if (table != null && table.getTableName() != null) {
+                    omittedTables.add(table.getTableName());
+                }
+            }
+        }
+        if (!omittedTables.isEmpty()) {
+            sb.append("（以下 ").append(omittedTables.size())
+                    .append(" 张表未展开字段（相关度较低或超出篇幅），仅列名：")
+                    .append(String.join("、", omittedTables))
+                    .append("。若问题确实涉及这些表，请先说明表名，系统会再取用其字段。）\n");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 渲染单张表的表名与字段。
+     *
+     * @param table 表结构
+     * @return 该表的文本块
+     * @author 余炘洋
+     * @date 2026-10-26
+     */
+    private String renderTable(TableInfo table) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Table: ").append(table.getTableName())
+                .append(" (").append(normalizeComment(table.getTableComment())).append(")\n");
+        sb.append("Columns:\n");
+        for (TableInfo.ColumnInfo col : table.getColumns()) {
+            sb.append("  - ").append(col.getColumnName())
+                    .append(" (").append(col.getDataType()).append(")")
+                    .append(": ").append(normalizeComment(col.getColumnComment()))
+                    .append(col.isPrimaryKey() ? " [Primary Key]" : "")
+                    .append("\n");
+        }
+        sb.append("\n");
         return sb.toString();
     }
 

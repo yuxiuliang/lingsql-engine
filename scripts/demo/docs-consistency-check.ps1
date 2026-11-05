@@ -1,0 +1,201 @@
+<#
+.SYNOPSIS
+    文档一致性检查：把文档里的清单和常量与代码／数据库对一遍。
+
+.DESCRIPTION
+    起因：文档里反复出现「凭记忆写的清单」——员工写成 6 个实际 8 个、常量改了文案没改、
+    索引计数过期。这些错误不会报错，只会在演示或交接时误导人。
+
+    本脚本只做机械核对，不改任何东西：
+    ① 常量：关键数字口径里写的平台限制，是否与源码一致；
+    ② 清单：租户／数字员工清单是否与数据库一致；
+    ③ 索引：文档数、链接失效、声明计数；
+    ④ 过期引用：是否还有地方引用已废弃的固定报告名。
+
+.EXAMPLE
+    pwsh -File scripts/demo/docs-consistency-check.ps1
+#>
+[CmdletBinding()]
+param(
+    [int]$MysqlPort = 3407
+)
+
+$ErrorActionPreference = 'Stop'
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$docs = Join-Path $root '.local-private/commercial/docs'
+$mysql = 'D:\Software\Tools\Database\mysql-8.4.2-winx64\bin\mysql.exe'
+$failures = 0
+$checks = 0
+
+function Check {
+    param([string]$Name, [bool]$Ok, [string]$Detail = '')
+    $script:checks++
+    if ($Ok) {
+        Write-Host ("[PASS] {0,-34} {1}" -f $Name, $Detail) -ForegroundColor Green
+    } else {
+        $script:failures++
+        Write-Host ("[FAIL] {0,-34} {1}" -f $Name, $Detail) -ForegroundColor Red
+    }
+}
+
+function Sql {
+    param([string]$Sql)
+    return (& $mysql --host=127.0.0.1 "--port=$MysqlPort" --user=root --batch --skip-column-names `
+            --default-character-set=utf8mb4 --database=lingsql_demo_control "--execute=$Sql" 2>&1)
+}
+
+if (-not (Test-Path $docs)) {
+    Write-Host "未找到商业文档目录：$docs" -ForegroundColor Red
+    exit 1
+}
+$numbersDoc = Join-Path $docs '关键数字口径.md'
+$numbersText = if (Test-Path $numbersDoc) { Get-Content $numbersDoc -Raw } else { '' }
+
+Write-Host ''
+Write-Host '==== ① 常量与源码 ====' -ForegroundColor Cyan
+$constChecks = @(
+    @{ Name = '白名单表数上限'; Doc = 'MAX_ALLOWLIST_TABLES'; File = 'src/main/java/com/lingsql/datasource/TenantDataSourceConfigService.java' },
+    @{ Name = '展开表数上限'; Doc = 'DEFAULT_MAX_FULL_TABLES'; File = 'src/main/java/com/lingsql/schema/SchemaTableSelector.java' },
+    @{ Name = '表结构字符上限'; Doc = 'MAX_SCHEMA_CHARS'; File = 'src/main/java/com/lingsql/schema/MetadataCacheService.java' }
+)
+foreach ($c in $constChecks) {
+    $src = Join-Path $root $c.File
+    if (-not (Test-Path $src)) { Check $c.Name $false "源码不存在: $($c.File)"; continue }
+    $line = (Select-String -Path $src -Pattern "$($c.Doc)\s*=" | Select-Object -First 1).Line
+    if (-not $line) { Check $c.Name $false "未找到常量 $($c.Doc)"; continue }
+    $value = ([regex]::Match($line, '=\s*([\d_]+)')).Groups[1].Value -replace '_', ''
+    # 文档按中文习惯写成 48,000，比对前统一去掉千分位与下划线，避免误报
+    $docNormalized = $numbersText -replace '[_ ,]', ''
+    $docHas = $docNormalized -match [regex]::Escape($value)
+    Check $c.Name $docHas "$($c.Doc)=$value；文档中$(if($docHas){'一致'}else{'未出现或不同'})"
+}
+
+Write-Host ''
+Write-Host '==== ② 租户清单 ====' -ForegroundColor Cyan
+$dbTenants = Sql "SELECT GROUP_CONCAT(tenant_id ORDER BY tenant_id) FROM t_lingsql_engine_tenant_db_config;"
+$dbTenantSet = ("$dbTenants".Trim() -split ',') | Where-Object { $_ }
+foreach ($t in $dbTenantSet) {
+    $inDoc = $numbersText -match [regex]::Escape($t)
+    Check "租户 $t" $inDoc $(if ($inDoc) { '文档已登记' } else { '文档未登记 <<< 请补进第五节' })
+}
+
+Write-Host ''
+Write-Host '==== ③ 数字员工清单 ====' -ForegroundColor Cyan
+$empRows = Sql "SELECT CONCAT(id,':',employee_name) FROM t_lingsql_engine_digital_employee WHERE is_deleted=0 ORDER BY id;"
+# 2026-10-31 改为**按名字**比对：员工 id 会随环境重建而变（本轮重建后 3–6 变成 17–19），
+# 按 id 校验会让文档每次重建后都"未登记"。名字才是稳定标识。
+$empNames = @($empRows | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+:' } | ForEach-Object { ($_ -split ':', 2)[1] })
+$missing = @($empNames | Where-Object { $numbersText -notmatch [regex]::Escape($_) })
+Check '员工清单覆盖（按名称）' ($missing.Count -eq 0) $(if ($missing.Count -eq 0) { "共 $($empNames.Count) 个，全部登记" } else { "未登记: $($missing -join '、')" })
+
+Write-Host ''
+Write-Host '==== ④ 索引完整性 ====' -ForegroundColor Cyan
+$idx = Join-Path $docs 'README-商业资料索引.md'
+if (Test-Path $idx) {
+    $idxText = Get-Content $idx -Raw
+    $files = Get-ChildItem $docs -File -Filter *.md | Where-Object { $_.Name -ne 'README-商业资料索引.md' }
+    $declared = ([regex]::Match($idxText, '共 (\d+) 份')).Groups[1].Value
+    Check '索引声明计数' ($declared -eq "$($files.Count)") "声明=$declared 实际=$($files.Count)"
+    $links = [regex]::Matches($idxText, '\]\(<?([^)<>]+?\.md)>?\)') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+    $broken = @($links | Where-Object { -not (Test-Path (Join-Path $docs ([System.Uri]::UnescapeDataString($_)))) })
+    Check '索引链接' ($broken.Count -eq 0) $(if ($broken.Count -eq 0) { "$($links.Count) 条全部有效" } else { "失效: $($broken -join ',')" })
+} else {
+    Check '索引文件' $false 'README-商业资料索引.md 不存在'
+}
+
+Write-Host ''
+Write-Host '==== ⑤ 过期引用 ====' -ForegroundColor Cyan
+$stale = Get-ChildItem $docs -File -Filter *.md | Select-String -Pattern 'demo-10q-report\.md'
+$staleReal = @($stale | Where-Object { $_.Line -notmatch '已废弃|不再覆盖|固定名' })
+Check '固定报告名引用' ($staleReal.Count -eq 0) $(if ($staleReal.Count -eq 0) { '无残留（说明性提及不算）' } else { "残留 $($staleReal.Count) 处" })
+
+Write-Host ''
+Write-Host '==== ⑥ 卖点表的关键结论 ====' -ForegroundColor Cyan
+$claimsDoc = Join-Path $docs '卖点核验表.md'
+if (Test-Path $claimsDoc) {
+    # 结论：账本全部 SETTLED、无 UNKNOWN 残留
+    $unknown = (Sql "SELECT COUNT(*) FROM t_lingsql_engine_billing_invocation WHERE state='UNKNOWN';").Trim()
+    $settled = (Sql "SELECT COUNT(*) FROM t_lingsql_engine_billing_invocation WHERE state='SETTLED';").Trim()
+    Check '账本无 UNKNOWN' ("$unknown" -eq '0') "UNKNOWN=$unknown SETTLED=$settled"
+
+    # 结论：规模夹具 60 / 100 / 200 张表
+    foreach ($pair in @(@('scale_a', 60), @('scale_c', 100), @('scale_b', 200))) {
+        $tenant = $pair[0]; $expect = $pair[1]
+        # 新环境里这些夹具租户可能根本不存在——查询会没有返回行，
+        # 直接 .Trim() 会对 $null 调方法把整个脚本搞崩（2026-10-31 实测）。
+        $row = @(Sql "SELECT IFNULL(schema_table_count,-1) FROM t_lingsql_engine_tenant_db_config WHERE tenant_id='$tenant';") |
+            Where-Object { "$_".Trim() -ne '' } | Select-Object -First 1
+        $actual = if ($row) { "$row".Trim() } else { '(缺少该租户)' }
+        Check "夹具 $tenant" ("$actual" -eq "$expect") "期望 $expect 张表，实际 $actual"
+    }
+
+    # 语义字典：条数与缓存字符数（文档写死了具体字符数，字典一扩容就会漂移）
+    $lex = (Sql "SELECT COUNT(*) FROM t_lingsql_engine_semantic_lexicon WHERE tenant_id='demo_sales';").Trim()
+    Check '语义字典条数' ([int]$lex -ge 10) "count=$lex（文档写 21，按 >=10 校验）"
+
+    $redisCli = Get-ChildItem 'D:\Software\Tools' -Recurse -File -Filter 'redis-cli.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    $claimsText = if (Test-Path $claimsDoc) { Get-Content $claimsDoc -Raw } else { '' }
+    $claimed = [regex]::Match($claimsText, '缓存值实测\s*\*\*([\d,]+)\s*字符\*\*').Groups[1].Value -replace ',', ''
+    if ($redisCli -and $claimed) {
+        $secrets = Get-Content (Join-Path $root '.local-private/demo/demo-secrets.json') -Raw | ConvertFrom-Json
+        $len = (& $redisCli.FullName -p 6380 -a $secrets.redis.password --no-auth-warning STRLEN 'lingsql:semantic:lexicon:demo_sales' 2>&1) -join ''
+        Check '语义字典缓存长度' ("$len".Trim() -eq $claimed) "文档=$claimed 实际=$($len.ToString().Trim())"
+    } else {
+        Write-Host ("[SKIP] {0,-34} {1}" -f '语义字典缓存长度', $(if (-not $redisCli) { '未找到 redis-cli' } else { '文档未写字符数' })) -ForegroundColor DarkGray
+        $script:checks++
+    }
+} else {
+    Check '卖点核验表' $false '文档不存在'
+}
+
+# ④.2 销售口径不许写死测试数：数字会随每次改动变，写死必然过期
+#     （2026-10-31 发现该表写着"当前 567 项"，实际已是 585 项，且文档自己就写着"会变的数字不要写死"）
+if ($numbersText) {
+    $hardcoded = $numbersText -match '测试数量\s+当前\s+\d+\s*项'
+    Check '测试数不写死' (-not $hardcoded) $(if ($hardcoded) { '关键数字口径.md 又写了"当前 N 项"' } else { '未写死' })
+}
+
+# ④.5 步数一致：verify-all 的实际步骤数必须与手册写的一致
+$verifyScript = Join-Path $root 'scripts/demo/verify-all.ps1'
+$manual = Join-Path $root 'docs/Windows本机演示手册.md'
+if ((Test-Path $verifyScript) -and (Test-Path $manual)) {
+    $stepCount = (Select-String -Path $verifyScript -Pattern 'Invoke-Step -Name').Count
+    $cn = @{ 4 = '四'; 5 = '五'; 6 = '六'; 7 = '七'; 8 = '八'; 9 = '九'; 10 = '十' }[$stepCount]
+    $claimed = if ($cn) { [bool](Select-String -Path $manual -Pattern "一键总验${cn}步" -Quiet) } else { $false }
+    Check '总验步数一致' $claimed "脚本=$stepCount 步（$cn），手册=$([bool]$claimed)"
+}
+
+# ⑤ 结构校验：表格被空行截断 / 章节编号重复
+#    起因（第 112 轮）：往《验证证据汇总》插一整节时插进了表格中间，导致后面三行脱离表格；
+#    同一份文件里还出现了两个「## 六、」。这两类问题没有测试会红，只会误导读的人。
+$structureIssues = @()
+foreach ($doc in (Get-ChildItem $docs -File -Filter '*.md')) {
+    $lines = Get-Content $doc.FullName
+
+    # 5.1 表格截断：表格行之后空行，再出现非表头/非分隔行的表格行
+    for ($i = 2; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\s*\|' -and $lines[$i - 1].Trim() -eq '' -and $lines[$i - 2] -match '^\s*\|') {
+            if ($lines[$i] -notmatch '^\s*\|\s*-{2,}') {
+                $structureIssues += "$($doc.Name):$($i + 1) 表格被空行截断"
+            }
+        }
+    }
+
+    # 5.2 章节编号重复（## 一、 / ## 六、 …）
+    $nums = @()
+    foreach ($line in $lines) {
+        if ($line -match '^##\s*([一二三四五六七八九十]+)、') { $nums += $Matches[1] }
+    }
+    $dup = $nums | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name }
+    if ($dup) { $structureIssues += "$($doc.Name) 章节编号重复：$($dup -join '、')" }
+}
+
+Check '文档结构（表格/编号）' ($structureIssues.Count -eq 0) $(if ($structureIssues.Count -eq 0) { "$((Get-ChildItem $docs -File -Filter '*.md').Count) 份文档无截断表格、无重复编号" } else { ($structureIssues | Select-Object -First 3) -join '；' })
+
+Write-Host ''
+if ($failures -eq 0) {
+    Write-Host "全部一致（$checks 项）。" -ForegroundColor Green
+    exit 0
+}
+Write-Host "发现 $failures / $checks 项不一致 —— 请先修文档或代码。" -ForegroundColor Red
+exit 1

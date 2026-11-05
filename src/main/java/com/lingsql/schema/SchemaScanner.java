@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -60,6 +61,8 @@ public class SchemaScanner {
         try (Connection conn = dataSource.getConnection()) {
             DatabaseMetaData metaData = conn.getMetaData();
             String catalog = conn.getCatalog();
+            // 本次同步是否已放弃模型注释（首个失败后置位，避免逐字段重复失败）
+            boolean[] skipModelComment = {false};
 
             try (ResultSet tables = metaData.getTables(catalog, null, null, new String[]{"TABLE"})) {
                 while (tables.next()) {
@@ -75,7 +78,7 @@ public class SchemaScanner {
                     String tableComment = tables.getString("REMARKS");
                     tableInfo.setTableComment(resolveComment(tenantId, workflowRequestId, logicalCallSequence,
                             "table", tableName, tableComment,
-                            "请为数据库表 " + tableName + " 生成一句简短中文业务说明"));
+                            "请为数据库表 " + tableName + " 生成一句简短中文业务说明", skipModelComment));
 
                     Map<String, Boolean> primaryKeys = loadPrimaryKeys(metaData, catalog, tableName);
 
@@ -86,16 +89,14 @@ public class SchemaScanner {
                             String columnName = cols.getString("COLUMN_NAME");
                             col.setColumnName(columnName);
                             col.setDataType(cols.getString("TYPE_NAME"));
-
-                            String colComment = cols.getString("REMARKS");
-                            String colPrompt = "请为字段 " + tableName + "." + columnName + " 生成简短中文含义";
-                            col.setColumnComment(resolveComment(tenantId, workflowRequestId, logicalCallSequence,
-                                    "column", tableName + ":" + columnName,
-                                    colComment, colPrompt));
+                            col.setColumnComment(cols.getString("REMARKS"));
                             col.setPrimaryKey(primaryKeys.getOrDefault(columnName.toLowerCase(), false));
                             columns.add(col);
                         }
                     }
+                    // 一张表的字段注释合并成一次模型调用（原先逐字段各调一次，200 张表即 1600 次）
+                    enrichColumnComments(tenantId, workflowRequestId, logicalCallSequence,
+                            tableName, columns, skipModelComment);
                     tableInfo.setColumns(columns);
                     tableInfos.add(tableInfo);
                 }
@@ -133,6 +134,94 @@ public class SchemaScanner {
     }
 
     /**
+     * 批量补齐一张表的字段注释。
+     *
+     * <p>一次模型调用覆盖整表字段：提示模型按「字段名=中文描述」逐行输出。
+     * 失败时整表降级为「无描述」并置位跳过标志，不再逐字段重试。
+     * 已有注释或命中缓存的字段不进入本次调用。</p>
+     *
+     * @param tenantId            租户
+     * @param workflowRequestId   工作流请求标识
+     * @param logicalCallSequence 逻辑调用序号
+     * @param tableName           表名
+     * @param columns             该表字段（就地写入注释）
+     * @param skipModelComment    本次同步是否已放弃模型注释
+     * @author 余炘洋
+     * @date 2026-10-26
+     */
+    private void enrichColumnComments(String tenantId, String workflowRequestId, AtomicInteger logicalCallSequence,
+                                      String tableName, List<TableInfo.ColumnInfo> columns, boolean[] skipModelComment) {
+        List<TableInfo.ColumnInfo> pending = new ArrayList<>();
+        for (TableInfo.ColumnInfo col : columns) {
+            if (StringUtils.hasText(col.getColumnComment())) {
+                continue;
+            }
+            String cached = cacheService.getCachedComment(tenantId + ":column:" + tableName + ":" + col.getColumnName());
+            if (StringUtils.hasText(cached)) {
+                col.setColumnComment(cached);
+            } else {
+                pending.add(col);
+            }
+        }
+        if (pending.isEmpty() || skipModelComment[0]) {
+            return;
+        }
+        StringBuilder prompt = new StringBuilder("为数据库表 ")
+                .append(tableName)
+                .append(" 的下列字段各生成一句简短中文含义。严格按「字段名=中文描述」逐行输出，不要其他内容：\n");
+        for (TableInfo.ColumnInfo col : pending) {
+            prompt.append(col.getColumnName()).append(" (").append(col.getDataType()).append(")\n");
+        }
+        try {
+            String generated = modelGateway.chat(new ModelCallCommand(
+                    tenantId,
+                    workflowRequestId,
+                    MODEL_CALLER_TYPE,
+                    MODEL_CALLER_ID,
+                    MODEL_STAGE,
+                    logicalCallSequence.incrementAndGet(),
+                    "你是数据库元数据助手，只输出「字段名=中文描述」逐行结果。",
+                    prompt.toString()
+            )).content();
+            Map<String, String> parsed = parseCommentLines(generated);
+            for (TableInfo.ColumnInfo col : pending) {
+                String comment = parsed.get(col.getColumnName().toLowerCase(Locale.ROOT));
+                String resolved = StringUtils.hasText(comment) ? comment : "无描述";
+                col.setColumnComment(resolved);
+                if (StringUtils.hasText(comment)) {
+                    cacheService.cacheComment(tenantId + ":column:" + tableName + ":" + col.getColumnName(), resolved);
+                }
+            }
+        } catch (PhysicalBillingException e) {
+            throw e;
+        } catch (Exception e) {
+            skipModelComment[0] = true;
+            log.warn("批量生成字段注释失败，本次同步剩余字段跳过模型注释: tenantId={}, table={}, reason={}",
+                    tenantId, tableName, e.getMessage());
+            for (TableInfo.ColumnInfo col : pending) {
+                col.setColumnComment("无描述");
+            }
+        }
+    }
+
+    static Map<String, String> parseCommentLines(String text) {
+        Map<String, String> parsed = new HashMap<>();
+        if (!StringUtils.hasText(text)) {
+            return parsed;
+        }
+        for (String line : text.split("\\r?\\n")) {
+            String trimmed = line.trim().replaceAll("^[-*\\d.、\\s]+", "");
+            int idx = trimmed.indexOf('=');
+            if (idx <= 0 || idx == trimmed.length() - 1) {
+                continue;
+            }
+            parsed.put(trimmed.substring(0, idx).trim().toLowerCase(Locale.ROOT),
+                    trimmed.substring(idx + 1).trim());
+        }
+        return parsed;
+    }
+
+    /**
      * 解析并补全注释。
      *
      * @param tenantId   租户标识
@@ -153,7 +242,8 @@ public class SchemaScanner {
             String type,
             String name,
             String rawComment,
-            String prompt
+            String prompt,
+            boolean[] skipModelComment
     ) {
         if (StringUtils.hasText(rawComment)) {
             return rawComment;
@@ -162,6 +252,12 @@ public class SchemaScanner {
         String cached = cacheService.getCachedComment(cacheKey);
         if (StringUtils.hasText(cached)) {
             return cached;
+        }
+        // 注释生成是尽力而为的增强项：开户时模型授权往往尚未生效，
+        // 若逐字段都试一次，200 张表 × 8 字段就是 1600 次无效调用加 1600 条堆栈。
+        // 同一请求内首次失败后直接放弃，只留一条警告。
+        if (skipModelComment[0]) {
+            return "无描述";
         }
         try {
             String generated = modelGateway.chat(new ModelCallCommand(
@@ -180,7 +276,10 @@ public class SchemaScanner {
         } catch (PhysicalBillingException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("生成注释失败: {}", name, e);
+            // 一旦失败就放弃本次同步的模型注释，避免逐字段重试把日志淹没
+            skipModelComment[0] = true;
+            log.warn("生成注释失败，本次同步剩余字段跳过模型注释: tenantId={}, firstFailure={}, reason={}",
+                    tenantId, name, e.getMessage());
             return "无描述";
         }
     }

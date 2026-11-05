@@ -5,6 +5,7 @@ import com.lingsql.common.exception.BizException;
 import com.lingsql.common.exception.ErrorCode;
 import com.lingsql.rbac.authorization.IAuthorizationSessionLifecycle;
 import com.lingsql.rbac.entity.RbacUser;
+import com.lingsql.rbac.entity.RbacRole;
 import com.lingsql.rbac.entity.RbacUserDataScope;
 import com.lingsql.rbac.model.DataScopeRule;
 import com.lingsql.rbac.model.RbacDataScopeType;
@@ -261,5 +262,45 @@ class UserAdminServiceTest {
                     ((Supplier<?>) invocation.getArgument(1)).get()
             );
         }
+    }
+
+    /**
+     * 更新用户时保留原有角色，必须是"先删后插"。
+     *
+     * <p>2026-10-31 线上实测：保存角色时命中唯一键 {@code uk_user_role}
+     * （Duplicate entry '9-2'）导致 500。根因是派生删除在 Hibernate 的 flush 顺序里
+     * 排在 INSERT 之后。仓储方法已改为 {@code @Modifying(flushAutomatically = true)} 的批量删除，
+     * 本用例锁住"调用顺序"，避免有人把仓储改回派生删除。</p>
+     *
+     * @author 余炘洋
+     * @date 2026-10-31
+     */
+    @Test
+    void updateUserShouldDeleteRolesBeforeInserting() {
+        TestContext ctx = new TestContext();
+
+        RbacUser existing = new RbacUser();
+        existing.setId(201L);
+        existing.setTenantId("TENANT_A");
+        existing.setNickname("旧昵称");
+
+        RbacRole role = new RbacRole();
+        role.setId(2L);
+        role.setTenantId("TENANT_A");
+
+        when(ctx.userRepository.findById(201L)).thenReturn(Optional.of(existing));
+        when(ctx.roleRepository.findByIdIn(List.of(2L))).thenReturn(List.of(role));
+        when(ctx.userRoleRepository.findRoleIdsByUserId(201L)).thenReturn(List.of(2L));
+        when(ctx.userOrgMembershipRepository.findByUserIdOrderByIsPrimaryDescIdAsc(201L)).thenReturn(List.of());
+        when(ctx.userDataScopeRepository.findByUserId(201L)).thenReturn(Optional.empty());
+
+        UserUpdateRequest request = new UserUpdateRequest();
+        request.setRoleIds(List.of(2L));
+
+        ctx.userAdminService.updateUser(201L, request, "TENANT_A", false);
+
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(ctx.userRoleRepository);
+        inOrder.verify(ctx.userRoleRepository).deleteByUserId(201L);
+        inOrder.verify(ctx.userRoleRepository).saveAll(any());
     }
 }

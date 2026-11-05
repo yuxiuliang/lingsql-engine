@@ -2,6 +2,7 @@
 import {computed, onMounted, ref} from 'vue';
 import {ElMessage} from 'element-plus';
 import {fetchProfitDashboard, ProfitDashboardView} from '@/api/dashboard';
+import {toCustomerFacingError} from '@/utils/customer-facing-error';
 import {useRouter} from 'vue-router';
 
 const days = ref(30);
@@ -20,7 +21,7 @@ const loadDashboard = async () => {
   try {
     dashboard.value = await fetchProfitDashboard(days.value || 30);
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '加载仪表盘失败');
+    ElMessage.error(toCustomerFacingError(error instanceof Error ? error.message : '加载仪表盘失败'));
   } finally {
     loading.value = false;
   }
